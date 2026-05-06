@@ -207,6 +207,33 @@ export type ProductDiscoveryResponse = {
   categories: string[];
   accepted_snapshots: number;
   rejected_snapshots: number;
+  dry_run?: boolean;
+  trace_id?: string | null;
+  source_errors?: string[];
+  preview?: DiscoveryPreviewItem[];
+};
+
+export type DiscoveryPreviewItem = {
+  raw_listing_name: string;
+  normalized_name: string;
+  canonical_key: string;
+  canonical_product_id?: string | null;
+  merge_decision: "new_product" | "merge_existing" | "rejected";
+  confidence: number;
+  reason: string;
+  vendor_name: string;
+  price: number;
+  currency: string;
+  availability: PriceSnapshotView["availability"];
+  accepted: boolean;
+  rejected_reasons: string[];
+  flags: string[];
+  source: string;
+  source_type: SourceType;
+  trust_score: number;
+  freshness_score: number;
+  product_url?: string | null;
+  image_url?: string | null;
 };
 
 export type ProductCategoryResponse = {
@@ -1099,6 +1126,16 @@ export type SourceHealth = {
   reliability_score: number;
   freshness_score: number;
   message: string;
+};
+
+export type SourceConfigStatus = {
+  source_name: string;
+  configured: boolean;
+  health: "configured" | "not_configured" | "degraded" | "healthy" | "quota_limited" | "failed";
+  last_success?: string | null;
+  last_failure?: string | null;
+  last_error_sanitized?: string | null;
+  quota_status: "ok" | "near_limit" | "limited" | "unknown" | "not_configured";
 };
 
 export type WorkerHealth = {

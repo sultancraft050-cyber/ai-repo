@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.dependencies import get_ops_repository
 from app.graph.ops_repository import Neo4jOpsRepository
-from app.models.ops import AuthPrincipal, AutonomyJob, AutonomyQueue, DailyFounderReport, OpsRunbook, SourceHealth, WorkerHealth
+from app.models.ops import AuthPrincipal, AutonomyJob, AutonomyQueue, DailyFounderReport, OpsRunbook, SourceConfigStatus, SourceHealth, WorkerHealth
 from app.services.ops import OpsService
 
 router = APIRouter(prefix="/ops", tags=["solo-founder-operations"])
@@ -13,28 +13,36 @@ router = APIRouter(prefix="/ops", tags=["solo-founder-operations"])
 @router.get("/daily-report", response_model=DailyFounderReport)
 def daily_report(
     request: Request,
-    repository: Neo4jOpsRepository = Depends(get_ops_repository),
 ) -> DailyFounderReport:
     manager = request.app.state.neo4j
     connected = manager.verify()
+    repository = Neo4jOpsRepository(manager.driver)
     return OpsService(repository).daily_report(neo4j_connected=connected, app_state=request.app.state)
 
 
 @router.get("/sources", response_model=list[SourceHealth])
-def source_status(repository: Neo4jOpsRepository = Depends(get_ops_repository)) -> list[SourceHealth]:
+def source_status(request: Request) -> list[SourceHealth]:
+    repository = Neo4jOpsRepository(request.app.state.neo4j.driver)
     return OpsService(repository).source_health()
+
+
+@router.get("/source-config", response_model=list[SourceConfigStatus])
+def source_config(request: Request) -> list[SourceConfigStatus]:
+    repository = Neo4jOpsRepository(request.app.state.neo4j.driver)
+    return OpsService(repository).source_config()
 
 
 @router.get("/workers", response_model=list[WorkerHealth])
 def worker_status(
     request: Request,
-    repository: Neo4jOpsRepository = Depends(get_ops_repository),
 ) -> list[WorkerHealth]:
+    repository = Neo4jOpsRepository(request.app.state.neo4j.driver)
     return OpsService(repository).worker_health(request.app.state)
 
 
 @router.get("/runbook", response_model=OpsRunbook)
-def ops_runbook(repository: Neo4jOpsRepository = Depends(get_ops_repository)) -> OpsRunbook:
+def ops_runbook(request: Request) -> OpsRunbook:
+    repository = Neo4jOpsRepository(request.app.state.neo4j.driver)
     return OpsService(repository).runbook()
 
 
@@ -52,7 +60,8 @@ def recent_jobs(
 
 
 @router.get("/autonomy-queue", response_model=AutonomyQueue)
-def autonomy_queue(repository: Neo4jOpsRepository = Depends(get_ops_repository)) -> AutonomyQueue:
+def autonomy_queue(request: Request) -> AutonomyQueue:
+    repository = Neo4jOpsRepository(request.app.state.neo4j.driver)
     return OpsService(repository).autonomy_queue()
 
 

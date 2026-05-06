@@ -90,6 +90,38 @@ Decision endpoints:
 
 All decisions are audited. Level 3 manual-only actions cannot be approved for autonomous execution.
 
+## Live Source Onboarding
+
+Live vendor credentials must be placed only in `backend/.env`; never in frontend files or committed source.
+
+Safe source visibility:
+
+- `GET /ops/source-config`
+- shows source name, configured flag, health, last success/failure, sanitized error, and quota status
+- never returns raw key values
+
+Controlled discovery dry run:
+
+```json
+{
+  "category": "GPU",
+  "query": "RTX 4070 Super",
+  "region": "US",
+  "limit": 10,
+  "dry_run": true
+}
+```
+
+Dry run fetches configured sources, normalizes listings, validates quality, reports canonical merge decisions, and does not mutate product/vendor/price nodes.
+
+Live controlled ingestion uses the same payload with `"dry_run": false`. It is Level 1 automation: audit-required, bounded, idempotency-aware, and not approval-gated unless it proposes a high-impact graph mutation.
+
+Canonicalization validation:
+
+- `POST /pricing/canonicalize`
+- validates naming variants such as `RTX4070SUPER`, `RTX 4070 Super`, and `NVIDIA GeForce RTX 4070 Super`
+- returns normalized name, canonical key, merge decision, confidence, and reason
+
 ## Deployment
 
 Local production stack:

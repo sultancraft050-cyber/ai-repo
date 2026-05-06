@@ -9,7 +9,7 @@ import re
 import time
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from app.models.pricing import SourceMetadata, SourceProductRecord, SourceTier, SourceType
@@ -55,8 +55,22 @@ def _metadata(
         timestamp=timestamp,
         trust_score=trust_score,
         freshness_score=freshness_score(timestamp),
-        source_url=source_url,
+        source_url=_safe_source_url(source_url),
     )
+
+
+def _safe_source_url(source_url: str | None) -> str | None:
+    if not source_url:
+        return None
+    parts = urlsplit(source_url)
+    redacted_keys = {"api_key", "apikey", "token", "access_token", "key", "authorization"}
+    query = urlencode(
+        [
+            (key, "REDACTED" if key.lower() in redacted_keys else value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        ]
+    )
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
 
 
 def _request_json(
@@ -428,11 +442,17 @@ class AmazonProductAdvertisingSource:
 class SourceRegistry:
     def __init__(self) -> None:
         self.sources: list[PricingSource] = [
-            AmazonProductAdvertisingSource(),
+            SerpApiShoppingSource(),
             EbayBrowseSource(),
             BestBuyProductsSource(),
-            SerpApiShoppingSource(),
+            AmazonProductAdvertisingSource(),
         ]
+        self.priority = {
+            "serpapi": 0,
+            "ebay": 1,
+            "bestbuy": 2,
+            "amazon": 3,
+        }
 
     def enabled(self, names: list[str] | None = None) -> list[PricingSource]:
         wanted = {name.lower() for name in names or []}
@@ -441,4 +461,7 @@ class SourceRegistry:
             for source in self.sources
             if source.configured() and (not wanted or source.name.lower() in wanted)
         ]
-        return sorted(sources, key=lambda source: int(source.tier))
+        return sorted(sources, key=lambda source: self.priority.get(source.name.lower(), 99))
+
+    def all_sources(self) -> list[PricingSource]:
+        return list(self.sources)

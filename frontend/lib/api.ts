@@ -21,6 +21,7 @@ import type {
   HardwareIntelligence,
   ProductSearchResult,
   ReasoningGovernanceReport,
+  SourceConfigStatus,
   SelectedComponents,
   TelemetryReasoningReport,
   TelemetrySummary,
@@ -160,6 +161,12 @@ export async function getAutonomyQueue(apiKey: string): Promise<AutonomyQueue> {
   });
 }
 
+export async function getSourceConfig(apiKey: string): Promise<SourceConfigStatus[]> {
+  return requestJson<SourceConfigStatus[]>("/ops/source-config", {
+    headers: authHeaders(apiKey)
+  });
+}
+
 export async function cancelAutonomyJob(apiKey: string, jobId: string): Promise<{ job_id: string; status: string }> {
   return requestJson<{ job_id: string; status: string }>(`/ops/autonomy-queue/${jobId}/cancel`, {
     method: "POST",
@@ -263,11 +270,15 @@ export async function refreshPricing(productIds: string[], region: string): Prom
 export async function discoverProducts({
   categories,
   query,
-  region
+  region,
+  dryRun,
+  limit
 }: {
   categories: string[];
   query?: string;
   region: string;
+  dryRun?: boolean;
+  limit?: number;
 }): Promise<ProductDiscoveryResponse> {
   return requestJson<ProductDiscoveryResponse>("/pricing/discover", {
     method: "POST",
@@ -275,9 +286,11 @@ export async function discoverProducts({
       categories,
       query: query || undefined,
       region,
-      limit_per_query: 8,
+      limit_per_query: limit ?? 8,
+      limit,
       max_queries: 12,
-      wait: false
+      wait: false,
+      dry_run: dryRun ?? false
     })
   });
 }

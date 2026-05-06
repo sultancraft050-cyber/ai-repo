@@ -129,6 +129,16 @@ class SourceHealth(BaseModel):
     message: str
 
 
+class SourceConfigStatus(BaseModel):
+    source_name: str
+    configured: bool
+    health: Literal["configured", "not_configured", "degraded", "healthy", "quota_limited", "failed"]
+    last_success: datetime | None = None
+    last_failure: datetime | None = None
+    last_error_sanitized: str | None = None
+    quota_status: Literal["ok", "near_limit", "limited", "unknown", "not_configured"] = "unknown"
+
+
 class WorkerHealth(BaseModel):
     name: str
     enabled: bool

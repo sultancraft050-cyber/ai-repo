@@ -96,6 +96,10 @@ MODEL_STOPWORDS = {
     "DDR5",
     "GDDR6",
     "GDDR6X",
+    "GEFORCE",
+    "NVIDIA",
+    "RADEON",
+    "AMD",
     "PCIE",
     "PCI",
     "EXPRESS",
@@ -132,7 +136,14 @@ def normalize_brand(value: str | None, title: str = "") -> str:
                 candidate = brand
                 break
     if not candidate:
-        candidate = "Unknown"
+        if re.search(r"\b(RTX\s?\d{3,5}|GTX\s?\d{3,5}|GEFORCE)", title, flags=re.IGNORECASE):
+            candidate = "NVIDIA"
+        elif re.search(r"\b(RADEON|RX\s?\d{3,4})\b", title, flags=re.IGNORECASE):
+            candidate = "AMD"
+        elif re.search(r"\b(ARC\s?[AB]\d{3})\b", title, flags=re.IGNORECASE):
+            candidate = "Intel"
+        else:
+            candidate = "Unknown"
     upper = re.sub(r"[^A-Z0-9]+", " ", candidate.upper()).strip()
     return BRAND_ALIASES.get(upper, candidate.strip())
 

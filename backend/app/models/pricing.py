@@ -143,6 +143,29 @@ class DataQualityReport(BaseModel):
     anomaly_score: float = Field(default=0, ge=0, le=1)
 
 
+class DiscoveryPreviewItem(BaseModel):
+    raw_listing_name: str
+    normalized_name: str
+    canonical_key: str
+    canonical_product_id: str | None = None
+    merge_decision: Literal["new_product", "merge_existing", "rejected"]
+    confidence: float = Field(ge=0, le=1)
+    reason: str
+    vendor_name: str
+    price: float
+    currency: str
+    availability: Availability
+    accepted: bool
+    rejected_reasons: list[str] = Field(default_factory=list)
+    flags: list[str] = Field(default_factory=list)
+    source: str
+    source_type: SourceType
+    trust_score: float = Field(ge=0, le=1)
+    freshness_score: float = Field(ge=0, le=1)
+    product_url: str | None = None
+    image_url: str | None = None
+
+
 class PriceSnapshotView(BaseModel):
     id: str
     vendor_id: str
@@ -240,12 +263,23 @@ class ProductCategoryResponse(BaseModel):
 
 class ProductDiscoveryRequest(BaseModel):
     categories: list[str] = Field(default_factory=list)
+    category: str | None = None
     query: str | None = None
     region: str = "US"
     providers: list[str] = Field(default_factory=list)
     limit_per_query: int = Field(default=8, ge=1, le=25)
+    limit: int | None = Field(default=None, ge=1, le=25)
     max_queries: int = Field(default=24, ge=1, le=100)
     wait: bool = False
+    dry_run: bool = False
+
+    def resolved_categories(self) -> list[str]:
+        if self.categories:
+            return self.categories
+        return [self.category] if self.category else []
+
+    def resolved_limit(self) -> int:
+        return self.limit if self.limit is not None else self.limit_per_query
 
 
 class ProductDiscoveryResponse(BaseModel):
@@ -256,6 +290,31 @@ class ProductDiscoveryResponse(BaseModel):
     categories: list[str]
     accepted_snapshots: int = 0
     rejected_snapshots: int = 0
+    dry_run: bool = False
+    trace_id: str | None = None
+    source_errors: list[str] = Field(default_factory=list)
+    preview: list[DiscoveryPreviewItem] = Field(default_factory=list)
+
+
+class CanonicalizationValidationRequest(BaseModel):
+    category: str = "GPU"
+    names: list[str] = Field(min_length=1, max_length=50)
+
+
+class CanonicalizationValidationItem(BaseModel):
+    raw_listing_name: str
+    normalized_name: str
+    canonical_key: str
+    canonical_product_id: str | None = None
+    merge_decision: Literal["new_product", "merge_existing"]
+    confidence: float = Field(ge=0, le=1)
+    reason: str
+
+
+class CanonicalizationValidationResponse(BaseModel):
+    category: str
+    items: list[CanonicalizationValidationItem]
+    groups: dict[str, list[str]]
 
 
 class PricingJob(BaseModel):

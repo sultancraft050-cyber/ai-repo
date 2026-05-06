@@ -389,3 +389,48 @@ class Neo4jOpsRepository:
             database_=settings.neo4j_database,
         )
         return int(records[0]["count"] or 0) if records else 0
+
+    def source_activity(self) -> dict[str, dict[str, Any]]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (snapshot:PriceSnapshot)
+            WITH snapshot.source AS source_name, max(snapshot.timestamp) AS last_success
+            RETURN source_name, last_success
+            """,
+            database_=settings.neo4j_database,
+        )
+        activity: dict[str, dict[str, Any]] = {}
+        for record in records:
+            source_name = str(record["source_name"] or "")
+            if source_name:
+                activity[source_name] = {"last_success": _to_datetime(record["last_success"])}
+        failed_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (job:PricingJob)
+            WHERE job.status = "failed" AND job.error IS NOT NULL
+            RETURN job.error AS error, job.updated_at AS last_failure
+            ORDER BY job.updated_at DESC
+            LIMIT 20
+            """,
+            database_=settings.neo4j_database,
+        )
+        for record in failed_records:
+            error = str(record["error"] or "pricing source failed")
+            source_key = "unknown"
+            for candidate in ("SerpAPI", "eBay", "BestBuy", "Amazon"):
+                if candidate.lower() in error.lower():
+                    source_key = candidate
+                    break
+            current = activity.setdefault(source_key, {})
+            current.setdefault("last_failure", _to_datetime(record["last_failure"]))
+            current.setdefault("last_error_sanitized", _sanitize_error(error))
+        return activity
+
+
+def _sanitize_error(error: str) -> str:
+    sanitized = error
+    for marker in ("api_key=", "apiKey=", "Authorization=", "Bearer "):
+        if marker in sanitized:
+            prefix = sanitized.split(marker, 1)[0]
+            sanitized = f"{prefix}{marker}REDACTED"
+    return sanitized[:240]

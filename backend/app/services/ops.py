@@ -24,9 +24,11 @@ from app.models.ops import (
     RecommendedAction,
     SourceHealthSummary,
     SourceHealth,
+    SourceConfigStatus,
     SystemHealthSummary,
     WorkerHealth,
 )
+from app.services.pricing_sources import SourceRegistry
 
 
 class OpsService:
@@ -63,6 +65,56 @@ class OpsService:
                 )
             )
         return result
+
+    def source_config(self) -> list[SourceConfigStatus]:
+        registry = SourceRegistry()
+        try:
+            activity = self.repository.source_activity()
+        except Exception:
+            activity = {}
+        statuses: list[SourceConfigStatus] = []
+        for source in registry.all_sources():
+            configured = source.configured()
+            source_activity = self._activity_for_source(source.name, activity)
+            last_success = source_activity.get("last_success")
+            last_failure = source_activity.get("last_failure")
+            last_error = source_activity.get("last_error_sanitized")
+            health = "not_configured"
+            quota_status = "not_configured"
+            if configured:
+                quota_status = "unknown"
+                if last_failure and not last_success:
+                    health = "failed"
+                elif last_failure and last_success and last_failure > last_success:
+                    health = "degraded"
+                elif last_success:
+                    health = "healthy"
+                    quota_status = "ok"
+                else:
+                    health = "configured"
+            statuses.append(
+                SourceConfigStatus(
+                    source_name=source.name,
+                    configured=configured,
+                    health=health,  # type: ignore[arg-type]
+                    last_success=last_success,
+                    last_failure=last_failure,
+                    last_error_sanitized=last_error,
+                    quota_status=quota_status,  # type: ignore[arg-type]
+                )
+            )
+        return statuses
+
+    def _activity_for_source(self, source_name: str, activity: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        normalized = source_name.lower()
+        for key, value in activity.items():
+            if normalized in key.lower() or key.lower() in normalized:
+                return value
+        if normalized == "serpapi":
+            for key, value in activity.items():
+                if "serpapi" in key.lower() or "google shopping" in key.lower():
+                    return value
+        return {}
 
     def worker_health(self, app_state: Any) -> list[WorkerHealth]:
         workers = [

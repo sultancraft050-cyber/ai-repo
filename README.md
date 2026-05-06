@@ -52,12 +52,14 @@ Key endpoints:
 - `POST /ops/autonomy-queue/{job_id}/cancel`: cancels a bounded cancellable autonomy job and writes an audit event.
 - `GET /ops/workers`: returns pricing, cognition, scheduler, and autonomous worker health.
 - `GET /ops/sources`: returns external source configuration and health without exposing key values.
+- `GET /ops/source-config`: returns safe source onboarding status without revealing key values.
 - `GET /approvals/pending`: returns high-risk autonomous actions waiting for owner decision.
 - `GET /approvals/{id}`: returns the full approval request, evidence summary, affected entities, risk explanation, and rollback plan.
 - `POST /approvals/{id}/approve` / `POST /approvals/{id}/reject` / `POST /approvals/{id}/defer` / `POST /approvals/{id}/mark-reviewed`: records founder approval decisions with audit events.
 - `POST /pricing/refresh`: queues a non-blocking price refresh for existing products.
 - `POST /pricing/sync`: queues multi-query product discovery and price ingestion.
-- `POST /pricing/discover`: queues global component discovery across CPU, GPU, motherboard, RAM, PSU, case, cooler, storage, monitor, keyboard, mouse, headset, capture card, fans, custom cooling, and accessories.
+- `POST /pricing/discover`: queues global component discovery or runs a bounded controlled discovery with `category`, `query`, `region`, `limit`, and `dry_run`.
+- `POST /pricing/canonicalize`: validates raw listing names against the canonical identity engine without mutating Neo4j.
 
 Environment:
 
@@ -83,6 +85,8 @@ FRONTEND_URL=http://localhost:3000
 BACKEND_URL=http://localhost:8000
 LOG_LEVEL=INFO
 ```
+
+Live source credentials belong only in `backend/.env`. The frontend never receives raw vendor API keys. If no source key is configured, discovery dry runs return a safe `no configured pricing sources` result instead of fabricating data.
 
 Pricing intelligence:
 - Product, Vendor, PriceSnapshot, FieldEvidence, and PricingJob nodes are stored in Neo4j.
@@ -182,6 +186,8 @@ Local production stack:
 ```bash
 docker compose up --build
 ```
+
+Docker configuration is provided but not locally verified because Docker CLI is not installed in this workspace.
 
 Security notes:
 - Do not commit `.env`, `.env.local`, logs, dumps, backups, or API keys.
