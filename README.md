@@ -48,10 +48,13 @@ Key endpoints:
 - `POST /autonomy/run`: executes autonomous cognition evaluation for selected products or stale graph candidates.
 - `POST /autonomy/events`: records external cognition events and can trigger immediate governed analysis.
 - `GET /ops/daily-report`: returns the solo-founder daily operations brief.
+- `GET /ops/autonomy-queue`: returns grouped autonomous jobs: running, waiting approval, failed, completed, and scheduled.
+- `POST /ops/autonomy-queue/{job_id}/cancel`: cancels a bounded cancellable autonomy job and writes an audit event.
 - `GET /ops/workers`: returns pricing, cognition, scheduler, and autonomous worker health.
 - `GET /ops/sources`: returns external source configuration and health without exposing key values.
 - `GET /approvals/pending`: returns high-risk autonomous actions waiting for owner decision.
-- `POST /approvals/{id}/approve` / `POST /approvals/{id}/reject`: records founder approval decisions with audit events.
+- `GET /approvals/{id}`: returns the full approval request, evidence summary, affected entities, risk explanation, and rollback plan.
+- `POST /approvals/{id}/approve` / `POST /approvals/{id}/reject` / `POST /approvals/{id}/defer` / `POST /approvals/{id}/mark-reviewed`: records founder approval decisions with audit events.
 - `POST /pricing/refresh`: queues a non-blocking price refresh for existing products.
 - `POST /pricing/sync`: queues multi-query product discovery and price ingestion.
 - `POST /pricing/discover`: queues global component discovery across CPU, GPU, motherboard, RAM, PSU, case, cooler, storage, monitor, keyboard, mouse, headset, capture card, fans, custom cooling, and accessories.
@@ -153,7 +156,8 @@ Production operations:
 - Roles are hierarchical: viewer, analyst, admin, super_admin.
 - Protected requests receive `X-Trace-ID`, write Neo4j `AuditEvent` nodes, and support `X-Idempotency-Key` for duplicate prevention.
 - High-risk autonomous actions create `ApprovalItem` nodes instead of executing automatically.
-- The Founder Daily Brief panel summarizes health, workers, sources, failed jobs, approvals, alerts, and recent audit events.
+- The Solo-Founder Operations Command Center combines Founder Daily Brief, Autonomy Queue, Approval Center, source/worker health, and recent audit visibility.
+- Level 3 actions are blocked from autonomous execution and cannot be approved through the approval endpoint.
 - `docs/OPERATIONS.md` covers security, idempotency, backups, restore, deployment, and solo-founder operations.
 
 Backend:

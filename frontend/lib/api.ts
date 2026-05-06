@@ -3,6 +3,7 @@ import type {
   BuildGenerateResponse,
   AlignmentInspectionReport,
   AutonomousCognitionReport,
+  AutonomyQueue,
   ApprovalItem,
   CompatibilityResponse,
   ComponentKind,
@@ -149,8 +150,38 @@ export async function fetchDailyFounderReport(apiKey: string): Promise<DailyFoun
   });
 }
 
+export async function getFounderDailyReport(apiKey: string): Promise<DailyFounderReport> {
+  return fetchDailyFounderReport(apiKey);
+}
+
+export async function getAutonomyQueue(apiKey: string): Promise<AutonomyQueue> {
+  return requestJson<AutonomyQueue>("/ops/autonomy-queue", {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function cancelAutonomyJob(apiKey: string, jobId: string): Promise<{ job_id: string; status: string }> {
+  return requestJson<{ job_id: string; status: string }>(`/ops/autonomy-queue/${jobId}/cancel`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(apiKey),
+      "X-Idempotency-Key": `ops-cancel-${jobId}`
+    }
+  });
+}
+
 export async function fetchPendingApprovals(apiKey: string): Promise<ApprovalItem[]> {
   return requestJson<ApprovalItem[]>("/approvals/pending", {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getPendingApprovals(apiKey: string): Promise<ApprovalItem[]> {
+  return fetchPendingApprovals(apiKey);
+}
+
+export async function getApprovalRequest(apiKey: string, approvalId: string): Promise<ApprovalItem> {
+  return requestJson<ApprovalItem>(`/approvals/${approvalId}`, {
     headers: authHeaders(apiKey)
   });
 }
@@ -166,12 +197,42 @@ export async function approveItem(apiKey: string, approvalId: string, note?: str
   });
 }
 
+export async function approveRequest(apiKey: string, approvalId: string, note?: string): Promise<{ approval: ApprovalItem }> {
+  return approveItem(apiKey, approvalId, note);
+}
+
 export async function rejectItem(apiKey: string, approvalId: string, note?: string): Promise<{ approval: ApprovalItem }> {
   return requestJson<{ approval: ApprovalItem }>(`/approvals/${approvalId}/reject`, {
     method: "POST",
     headers: {
       ...authHeaders(apiKey),
       "X-Idempotency-Key": `approval-reject-${approvalId}`
+    },
+    body: JSON.stringify({ note })
+  });
+}
+
+export async function rejectRequest(apiKey: string, approvalId: string, note?: string): Promise<{ approval: ApprovalItem }> {
+  return rejectItem(apiKey, approvalId, note);
+}
+
+export async function deferRequest(apiKey: string, approvalId: string, note?: string): Promise<{ approval: ApprovalItem }> {
+  return requestJson<{ approval: ApprovalItem }>(`/approvals/${approvalId}/defer`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(apiKey),
+      "X-Idempotency-Key": `approval-defer-${approvalId}`
+    },
+    body: JSON.stringify({ note })
+  });
+}
+
+export async function markApprovalReviewed(apiKey: string, approvalId: string, note?: string): Promise<{ approval: ApprovalItem }> {
+  return requestJson<{ approval: ApprovalItem }>(`/approvals/${approvalId}/mark-reviewed`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(apiKey),
+      "X-Idempotency-Key": `approval-reviewed-${approvalId}`
     },
     body: JSON.stringify({ note })
   });

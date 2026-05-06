@@ -4,13 +4,24 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 Role = Literal["anonymous", "viewer", "analyst", "admin", "super_admin"]
 AutonomyLevel = Literal["level_0", "level_1", "level_2", "level_3"]
 ApprovalStatus = Literal["pending", "approved", "rejected", "expired", "executed", "deferred", "reviewed"]
-OpsJobStatus = Literal["queued", "running", "succeeded", "failed", "retrying", "cancelled", "requires_approval"]
+OpsJobStatus = Literal[
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "retrying",
+    "cancelled",
+    "requires_approval",
+    "blocked",
+    "deferred",
+]
+Severity = Literal["info", "watch", "warning", "critical"]
 
 
 class AuthPrincipal(BaseModel):
@@ -38,15 +49,28 @@ class AuditEvent(BaseModel):
     risk_level: AutonomyLevel = "level_0"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @computed_field
+    @property
+    def audit_id(self) -> str:
+        return self.id
+
 
 class ApprovalItem(BaseModel):
     id: str = Field(default_factory=lambda: f"approval-{uuid4()}")
     action_type: str
+    title: str | None = None
+    description: str | None = None
     affected_entities: list[str] = Field(default_factory=list)
+    target_entities: list[str] = Field(default_factory=list)
+    affected_count: int = 0
     risk_level: AutonomyLevel
     reasoning: str
+    evidence_summary: str | None = None
     evidence: dict[str, Any] = Field(default_factory=dict)
+    risk_explanation: str | None = None
+    expected_impact: str | None = None
     rollback_plan: str
+    requested_by_agent: str | None = None
     recommended_decision: Literal["approve", "reject", "defer", "review"] = "defer"
     status: ApprovalStatus = "pending"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -55,6 +79,33 @@ class ApprovalItem(BaseModel):
     decided_by: str | None = None
     decision_note: str | None = None
     trace_id: str = Field(default_factory=lambda: f"trace-{uuid4()}")
+
+    @computed_field
+    @property
+    def approval_id(self) -> str:
+        return self.id
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.target_entities:
+            self.target_entities = list(self.affected_entities)
+        if self.affected_count <= 0:
+            self.affected_count = len(self.target_entities or self.affected_entities)
+        if self.title is None:
+            self.title = self.action_type.replace("_", " ").title()
+        if self.description is None:
+            self.description = self.reasoning
+        if self.evidence_summary is None and self.evidence:
+            self.evidence_summary = ", ".join(sorted(self.evidence.keys())) or "Evidence attached"
+        if self.risk_explanation is None:
+            self.risk_explanation = (
+                "Requires founder approval before execution."
+                if self.risk_level == "level_2"
+                else "Manual-only action; autonomous execution is blocked."
+                if self.risk_level == "level_3"
+                else "Low-risk autonomous action."
+            )
+        if self.expected_impact is None:
+            self.expected_impact = "No mutation is executed until the approval decision is recorded."
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -102,6 +153,39 @@ class JobMonitorItem(BaseModel):
     error: str | None = None
 
 
+class AutonomyJob(BaseModel):
+    job_id: str
+    job_type: str
+    title: str
+    description: str
+    status: OpsJobStatus
+    risk_level: AutonomyLevel
+    approval_required: bool
+    agent_name: str | None = None
+    target_entity_id: str | None = None
+    target_entity_type: str | None = None
+    attempts: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=3, ge=1)
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    trace_id: str
+    last_error: str | None = None
+    next_retry_at: datetime | None = None
+    summary: str
+    cancellable: bool = False
+
+
+class AutonomyQueue(BaseModel):
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    running_now: list[AutonomyJob] = Field(default_factory=list)
+    waiting_approval: list[AutonomyJob] = Field(default_factory=list)
+    failed_needs_attention: list[AutonomyJob] = Field(default_factory=list)
+    recently_completed: list[AutonomyJob] = Field(default_factory=list)
+    scheduled_next: list[AutonomyJob] = Field(default_factory=list)
+    all_jobs: list[AutonomyJob] = Field(default_factory=list)
+
+
 class GraphHealth(BaseModel):
     status: Literal["healthy", "watch", "degraded", "unavailable"]
     neo4j_connected: bool
@@ -114,11 +198,64 @@ class GraphHealth(BaseModel):
 
 class FounderAlert(BaseModel):
     id: str = Field(default_factory=lambda: f"founder-alert-{uuid4()}")
-    severity: Literal["info", "warning", "critical"]
+    severity: Severity
     reason: str
     evidence: dict[str, Any] = Field(default_factory=dict)
     suggested_action: str
     approval_id: str | None = None
+
+
+class RecommendedAction(BaseModel):
+    id: str = Field(default_factory=lambda: f"recommended-action-{uuid4()}")
+    reason: str
+    severity: Severity
+    suggested_action: str
+    approval_required: bool = False
+    approval_id: str | None = None
+
+
+class SystemHealthSummary(BaseModel):
+    backend_status: Literal["healthy", "watch", "degraded", "critical"] = "healthy"
+    neo4j_status: Literal["healthy", "watch", "degraded", "unavailable"] = "healthy"
+    worker_status: Literal["healthy", "watch", "degraded", "stopped"] = "healthy"
+    frontend_configured: bool = True
+    external_source_status: Literal["healthy", "watch", "degraded", "not_configured"] = "watch"
+    severity: Severity = "info"
+
+
+class AutonomySummary(BaseModel):
+    completed_jobs: int = 0
+    failed_jobs: int = 0
+    retries: int = 0
+    pending_approvals: int = 0
+    interventions_proposed: int = 0
+    high_risk_alerts: int = 0
+
+
+class DataOpsSummary(BaseModel):
+    new_products_discovered: int = 0
+    price_snapshots_updated: int = 0
+    stale_prices_detected: int = 0
+    telemetry_snapshots_ingested: int = 0
+    telemetry_gaps_detected: int = 0
+    enrichment_jobs_completed: int = 0
+
+
+class CognitionOpsSummary(BaseModel):
+    low_confidence_products: int = 0
+    governance_risks: int = 0
+    alignment_warnings: int = 0
+    evolution_drift_warnings: int = 0
+    anomaly_spikes: int = 0
+    contradiction_increases: int = 0
+
+
+class SourceHealthSummary(BaseModel):
+    configured_sources: int = 0
+    missing_api_keys: list[str] = Field(default_factory=list)
+    degraded_sources: list[str] = Field(default_factory=list)
+    quota_warnings: list[str] = Field(default_factory=list)
+    last_successful_sync_by_source: dict[str, datetime | None] = Field(default_factory=dict)
 
 
 class DailyFounderReport(BaseModel):
@@ -137,8 +274,15 @@ class DailyFounderReport(BaseModel):
     cognition_risks: list[str] = Field(default_factory=list)
     approval_items_waiting: list[ApprovalItem] = Field(default_factory=list)
     alerts: list[FounderAlert] = Field(default_factory=list)
-    recommended_next_actions: list[str] = Field(default_factory=list)
+    recommended_next_actions: list[RecommendedAction] = Field(default_factory=list)
     recent_audit_events: list[AuditEvent] = Field(default_factory=list)
+    system_summary: SystemHealthSummary = Field(default_factory=SystemHealthSummary)
+    autonomy_summary: AutonomySummary = Field(default_factory=AutonomySummary)
+    data_summary: DataOpsSummary = Field(default_factory=DataOpsSummary)
+    cognition_summary: CognitionOpsSummary = Field(default_factory=CognitionOpsSummary)
+    source_summary: SourceHealthSummary = Field(default_factory=SourceHealthSummary)
+    handled_automatically: list[str] = Field(default_factory=list)
+    needs_attention: list[FounderAlert] = Field(default_factory=list)
 
 
 class OpsRunbook(BaseModel):

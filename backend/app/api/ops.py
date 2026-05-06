@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.dependencies import get_ops_repository
 from app.graph.ops_repository import Neo4jOpsRepository
-from app.models.ops import DailyFounderReport, OpsRunbook, SourceHealth, WorkerHealth
+from app.models.ops import AuthPrincipal, AutonomyJob, AutonomyQueue, DailyFounderReport, OpsRunbook, SourceHealth, WorkerHealth
 from app.services.ops import OpsService
 
 router = APIRouter(prefix="/ops", tags=["solo-founder-operations"])
@@ -49,3 +49,27 @@ def recent_jobs(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to retrieve job monitor state.",
         ) from error
+
+
+@router.get("/autonomy-queue", response_model=AutonomyQueue)
+def autonomy_queue(repository: Neo4jOpsRepository = Depends(get_ops_repository)) -> AutonomyQueue:
+    return OpsService(repository).autonomy_queue()
+
+
+@router.post("/autonomy-queue/{job_id}/cancel", response_model=AutonomyJob)
+def cancel_autonomy_job(
+    job_id: str,
+    request: Request,
+    repository: Neo4jOpsRepository = Depends(get_ops_repository),
+) -> AutonomyJob:
+    principal = getattr(request.state, "principal", AuthPrincipal())
+    job = OpsService(repository).cancel_job(
+        job_id,
+        actor=principal,
+        trace_id=getattr(request.state, "trace_id", job_id),
+    )
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Autonomy job not found.")
+    if job.status != "cancelled":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Autonomy job is not cancellable.")
+    return job

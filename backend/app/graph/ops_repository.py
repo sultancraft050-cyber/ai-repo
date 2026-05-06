@@ -7,7 +7,7 @@ from typing import Any
 from neo4j import Driver
 
 from app.core.config import settings
-from app.models.ops import ApprovalItem, AuditEvent, JobMonitorItem
+from app.models.ops import ApprovalItem, AuditEvent, AutonomyJob, DailyFounderReport, JobMonitorItem
 
 
 def _json_default(value: Any) -> str:
@@ -48,10 +48,15 @@ class Neo4jOpsRepository:
         statements = [
             "CREATE CONSTRAINT audit_event_id IF NOT EXISTS FOR (n:AuditEvent) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT approval_item_id IF NOT EXISTS FOR (n:ApprovalItem) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT approval_request_id IF NOT EXISTS FOR (n:ApprovalRequest) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT autonomy_job_id IF NOT EXISTS FOR (n:AutonomyJob) REQUIRE n.job_id IS UNIQUE",
+            "CREATE CONSTRAINT founder_daily_report_id IF NOT EXISTS FOR (n:FounderDailyReport) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT operational_signal_id IF NOT EXISTS FOR (n:OperationalSignal) REQUIRE n.id IS UNIQUE",
             "CREATE INDEX audit_event_trace IF NOT EXISTS FOR (n:AuditEvent) ON (n.trace_id)",
             "CREATE INDEX audit_event_endpoint IF NOT EXISTS FOR (n:AuditEvent) ON (n.endpoint, n.timestamp)",
             "CREATE INDEX approval_status IF NOT EXISTS FOR (n:ApprovalItem) ON (n.status, n.risk_level)",
             "CREATE INDEX approval_action_type IF NOT EXISTS FOR (n:ApprovalItem) ON (n.action_type)",
+            "CREATE INDEX autonomy_job_status IF NOT EXISTS FOR (n:AutonomyJob) ON (n.status, n.risk_level)",
         ]
         for statement in statements:
             self.driver.execute_query(statement, database_=settings.neo4j_database)
@@ -99,7 +104,7 @@ class Neo4jOpsRepository:
         props = _clean_properties({**approval.model_dump(mode="json"), "payload_json": approval.model_dump_json()})
         self.driver.execute_query(
             """
-            MERGE (approval:ApprovalItem {id: $approval.id})
+            MERGE (approval:ApprovalItem:ApprovalRequest {id: $approval.id})
             SET approval += $approval
             WITH approval
             UNWIND $affected_entities AS entity_id
@@ -114,6 +119,19 @@ class Neo4jOpsRepository:
             database_=settings.neo4j_database,
         )
         return approval
+
+    def unresolved_approval_exists(self, approval_id: str) -> bool:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (approval:ApprovalItem {id: $approval_id})
+            WHERE approval.status IN ["pending", "deferred"]
+            RETURN approval.id AS id
+            LIMIT 1
+            """,
+            approval_id=approval_id,
+            database_=settings.neo4j_database,
+        )
+        return bool(records)
 
     def pending_approvals(self, limit: int = 50) -> list[ApprovalItem]:
         records, _, _ = self.driver.execute_query(
@@ -221,6 +239,133 @@ class Neo4jOpsRepository:
                 )
             )
         return items
+
+    def autonomy_jobs(self, limit: int = 75) -> list[AutonomyJob]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (job)
+            WHERE job:PricingJob OR job:LearningJob OR job:AgentTask OR job:AutonomyJob
+            RETURN coalesce(job.job_id, job.id) AS job_id,
+                   coalesce(job.kind, job.job_type, head(labels(job))) AS job_type,
+                   coalesce(job.title, job.kind, job.job_type, head(labels(job))) AS title,
+                   coalesce(job.description, job.reason, job.summary, "Autonomous operation") AS description,
+                   job.status AS status,
+                   coalesce(job.risk_level, "level_0") AS risk_level,
+                   coalesce(job.approval_required, job.requires_human_approval, false) AS approval_required,
+                   coalesce(job.agent_name, job.agent_kind, "System") AS agent_name,
+                   coalesce(job.product_id, job.target_entity_id, job.target) AS target_entity_id,
+                   coalesce(job.target_entity_type, CASE WHEN job.product_id IS NULL THEN null ELSE "Product" END) AS target_entity_type,
+                   coalesce(job.attempts, 0) AS attempts,
+                   coalesce(job.max_attempts, 3) AS max_attempts,
+                   coalesce(job.created_at, job.started_at) AS created_at,
+                   job.started_at AS started_at,
+                   coalesce(job.finished_at, job.completed_at, job.updated_at) AS finished_at,
+                   coalesce(job.trace_id, job.id) AS trace_id,
+                   coalesce(job.last_error, job.error) AS last_error,
+                   job.next_retry_at AS next_retry_at,
+                   coalesce(job.summary, job.reason, job.message, "No job summary recorded yet.") AS summary
+            ORDER BY coalesce(job.updated_at, job.finished_at, job.created_at, datetime({epochMillis: 0})) DESC
+            LIMIT $limit
+            """,
+            limit=limit,
+            database_=settings.neo4j_database,
+        )
+        jobs: list[AutonomyJob] = []
+        for record in records:
+            status = str(record["status"] or "queued")
+            normalized = {
+                "completed": "succeeded",
+                "stale": "failed",
+            }.get(status, status)
+            if normalized not in {
+                "queued",
+                "running",
+                "succeeded",
+                "failed",
+                "retrying",
+                "cancelled",
+                "requires_approval",
+                "blocked",
+                "deferred",
+            }:
+                normalized = "failed"
+            risk_level = str(record["risk_level"] or "level_0")
+            if risk_level == "level_3":
+                normalized = "blocked"
+            jobs.append(
+                AutonomyJob(
+                    job_id=str(record["job_id"]),
+                    job_type=str(record["job_type"]),
+                    title=str(record["title"]).replace("_", " ").title(),
+                    description=str(record["description"]),
+                    status=normalized,  # type: ignore[arg-type]
+                    risk_level=risk_level,  # type: ignore[arg-type]
+                    approval_required=bool(record["approval_required"]) or risk_level == "level_2",
+                    agent_name=record["agent_name"],
+                    target_entity_id=record["target_entity_id"],
+                    target_entity_type=record["target_entity_type"],
+                    attempts=int(record["attempts"] or 0),
+                    max_attempts=int(record["max_attempts"] or 3),
+                    created_at=_to_datetime(record["created_at"]),
+                    started_at=_to_datetime(record["started_at"]),
+                    finished_at=_to_datetime(record["finished_at"]),
+                    trace_id=str(record["trace_id"]),
+                    last_error=record["last_error"],
+                    next_retry_at=_to_datetime(record["next_retry_at"]),
+                    summary=str(record["summary"]),
+                    cancellable=normalized in {"queued", "retrying", "deferred"} and risk_level != "level_3",
+                )
+            )
+        return jobs
+
+    def upsert_autonomy_job(self, job: AutonomyJob) -> AutonomyJob:
+        props = _clean_properties({**job.model_dump(mode="json"), "payload_json": job.model_dump_json()})
+        self.driver.execute_query(
+            """
+            MERGE (job:AutonomyJob {job_id: $job.job_id})
+            SET job += $job
+            """,
+            job=props,
+            database_=settings.neo4j_database,
+        )
+        return job
+
+    def cancel_autonomy_job(self, job_id: str) -> AutonomyJob | None:
+        existing = [job for job in self.autonomy_jobs(200) if job.job_id == job_id]
+        if not existing:
+            return None
+        job = existing[0]
+        if not job.cancellable:
+            return job
+        updated = job.model_copy(update={"status": "cancelled", "finished_at": datetime.now(UTC), "summary": "Cancelled by founder."})
+        return self.upsert_autonomy_job(updated)
+
+    def upsert_daily_report(self, report: DailyFounderReport) -> DailyFounderReport:
+        props = _clean_properties({**report.model_dump(mode="json"), "payload_json": report.model_dump_json()})
+        signals = [
+            {
+                "id": alert.id,
+                "severity": alert.severity,
+                "reason": alert.reason,
+                "payload_json": alert.model_dump_json(),
+            }
+            for alert in report.alerts
+        ]
+        self.driver.execute_query(
+            """
+            MERGE (report:FounderDailyReport {id: $report.id})
+            SET report += $report
+            WITH report
+            UNWIND $signals AS signal
+            MERGE (ops_signal:OperationalSignal {id: signal.id})
+            SET ops_signal += signal
+            MERGE (report)-[:SUMMARIZES]->(ops_signal)
+            """,
+            report=props,
+            signals=signals,
+            database_=settings.neo4j_database,
+        )
+        return report
 
     def successful_refresh_count(self) -> int:
         records, _, _ = self.driver.execute_query(

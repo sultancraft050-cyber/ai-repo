@@ -1018,9 +1018,30 @@ export type AutonomousCognitionReport = {
 
 export type OpsRole = "anonymous" | "viewer" | "analyst" | "admin" | "super_admin";
 export type AutonomyLevel = "level_0" | "level_1" | "level_2" | "level_3";
+export type AutonomyRiskLevel = AutonomyLevel;
+export type OpsSeverity = "info" | "watch" | "warning" | "critical";
+export type AutonomyJobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "retrying"
+  | "cancelled"
+  | "requires_approval"
+  | "blocked"
+  | "deferred";
+export type ApprovalStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "expired"
+  | "executed"
+  | "deferred"
+  | "reviewed";
 
 export type AuditEvent = {
   id: string;
+  audit_id?: string;
   actor: string;
   role: OpsRole;
   action: string;
@@ -1041,14 +1062,23 @@ export type AuditEvent = {
 
 export type ApprovalItem = {
   id: string;
+  approval_id?: string;
   action_type: string;
+  title?: string | null;
+  description?: string | null;
   affected_entities: string[];
+  target_entities?: string[];
+  affected_count?: number;
   risk_level: AutonomyLevel;
   reasoning: string;
+  evidence_summary?: string | null;
   evidence: Record<string, unknown>;
+  risk_explanation?: string | null;
+  expected_impact?: string | null;
   rollback_plan: string;
+  requested_by_agent?: string | null;
   recommended_decision: "approve" | "reject" | "defer" | "review";
-  status: "pending" | "approved" | "rejected" | "expired" | "executed" | "deferred" | "reviewed";
+  status: ApprovalStatus;
   created_at: string;
   expires_at?: string | null;
   decided_at?: string | null;
@@ -1056,6 +1086,8 @@ export type ApprovalItem = {
   decision_note?: string | null;
   trace_id: string;
 };
+
+export type ApprovalRequest = ApprovalItem;
 
 export type SourceHealth = {
   source: string;
@@ -1083,7 +1115,7 @@ export type WorkerHealth = {
 export type JobMonitorItem = {
   job_id: string;
   job_type: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "retrying" | "cancelled" | "requires_approval";
+  status: AutonomyJobStatus;
   attempts: number;
   started_at?: string | null;
   finished_at?: string | null;
@@ -1091,6 +1123,39 @@ export type JobMonitorItem = {
   risk_level: AutonomyLevel;
   approval_required: boolean;
   error?: string | null;
+};
+
+export type AutonomyJob = {
+  job_id: string;
+  job_type: string;
+  title: string;
+  description: string;
+  status: AutonomyJobStatus;
+  risk_level: AutonomyLevel;
+  approval_required: boolean;
+  agent_name?: string | null;
+  target_entity_id?: string | null;
+  target_entity_type?: string | null;
+  attempts: number;
+  max_attempts: number;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  trace_id: string;
+  last_error?: string | null;
+  next_retry_at?: string | null;
+  summary: string;
+  cancellable: boolean;
+};
+
+export type AutonomyQueue = {
+  generated_at: string;
+  running_now: AutonomyJob[];
+  waiting_approval: AutonomyJob[];
+  failed_needs_attention: AutonomyJob[];
+  recently_completed: AutonomyJob[];
+  scheduled_next: AutonomyJob[];
+  all_jobs: AutonomyJob[];
 };
 
 export type GraphHealth = {
@@ -1105,11 +1170,64 @@ export type GraphHealth = {
 
 export type FounderAlert = {
   id: string;
-  severity: "info" | "warning" | "critical";
+  severity: OpsSeverity;
   reason: string;
   evidence: Record<string, unknown>;
   suggested_action: string;
   approval_id?: string | null;
+};
+
+export type RecommendedAction = {
+  id: string;
+  reason: string;
+  severity: OpsSeverity;
+  suggested_action: string;
+  approval_required: boolean;
+  approval_id?: string | null;
+};
+
+export type SystemHealthSummary = {
+  backend_status: "healthy" | "watch" | "degraded" | "critical";
+  neo4j_status: "healthy" | "watch" | "degraded" | "unavailable";
+  worker_status: "healthy" | "watch" | "degraded" | "stopped";
+  frontend_configured: boolean;
+  external_source_status: "healthy" | "watch" | "degraded" | "not_configured";
+  severity: OpsSeverity;
+};
+
+export type AutonomySummary = {
+  completed_jobs: number;
+  failed_jobs: number;
+  retries: number;
+  pending_approvals: number;
+  interventions_proposed: number;
+  high_risk_alerts: number;
+};
+
+export type DataOpsSummary = {
+  new_products_discovered: number;
+  price_snapshots_updated: number;
+  stale_prices_detected: number;
+  telemetry_snapshots_ingested: number;
+  telemetry_gaps_detected: number;
+  enrichment_jobs_completed: number;
+};
+
+export type CognitionOpsSummary = {
+  low_confidence_products: number;
+  governance_risks: number;
+  alignment_warnings: number;
+  evolution_drift_warnings: number;
+  anomaly_spikes: number;
+  contradiction_increases: number;
+};
+
+export type SourceHealthSummary = {
+  configured_sources: number;
+  missing_api_keys: string[];
+  degraded_sources: string[];
+  quota_warnings: string[];
+  last_successful_sync_by_source: Record<string, string | null>;
 };
 
 export type DailyFounderReport = {
@@ -1128,8 +1246,15 @@ export type DailyFounderReport = {
   cognition_risks: string[];
   approval_items_waiting: ApprovalItem[];
   alerts: FounderAlert[];
-  recommended_next_actions: string[];
+  recommended_next_actions: RecommendedAction[];
   recent_audit_events: AuditEvent[];
+  system_summary: SystemHealthSummary;
+  autonomy_summary: AutonomySummary;
+  data_summary: DataOpsSummary;
+  cognition_summary: CognitionOpsSummary;
+  source_summary: SourceHealthSummary;
+  handled_automatically: string[];
+  needs_attention: FounderAlert[];
 };
 
 export type HardwareIntelligence = {

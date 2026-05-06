@@ -14,12 +14,12 @@ import {
   type ComponentOption
 } from "@/types/builder";
 import { ComponentSelector } from "@/components/ComponentSelector";
-import { AdminOperationsPanel } from "@/components/AdminOperationsPanel";
 import { AutoBuildGenerator } from "@/components/AutoBuildGenerator";
 import { CompatibilityPanel } from "@/components/CompatibilityPanel";
 import { PerformancePanel } from "@/components/PerformancePanel";
 import { PreferencePanel } from "@/components/PreferencePanel";
 import { PricingIntelligencePanel } from "@/components/PricingIntelligencePanel";
+import { SoloFounderOpsPanel } from "@/components/SoloFounderOpsPanel";
 
 const kindIcon: Record<ComponentKind, string> = {
   CPU: "CPU",
@@ -131,7 +131,7 @@ export function BuilderShell() {
               onApply={(selection) => send({ type: "APPLY_GENERATED_BUILD", selection })}
             />
 
-            <AdminOperationsPanel />
+            <SoloFounderOpsPanel />
 
             <PricingIntelligencePanel region={state.context.preferences.region} />
 

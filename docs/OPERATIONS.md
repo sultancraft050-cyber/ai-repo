@@ -63,7 +63,32 @@ Restore is manual and destructive. Confirm the target environment before running
 - pending approvals
 - recent audit events
 
-The frontend “Founder Daily Brief” panel is the primary solo-founder admin surface.
+The frontend "Founder Daily Brief" panel is the top of the solo-founder command center. It keeps successful automatic work separate from items that need attention.
+
+## Autonomy Queue
+
+`GET /ops/autonomy-queue` groups jobs into:
+
+- running now
+- waiting approval
+- failed or needs attention
+- recently completed
+- scheduled next
+
+Jobs include risk level, retry count, trace ID, bounded retry metadata, and whether approval is required. `POST /ops/autonomy-queue/{job_id}/cancel` only works for cancellable bounded jobs and writes an audit event.
+
+## Approval Center
+
+`GET /approvals/pending` and `GET /approvals/{id}` expose pending high-risk actions with reasoning, evidence, affected entities, expected impact, and rollback plan.
+
+Decision endpoints:
+
+- `POST /approvals/{id}/approve`
+- `POST /approvals/{id}/reject`
+- `POST /approvals/{id}/defer`
+- `POST /approvals/{id}/mark-reviewed`
+
+All decisions are audited. Level 3 manual-only actions cannot be approved for autonomous execution.
 
 ## Deployment
 
