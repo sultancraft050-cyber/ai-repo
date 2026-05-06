@@ -1,0 +1,23 @@
+[project]
+name = "pc-compatibility-intelligence-backend"
+version = "0.1.0"
+description = "FastAPI and Neo4j backend for an engineering-grade custom PC compatibility simulator."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "neo4j>=5.20",
+  "numpy>=1.26",
+  "pydantic>=2.6",
+  "uvicorn>=0.29"
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
