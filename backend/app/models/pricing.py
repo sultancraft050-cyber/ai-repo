@@ -25,6 +25,48 @@ class SourceType(str, Enum):
 
 
 Availability = Literal["in_stock", "out_of_stock", "preorder", "backorder", "unknown"]
+ListingCondition = Literal["new", "used", "refurbished", "open_box", "unknown"]
+SellerType = Literal["retailer", "manufacturer", "marketplace", "third_party", "unknown"]
+PriceStatus = Literal["active", "stale", "unavailable"]
+DataOrigin = Literal["live", "seed", "demo", "unknown"]
+BuyRecommendationLevel = Literal[
+    "recommended",
+    "good_if_price_matters",
+    "acceptable_with_risk",
+    "not_recommended",
+    "insufficient_data",
+]
+TrustTier = Literal["high", "medium", "low", "unknown"]
+VatStatus = Literal["vat_included", "vat_excluded", "vat_unknown"]
+ShippingStatus = Literal["free_shipping", "paid_shipping", "unknown_shipping", "pickup_only"]
+WarrantyStatus = Literal["local_warranty", "seller_warranty", "manufacturer_warranty", "unknown_warranty"]
+VendorRegionType = Literal[
+    "local_saudi_vendor",
+    "gcc_vendor",
+    "international_vendor",
+    "marketplace_vendor",
+    "unknown_vendor",
+    "local",
+]
+LocalStockStatus = Literal["local_stock", "gcc_stock", "imported_stock", "unknown_stock"]
+ProductType = Literal[
+    "standalone_gpu",
+    "standalone_cpu",
+    "standalone_storage",
+    "standalone_ram",
+    "standalone_psu",
+    "standalone_case",
+    "standalone_cooler",
+    "standalone_motherboard",
+    "prebuilt_pc",
+    "laptop",
+    "bundle",
+    "motherboard",
+    "cooler",
+    "accessory",
+    "unknown_low_confidence",
+    "hardware_product",
+]
 PricingJobStatus = Literal[
     "queued",
     "running",
@@ -98,6 +140,9 @@ class SourceProductRecord(BaseModel):
     availability: Availability = "unknown"
     vendor_name: str
     vendor_region: str = "US"
+    region: str = "US"
+    city: str | None = None
+    country_code: str | None = None
     product_url: str | None = None
     image_url: str | None = None
     shipping_cost: float = Field(default=0, ge=0)
@@ -114,6 +159,39 @@ class PriceOffer(BaseModel):
     vendor: VendorIdentity
     price: float = Field(gt=0)
     currency: str
+    region: str = "US"
+    country_code: str | None = None
+    city: str | None = None
+    raw_price: float | None = None
+    item_price: float | None = None
+    item_price_sar: float | None = None
+    shipping_cost_sar: float | None = None
+    final_landed_price: float | None = None
+    final_landed_currency: str | None = None
+    final_landed_price_sar: float | None = None
+    vat_included: bool | None = None
+    vat_status: VatStatus = "vat_unknown"
+    shipping_status: ShippingStatus = "unknown_shipping"
+    warranty_status: WarrantyStatus = "unknown_warranty"
+    local_stock_status: LocalStockStatus = "unknown_stock"
+    vendor_region_type: VendorRegionType = "unknown_vendor"
+    estimated_vat: float | None = Field(default=None, ge=0)
+    import_fee: float | None = Field(default=None, ge=0)
+    estimated_delivery_days: int | None = Field(default=None, ge=0)
+    seller_country: str | None = None
+    is_local_stock: bool | None = None
+    is_imported: bool | None = None
+    serves_saudi: bool | None = None
+    warranty_type: str | None = None
+    local_warranty: bool | None = None
+    region_rank_score: float | None = Field(default=None, ge=0, le=1)
+    recommended_saudi_price_candidate: bool = False
+    final_landed_price_confidence: float | None = Field(default=None, ge=0, le=1)
+    price_completeness_score: float | None = Field(default=None, ge=0, le=1)
+    trust_tier: TrustTier = "unknown"
+    local_stock_confidence: float | None = Field(default=None, ge=0, le=1)
+    warranty_confidence: float | None = Field(default=None, ge=0, le=1)
+    delivery_confidence: float | None = Field(default=None, ge=0, le=1)
     availability: Availability
     timestamp: datetime
     shipping_cost: float = Field(default=0, ge=0)
@@ -122,6 +200,9 @@ class PriceOffer(BaseModel):
     source_product_id: str | None = None
     seller: str | None = None
     condition: str | None = None
+    listing_condition: ListingCondition = "unknown"
+    seller_type: SellerType = "unknown"
+    marketplace_risk_score: float = Field(default=0.5, ge=0, le=1)
     rating: float | None = Field(default=None, ge=0, le=5)
     source: SourceMetadata
     field_evidence: list[FieldEvidence] = Field(default_factory=list)
@@ -130,6 +211,16 @@ class PriceOffer(BaseModel):
     @field_validator("currency")
     @classmethod
     def iso_currency(cls, value: str) -> str:
+        value = value.strip().upper()
+        if len(value) != 3 or not value.isalpha():
+            raise ValueError("currency must be a three-letter ISO code")
+        return value
+
+    @field_validator("final_landed_currency")
+    @classmethod
+    def optional_iso_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip().upper()
         if len(value) != 3 or not value.isalpha():
             raise ValueError("currency must be a three-letter ISO code")
@@ -145,7 +236,17 @@ class DataQualityReport(BaseModel):
 
 class DiscoveryPreviewItem(BaseModel):
     raw_listing_name: str
+    category: str
+    product_type: ProductType
+    product_type_confidence: float = Field(ge=0, le=1)
     normalized_name: str
+    gpu_family_key: str | None = None
+    ram_family_key: str | None = None
+    psu_family_key: str | None = None
+    case_family_key: str | None = None
+    cooler_family_key: str | None = None
+    motherboard_family_key: str | None = None
+    canonical_product_key: str
     canonical_key: str
     canonical_product_id: str | None = None
     merge_decision: Literal["new_product", "merge_existing", "rejected"]
@@ -154,7 +255,37 @@ class DiscoveryPreviewItem(BaseModel):
     vendor_name: str
     price: float
     currency: str
+    region: str = "US"
+    city: str | None = None
+    final_landed_price: float | None = None
+    final_landed_currency: str | None = None
+    item_price_sar: float | None = None
+    shipping_cost_sar: float | None = None
+    final_landed_price_sar: float | None = None
+    is_local_stock: bool | None = None
+    is_imported: bool | None = None
+    serves_saudi: bool | None = None
+    vendor_region_type: VendorRegionType = "unknown_vendor"
+    vat_included: bool | None = None
+    vat_status: VatStatus = "vat_unknown"
+    shipping_status: ShippingStatus = "unknown_shipping"
+    warranty_status: WarrantyStatus = "unknown_warranty"
+    local_stock_status: LocalStockStatus = "unknown_stock"
+    estimated_vat: float | None = None
+    warranty_type: str | None = None
+    region_rank_score: float | None = None
+    recommended_candidate: bool = False
+    recommended_saudi_price_candidate: bool = False
+    final_landed_price_confidence: float | None = Field(default=None, ge=0, le=1)
+    price_completeness_score: float | None = Field(default=None, ge=0, le=1)
+    trust_tier: TrustTier = "unknown"
+    local_stock_confidence: float | None = None
+    warranty_confidence: float | None = None
+    delivery_confidence: float | None = None
     availability: Availability
+    listing_condition: ListingCondition = "unknown"
+    seller_type: SellerType = "unknown"
+    marketplace_risk_score: float = Field(default=0.5, ge=0, le=1)
     accepted: bool
     rejected_reasons: list[str] = Field(default_factory=list)
     flags: list[str] = Field(default_factory=list)
@@ -172,6 +303,45 @@ class PriceSnapshotView(BaseModel):
     vendor_name: str
     price: float
     currency: str
+    region: str = "US"
+    country_code: str | None = None
+    city: str | None = None
+    raw_price: float | None = None
+    item_price: float | None = None
+    item_price_sar: float | None = None
+    shipping_cost_sar: float | None = None
+    final_landed_price: float | None = None
+    final_landed_currency: str | None = None
+    final_landed_price_sar: float | None = None
+    vat_included: bool | None = None
+    vat_status: VatStatus = "vat_unknown"
+    shipping_status: ShippingStatus = "unknown_shipping"
+    warranty_status: WarrantyStatus = "unknown_warranty"
+    local_stock_status: LocalStockStatus = "unknown_stock"
+    vendor_region_type: VendorRegionType = "unknown_vendor"
+    estimated_vat: float | None = None
+    import_fee: float | None = None
+    estimated_delivery_days: int | None = None
+    seller_country: str | None = None
+    is_local_stock: bool | None = None
+    is_imported: bool | None = None
+    serves_saudi: bool | None = None
+    warranty_type: str | None = None
+    local_warranty: bool | None = None
+    region_rank_score: float | None = None
+    recommended_saudi_price_candidate: bool = False
+    final_landed_price_confidence: float | None = None
+    price_completeness_score: float | None = None
+    trust_tier: TrustTier = "unknown"
+    delivery_status: ShippingStatus = "unknown_shipping"
+    confidence_score: float | None = None
+    buy_recommendation_level: BuyRecommendationLevel = "insufficient_data"
+    buy_recommendation_reason: str | None = None
+    recommendation_reason: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    local_stock_confidence: float | None = None
+    warranty_confidence: float | None = None
+    delivery_confidence: float | None = None
     availability: Availability
     timestamp: datetime
     shipping_cost: float = 0
@@ -182,6 +352,10 @@ class PriceSnapshotView(BaseModel):
     trust_score: float
     freshness_score: float
     stale: bool = False
+    accepted: bool = True
+    listing_condition: ListingCondition = "unknown"
+    seller_type: SellerType = "unknown"
+    marketplace_risk_score: float = Field(default=0.5, ge=0, le=1)
     flags: list[str] = Field(default_factory=list)
 
 
@@ -193,9 +367,43 @@ class ProductSearchResult(BaseModel):
     category: str
     model: str | None = None
     image_url: str | None = None
+    data_origin: DataOrigin = "unknown"
+    price_status: PriceStatus = "unavailable"
+    flags: list[str] = Field(default_factory=list)
+    region: str = "US"
+    region_currency: str | None = None
+    region_price_status: PriceStatus | None = None
+    recommended_reason: str | None = None
+    recommended_level: BuyRecommendationLevel | None = None
+    price_confidence: float | None = None
+    lowest_price_warning: str | None = None
     current_best_price: float | None = None
     current_best_currency: str | None = None
     current_best_vendor: str | None = None
+    current_recommended_price: float | None = None
+    current_recommended_currency: str | None = None
+    current_recommended_vendor: str | None = None
+    current_recommended_condition: ListingCondition | None = None
+    current_recommended_seller_type: SellerType | None = None
+    current_recommended_marketplace_risk_score: float | None = None
+    lowest_market_price: float | None = None
+    lowest_market_currency: str | None = None
+    lowest_market_vendor: str | None = None
+    lowest_market_condition: ListingCondition | None = None
+    lowest_market_seller_type: SellerType | None = None
+    lowest_marketplace_risk_score: float | None = None
+    best_new_price: float | None = None
+    best_new_currency: str | None = None
+    best_new_vendor: str | None = None
+    best_trusted_price: float | None = None
+    best_trusted_currency: str | None = None
+    best_trusted_vendor: str | None = None
+    best_local_price: float | None = None
+    best_local_currency: str | None = None
+    best_local_vendor: str | None = None
+    best_used_price: float | None = None
+    best_used_currency: str | None = None
+    best_used_vendor: str | None = None
     current_price_freshness_score: float | None = None
     current_price_trust_score: float | None = None
     current_price_timestamp: datetime | None = None
@@ -225,9 +433,17 @@ class PricingRefreshRequest(BaseModel):
     product_ids: list[str] = Field(default_factory=list)
     query: str | None = None
     category: str | None = None
-    region: str = "US"
+    region: str = "SA"
+    city: str | None = None
     providers: list[str] = Field(default_factory=list)
     wait: bool = False
+
+    @field_validator("region")
+    @classmethod
+    def valid_region(cls, value: str) -> str:
+        from app.services.region_config import normalize_region
+
+        return normalize_region(value)
 
 
 class PricingRefreshResponse(BaseModel):
@@ -242,10 +458,18 @@ class PricingRefreshResponse(BaseModel):
 class PricingSyncRequest(BaseModel):
     queries: list[str] = Field(min_length=1, max_length=50)
     category: str
-    region: str = "US"
+    region: str = "SA"
+    city: str | None = None
     providers: list[str] = Field(default_factory=list)
     limit_per_query: int = Field(default=8, ge=1, le=25)
     wait: bool = False
+
+    @field_validator("region")
+    @classmethod
+    def valid_region(cls, value: str) -> str:
+        from app.services.region_config import normalize_region
+
+        return normalize_region(value)
 
 
 class PricingSyncResponse(BaseModel):
@@ -265,13 +489,21 @@ class ProductDiscoveryRequest(BaseModel):
     categories: list[str] = Field(default_factory=list)
     category: str | None = None
     query: str | None = None
-    region: str = "US"
+    region: str = "SA"
+    city: str | None = None
     providers: list[str] = Field(default_factory=list)
     limit_per_query: int = Field(default=8, ge=1, le=25)
     limit: int | None = Field(default=None, ge=1, le=25)
     max_queries: int = Field(default=24, ge=1, le=100)
     wait: bool = False
     dry_run: bool = False
+
+    @field_validator("region")
+    @classmethod
+    def valid_region(cls, value: str) -> str:
+        from app.services.region_config import normalize_region
+
+        return normalize_region(value)
 
     def resolved_categories(self) -> list[str]:
         if self.categories:
@@ -315,6 +547,49 @@ class CanonicalizationValidationResponse(BaseModel):
     category: str
     items: list[CanonicalizationValidationItem]
     groups: dict[str, list[str]]
+
+
+DuplicateConfidence = Literal["high", "medium", "low"]
+
+
+class CPUDuplicateCandidate(BaseModel):
+    canonical_cpu_key: str
+    region: str = "SA"
+    suspected_duplicate_product_ids: list[str]
+    product_names: list[str]
+    vendors: list[str] = Field(default_factory=list)
+    prices: list[dict[str, Any]] = Field(default_factory=list)
+    confidence: DuplicateConfidence
+    reason: str
+    recommended_action: str
+    approval_required: bool = False
+    approval_id: str | None = None
+
+
+class CPUDuplicateReport(BaseModel):
+    region: str = "SA"
+    candidates: list[CPUDuplicateCandidate] = Field(default_factory=list)
+    approval_items_created: int = 0
+    trace_id: str | None = None
+
+
+class CanonicalMergePreviewRequest(BaseModel):
+    product_ids: list[str] = Field(min_length=2, max_length=25)
+    region: str = "SA"
+
+
+class CanonicalMergePreviewResponse(BaseModel):
+    proposed_canonical_product: dict[str, Any]
+    relationships_to_preserve: dict[str, int]
+    price_snapshots_to_preserve: int
+    vendors_to_preserve: int
+    field_evidence_to_preserve: int
+    audit_events_to_preserve: int
+    risks: list[str] = Field(default_factory=list)
+    rollback_plan: str
+    would_execute: bool = False
+    approval_required: bool = True
+    approval_id: str | None = None
 
 
 class PricingJob(BaseModel):

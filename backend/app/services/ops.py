@@ -28,7 +28,10 @@ from app.models.ops import (
     SystemHealthSummary,
     WorkerHealth,
 )
+from app.models.source_url import SourceMatrixEntry
+from app.services.product_url_sources import ProductUrlPolicyRegistry
 from app.services.pricing_sources import SourceRegistry
+from app.services.region_config import get_region_config, normalize_region
 
 
 class OpsService:
@@ -66,13 +69,15 @@ class OpsService:
             )
         return result
 
-    def source_config(self) -> list[SourceConfigStatus]:
+    def source_config(self, *, region: str = "SA") -> list[SourceConfigStatus]:
+        region_config = get_region_config(region)
         registry = SourceRegistry()
         try:
             activity = self.repository.source_activity()
         except Exception:
             activity = {}
         statuses: list[SourceConfigStatus] = []
+        serpapi_status: SourceConfigStatus | None = None
         for source in registry.all_sources():
             configured = source.configured()
             source_activity = self._activity_for_source(source.name, activity)
@@ -92,18 +97,99 @@ class OpsService:
                     quota_status = "ok"
                 else:
                     health = "configured"
-            statuses.append(
-                SourceConfigStatus(
+            status_item = SourceConfigStatus(
                     source_name=source.name,
+                    region=region_config.region_code,
                     configured=configured,
                     health=health,  # type: ignore[arg-type]
                     last_success=last_success,
                     last_failure=last_failure,
                     last_error_sanitized=last_error,
                     quota_status=quota_status,  # type: ignore[arg-type]
+                    source_kind="api_source",
+                    discovery_enabled=configured,
+                    direct_access_enabled=configured,
+                    preferred_discovery_path=source.name,
+                    source_policy="Configured API source; credentials remain backend-only."
+                )
+            statuses.append(status_item)
+            if source.name == "SerpAPI":
+                serpapi_status = status_item
+        if region_config.region_code == "SA":
+            statuses = [*self._saudi_market_target_statuses(region_config, serpapi_status), *statuses]
+        return statuses
+
+    def _saudi_market_target_statuses(
+        self,
+        region_config,
+        serpapi_status: SourceConfigStatus | None,
+    ) -> list[SourceConfigStatus]:
+        serpapi_configured = bool(serpapi_status and serpapi_status.configured)
+        serpapi_health = serpapi_status.health if serpapi_status else "not_configured"
+        serpapi_last_success = serpapi_status.last_success if serpapi_status else None
+        serpapi_last_failure = serpapi_status.last_failure if serpapi_status else None
+        serpapi_error = serpapi_status.last_error_sanitized if serpapi_status else None
+        targets: list[SourceConfigStatus] = []
+        for source_name in region_config.local_source_targets:
+            if source_name == "SerpAPI Saudi":
+                targets.append(
+                    SourceConfigStatus(
+                        source_name=source_name,
+                        region=region_config.region_code,
+                        configured=serpapi_configured,
+                        health=serpapi_health,  # type: ignore[arg-type]
+                        last_success=serpapi_last_success,
+                        last_failure=serpapi_last_failure,
+                        last_error_sanitized=serpapi_error,
+                        quota_status="ok" if serpapi_health == "healthy" else "unknown" if serpapi_configured else "not_configured",
+                        source_kind="aggregator_localized",
+                        discovery_enabled=serpapi_configured,
+                        direct_access_enabled=serpapi_configured,
+                        preferred_discovery_path="SerpAPI Google Shopping with google.com.sa, gl=sa, location=Riyadh",
+                        source_policy="Primary Saudi discovery path. API key remains backend-only.",
+                    )
+                )
+                continue
+            is_infiniarc = source_name.lower() == "infiniarc"
+            manual_url_sources = {
+                "pczone saudi": "Manual product URL preview and approved known-URL refresh are enabled. Broad scraping remains disabled.",
+                "microless saudi": "Manual product URL preview and approved known-URL refresh are enabled. Broad scraping remains disabled.",
+                "mtc ksa": "Manual product URL preview and approved known-URL refresh are enabled. Broad scraping remains disabled.",
+                "noon saudi": "Manual product URL preview is enabled; automated refresh remains policy-gated. Broad scraping remains disabled.",
+                "amazon.sa": "Manual product URL preview is enabled; automated refresh remains policy-gated. Broad scraping remains disabled.",
+            }
+            manual_policy = manual_url_sources.get(source_name.lower())
+            targets.append(
+                SourceConfigStatus(
+                    source_name=source_name,
+                    region=region_config.region_code,
+                    configured=bool(manual_policy),
+                    health="configured" if manual_policy or serpapi_configured else "not_configured",
+                    last_success=serpapi_last_success,
+                    last_failure=serpapi_last_failure,
+                    last_error_sanitized=serpapi_error,
+                    quota_status="unknown" if serpapi_configured else "not_configured",
+                    source_kind="local_retailer_target",
+                    discovery_enabled=serpapi_configured,
+                    direct_access_enabled=bool(manual_policy),
+                    preferred_discovery_path=(
+                        "Founder-pasted product URL preview/ingest plus SerpAPI Saudi discovery; no broad crawling."
+                        if manual_policy
+                        else "SerpAPI Saudi listings until official API/feed access is confirmed."
+                    ),
+                    source_policy=(
+                        manual_policy
+                        if manual_policy
+                        else
+                        "Treat InfiniArc as a Saudi/GCC local tech retailer target. Prefer official API, affiliate feed, merchant feed, "
+                        "or permitted product metadata. Direct scraping remains policy-gated and disabled by default; do not scrape "
+                        "private/internal APIs or bypass robots.txt/access restrictions."
+                        if is_infiniarc
+                        else "Local/GCC retailer target. Prefer official API/feed access; direct scraping is disabled by default."
+                    ),
                 )
             )
-        return statuses
+        return targets
 
     def _activity_for_source(self, source_name: str, activity: dict[str, dict[str, Any]]) -> dict[str, Any]:
         normalized = source_name.lower()
@@ -115,6 +201,13 @@ class OpsService:
                 if "serpapi" in key.lower() or "google shopping" in key.lower():
                     return value
         return {}
+
+    def source_matrix(self, *, region: str = "SA") -> list[SourceMatrixEntry]:
+        try:
+            activity = self.repository.source_activity()
+        except Exception:
+            activity = {}
+        return ProductUrlPolicyRegistry().source_matrix(region=region, activity=activity)
 
     def worker_health(self, app_state: Any) -> list[WorkerHealth]:
         workers = [
@@ -165,7 +258,8 @@ class OpsService:
             **counts,
         )
 
-    def daily_report(self, *, neo4j_connected: bool, app_state: Any) -> DailyFounderReport:
+    def daily_report(self, *, neo4j_connected: bool, app_state: Any, region: str = "SA") -> DailyFounderReport:
+        region_config = get_region_config(region)
         graph = self._safe_graph_health(neo4j_connected)
         workers = self._safe_worker_health(app_state)
         sources = self._safe_source_health()
@@ -184,12 +278,16 @@ class OpsService:
         successful_refreshes = self._safe_successful_refresh_count() if neo4j_connected else 0
         new_products = self._safe_new_products_24h() if neo4j_connected else 0
         recent_audit = self._safe_recent_audit_events(12) if neo4j_connected else []
+        saudi_market_quality = self._safe_saudi_market_quality() if neo4j_connected and region_config.region_code == "SA" else {}
+        saudi_build_readiness = self._safe_saudi_build_readiness() if neo4j_connected and region_config.region_code == "SA" else {}
         data_summary = DataOpsSummary(
             new_products_discovered=new_products,
             price_snapshots_updated=successful_refreshes,
             stale_prices_detected=graph.stale_product_count,
             telemetry_gaps_detected=1 if not any(source.configured for source in sources) else 0,
             enrichment_jobs_completed=len([job for job in jobs if "enrichment" in job.job_type and job.status == "succeeded"]),
+            **saudi_market_quality,
+            **saudi_build_readiness,
         )
         cognition_summary = CognitionOpsSummary(
             governance_risks=len([alert for alert in alerts if "governance" in alert.reason.lower()]),
@@ -208,6 +306,8 @@ class OpsService:
         system_summary = self.system_summary(system_health, graph, workers, sources)
         handled = self.handled_automatically(jobs, successful_refreshes, new_products)
         report = DailyFounderReport(
+            region=region_config.region_code,
+            region_currency=region_config.currency,
             system_health=system_health,  # type: ignore[arg-type]
             neo4j_health=graph,
             workers=workers,
@@ -216,7 +316,7 @@ class OpsService:
             new_products_discovered=new_products,
             stale_sources=stale_sources,
             source_health=sources,
-            pricing_anomalies=[],
+            pricing_anomalies=self._saudi_pricing_anomalies(saudi_market_quality),
             telemetry_gaps=["Telemetry coverage is reduced when no external benchmark source is configured"]
             if not any(source.configured for source in sources)
             else [],
@@ -227,7 +327,7 @@ class OpsService:
             else [],
             approval_items_waiting=approvals[:12],
             alerts=alerts,
-            recommended_next_actions=self.recommended_actions(alerts, approvals, failed_jobs),
+            recommended_next_actions=self.recommended_actions(alerts, approvals, failed_jobs, saudi_market_quality),
             recent_audit_events=recent_audit,
             system_summary=system_summary,
             autonomy_summary=autonomy_summary,
@@ -315,6 +415,18 @@ class OpsService:
         except Exception:
             return 0
 
+    def _safe_saudi_market_quality(self) -> dict[str, Any]:
+        try:
+            return self.repository.saudi_market_quality_summary()
+        except Exception:
+            return {}
+
+    def _safe_saudi_build_readiness(self) -> dict[str, Any]:
+        try:
+            return self.repository.saudi_build_readiness_summary()
+        except Exception:
+            return {}
+
     def system_summary(
         self,
         system_health: str,
@@ -372,7 +484,7 @@ class OpsService:
 
     def autonomy_queue(self) -> AutonomyQueue:
         try:
-            jobs = self.repository.autonomy_jobs(75)
+            jobs = self.repository.autonomy_jobs(150)
         except Exception:
             jobs = []
         scheduled = self.scheduled_jobs()
@@ -498,8 +610,10 @@ class OpsService:
         alerts: list[FounderAlert],
         approvals: list[ApprovalItem],
         failed_jobs: list[JobMonitorItem],
+        saudi_market_quality: dict[str, Any] | None = None,
     ) -> list[RecommendedAction]:
         actions: list[RecommendedAction] = []
+        quality = saudi_market_quality or {}
         if approvals:
             actions.append(
                 RecommendedAction(
@@ -526,6 +640,23 @@ class OpsService:
                     suggested_action="Restore Neo4j connectivity before running ingestion or governance refreshes.",
                 )
             )
+        if quality.get("saudi_unknown_shipping_vendors"):
+            vendor = quality["saudi_unknown_shipping_vendors"][0]
+            actions.append(
+                RecommendedAction(
+                    reason="Saudi shipping evidence gap",
+                    severity="watch",
+                    suggested_action=f"Review {vendor} listings because shipping is unknown in recent Saudi market snapshots.",
+                )
+            )
+        if quality.get("saudi_risky_only_products", 0) > 0:
+            actions.append(
+                RecommendedAction(
+                    reason="Saudi products have only risky options",
+                    severity="warning",
+                    suggested_action="Do not expand this category until local trusted listings or clearer VAT/shipping/warranty evidence improve.",
+                )
+            )
         actions.append(
             RecommendedAction(
                 reason="Safe automation can continue",
@@ -534,6 +665,22 @@ class OpsService:
             )
         )
         return actions[:6]
+
+    def _saudi_pricing_anomalies(self, saudi_market_quality: dict[str, Any]) -> list[str]:
+        anomalies: list[str] = []
+        suspicious = int(saudi_market_quality.get("saudi_suspicious_price_count") or 0)
+        risky_only = int(saudi_market_quality.get("saudi_risky_only_products") or 0)
+        unknown_vat = saudi_market_quality.get("saudi_unknown_vat_vendors") or []
+        unknown_shipping = saudi_market_quality.get("saudi_unknown_shipping_vendors") or []
+        if suspicious:
+            anomalies.append(f"{suspicious} Saudi price snapshot(s) are outside normal market ranges.")
+        if risky_only:
+            anomalies.append(f"{risky_only} Saudi product(s) currently have only risky or incomplete buy options.")
+        if unknown_vat:
+            anomalies.append(f"VAT unclear for vendors: {', '.join(unknown_vat[:4])}.")
+        if unknown_shipping:
+            anomalies.append(f"Shipping unclear for vendors: {', '.join(unknown_shipping[:4])}.")
+        return anomalies[:6]
 
     def create_approval_from_autonomy(self, report: AutonomousCognitionReport) -> list[ApprovalItem]:
         approvals: list[ApprovalItem] = []

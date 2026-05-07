@@ -29,12 +29,17 @@ class EndpointRule:
 
 ENDPOINT_RULES: tuple[EndpointRule, ...] = (
     EndpointRule("GET", "/ops", "analyst", "level_0"),
+    EndpointRule("POST", "/products/canonical-merge-preview", "analyst", "level_0"),
     EndpointRule("POST", "/ops/autonomy-queue", "admin", "level_1"),
     EndpointRule("GET", "/approvals", "analyst", "level_0"),
     EndpointRule("GET", "/health/workers", "analyst", "level_0"),
     EndpointRule("GET", "/health/external-sources", "analyst", "level_0"),
+    EndpointRule("GET", "/sources/product-url/known", "analyst", "level_0"),
     EndpointRule("POST", "/pricing/refresh", "analyst", "level_0"),
     EndpointRule("POST", "/pricing/canonicalize", "analyst", "level_0"),
+    EndpointRule("POST", "/sources/product-url/preview", "analyst", "level_0"),
+    EndpointRule("POST", "/sources/product-url/ingest", "admin", "level_1"),
+    EndpointRule("POST", "/sources/product-url/refresh", "admin", "level_1"),
     EndpointRule("POST", "/pricing/sync", "admin", "level_1"),
     EndpointRule("POST", "/pricing/discover", "admin", "level_1"),
     EndpointRule("POST", "/telemetry/ingest", "analyst", "level_1"),

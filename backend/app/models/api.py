@@ -104,6 +104,171 @@ class BuildGenerateResponse(BaseModel):
     fallback_explanation: str | None = None
 
 
+SaudiUseCase = Literal[
+    "gaming",
+    "simulation",
+    "workstation",
+    "content_creation",
+    "ai_ml",
+    "streaming",
+    "general",
+]
+SaudiResolution = Literal["1080p", "1440p", "4k", "ultrawide"]
+SaudiBuildPriority = Literal[
+    "best_value",
+    "maximum_performance",
+    "quiet_build",
+    "upgrade_path",
+    "local_availability",
+    "lowest_risk",
+]
+SaudiCaseSize = Literal["ATX", "mATX", "ITX", "no_preference"]
+SaudiBuildLabel = Literal[
+    "recommended_saudi_build",
+    "budget_fit_build",
+    "best_value_build",
+    "lowest_risk_local_build",
+]
+ReadinessLevel = Literal["ready", "usable_with_warnings", "not_ready"]
+BudgetStatus = Literal["under_budget", "slightly_over_budget", "over_budget", "no_valid_build_under_budget"]
+
+
+class SaudiBuildRequest(BaseModel):
+    region: Literal["SA"] = "SA"
+    city: str = "Riyadh"
+    budget_sar: float = Field(gt=0)
+    use_case: SaudiUseCase = "gaming"
+    target_resolution: SaudiResolution = "1440p"
+    refresh_rate_target: Literal[60, 120, 144, 165, 240] = 144
+    brand_preferences: list[Literal["AMD", "Intel", "NVIDIA", "no_preference"]] = Field(
+        default_factory=lambda: ["no_preference"]
+    )
+    case_size: SaudiCaseSize = "no_preference"
+    priority: SaudiBuildPriority = "best_value"
+    strict_budget: bool = False
+    include_monitor: bool = False
+    include_peripherals: bool = False
+
+
+class RecommendedDiscoveryJob(BaseModel):
+    category: str
+    query: str
+    region: Literal["SA"] = "SA"
+    city: str = "Riyadh"
+    limit: int = Field(default=5, ge=1, le=25)
+    dry_run: bool = True
+    reason: str
+
+
+class CategoryCoverage(BaseModel):
+    category: str
+    priced_product_count: int = 0
+    trusted_local_listing_count: int = 0
+    risky_listing_count: int = 0
+    usable_with_warnings_count: int = 0
+    unknown_vat_count: int = 0
+    unknown_shipping_count: int = 0
+    unknown_warranty_count: int = 0
+    suspicious_price_count: int = 0
+    recommended_option_count: int = 0
+    stale_listing_count: int = 0
+    ready: bool = False
+    readiness_level: ReadinessLevel = "not_ready"
+    notes: list[str] = Field(default_factory=list)
+
+
+class SaudiBuildDataCompleteness(BaseModel):
+    region: Literal["SA"] = "SA"
+    city: str = "Riyadh"
+    readiness_score: float = Field(ge=0, le=1)
+    required_categories: list[str]
+    ready_categories: list[str]
+    missing_categories: list[str]
+    category_coverage: list[CategoryCoverage]
+    recommended_discovery_jobs: list[RecommendedDiscoveryJob] = Field(default_factory=list)
+    enough_data_for_full_build: bool = False
+    message: str
+
+
+class SaudiBuildComponent(BaseModel):
+    product_id: str
+    name: str
+    category: str
+    brand: str | None = None
+    recommended_vendor: str | None = None
+    recommended_price_sar: float | None = None
+    lowest_market_price_sar: float | None = None
+    price_confidence: float | None = None
+    seller_type: str | None = None
+    vendor_region_type: str | None = None
+    stock_badge: Literal["local", "gcc", "imported", "unknown"] = "unknown"
+    vat_status: str = "vat_unknown"
+    shipping_status: str = "unknown_shipping"
+    warranty_status: str = "unknown_warranty"
+    reason_selected: str
+    alternatives: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SaudiBuildSummary(BaseModel):
+    total_recommended_price_sar: float | None = None
+    total_lowest_possible_price_sar: float | None = None
+    budget_remaining_or_overage: float | None = None
+    budget_sar: float | None = None
+    budget_delta_sar: float | None = None
+    over_budget_amount_sar: float = 0
+    over_budget_percent: float = 0
+    budget_status: BudgetStatus = "under_budget"
+    most_expensive_components: list[str] = Field(default_factory=list)
+    easiest_savings_opportunities: list[str] = Field(default_factory=list)
+    compatibility_status: Literal["valid", "invalid", "incomplete", "not_validated"]
+    performance_estimate: str
+    bottleneck_summary: str
+    risk_summary: list[str] = Field(default_factory=list)
+    data_completeness_score: float = Field(ge=0, le=1)
+    warning_summary: list[str] = Field(default_factory=list)
+    components_with_uncertainty: list[str] = Field(default_factory=list)
+    confidence_level: Literal["high", "medium", "low"] = "low"
+    confidence_score: float = Field(ge=0, le=1)
+    missing_data_warnings: list[str] = Field(default_factory=list)
+
+
+class SaudiBuildOption(BaseModel):
+    label: SaudiBuildLabel
+    title: str
+    components: list[SaudiBuildComponent]
+    summary: SaudiBuildSummary
+    why_this_build: str
+    upgrade_notes: list[str] = Field(default_factory=list)
+
+
+class SaudiBuildResponse(BaseModel):
+    region: Literal["SA"] = "SA"
+    city: str = "Riyadh"
+    build_status: Literal["ready", "incomplete_data", "no_valid_build", "incomplete_budget_fit"]
+    builds: list[SaudiBuildOption] = Field(default_factory=list)
+    data_completeness: SaudiBuildDataCompleteness
+    recommended_discovery_jobs: list[RecommendedDiscoveryJob] = Field(default_factory=list)
+    missing_data_warnings: list[str] = Field(default_factory=list)
+    audit_trace_id: str | None = None
+
+
+class SaudiBuildValidationRequest(BaseModel):
+    region: Literal["SA"] = "SA"
+    city: str = "Riyadh"
+    component_ids: dict[str, str] = Field(default_factory=dict)
+    budget_sar: float | None = Field(default=None, gt=0)
+
+
+class SaudiBuildValidationResponse(BaseModel):
+    valid: bool
+    compatibility_status: Literal["valid", "invalid", "incomplete", "not_validated"]
+    market_confidence: float = Field(ge=0, le=1)
+    total_recommended_price_sar: float | None = None
+    warnings: list[str] = Field(default_factory=list)
+    missing_categories: list[str] = Field(default_factory=list)
+
+
 class ErrorResponse(BaseModel):
     error: str
     detail: str | None = None

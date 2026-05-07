@@ -8,11 +8,19 @@ import type {
   CompatibilityResponse,
   ComponentKind,
   ComponentOption,
+  CanonicalMergePreviewRequest,
+  CanonicalMergePreviewResponse,
+  CpuDuplicateReport,
   DailyFounderReport,
   EvolutionOrchestrationReport,
   PerformanceResponse,
   PriceHistoryPoint,
   PriceSnapshotView,
+  KnownProductUrlView,
+  ProductUrlIngestResponse,
+  ProductUrlPreviewRequest,
+  ProductUrlPreviewResponse,
+  ProductUrlRefreshResponse,
   PricingRefreshResponse,
   ProductCategoryResponse,
   ProductDiscoveryResponse,
@@ -21,7 +29,13 @@ import type {
   HardwareIntelligence,
   ProductSearchResult,
   ReasoningGovernanceReport,
+  SaudiBuildDataCompleteness,
+  SaudiBuildRequest,
+  SaudiBuildResponse,
+  SaudiBuildValidationRequest,
+  SaudiBuildValidationResponse,
   SourceConfigStatus,
+  SourceMatrixEntry,
   SelectedComponents,
   TelemetryReasoningReport,
   TelemetrySummary,
@@ -145,14 +159,16 @@ export async function fetchAutonomyReport(productId: string): Promise<Autonomous
   return requestJson<AutonomousCognitionReport>(`/autonomy/products/${productId}?refresh=true&persist=true`);
 }
 
-export async function fetchDailyFounderReport(apiKey: string): Promise<DailyFounderReport> {
-  return requestJson<DailyFounderReport>("/ops/daily-report", {
+export async function fetchDailyFounderReport(apiKey: string, region?: string): Promise<DailyFounderReport> {
+  const params = new URLSearchParams();
+  if (region) params.set("region", region);
+  return requestJson<DailyFounderReport>(`/ops/daily-report?${params.toString()}`, {
     headers: authHeaders(apiKey)
   });
 }
 
-export async function getFounderDailyReport(apiKey: string): Promise<DailyFounderReport> {
-  return fetchDailyFounderReport(apiKey);
+export async function getFounderDailyReport(apiKey: string, region?: string): Promise<DailyFounderReport> {
+  return fetchDailyFounderReport(apiKey, region);
 }
 
 export async function getAutonomyQueue(apiKey: string): Promise<AutonomyQueue> {
@@ -161,9 +177,97 @@ export async function getAutonomyQueue(apiKey: string): Promise<AutonomyQueue> {
   });
 }
 
-export async function getSourceConfig(apiKey: string): Promise<SourceConfigStatus[]> {
-  return requestJson<SourceConfigStatus[]>("/ops/source-config", {
+export async function getSourceConfig(apiKey: string, region?: string): Promise<SourceConfigStatus[]> {
+  const params = new URLSearchParams();
+  if (region) params.set("region", region);
+  return requestJson<SourceConfigStatus[]>(`/ops/source-config?${params.toString()}`, {
     headers: authHeaders(apiKey)
+  });
+}
+
+export async function getSourceMatrix(apiKey: string, region = "SA"): Promise<SourceMatrixEntry[]> {
+  const params = new URLSearchParams({ region });
+  return requestJson<SourceMatrixEntry[]>(`/ops/source-matrix?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function previewProductUrl(
+  apiKey: string,
+  request: ProductUrlPreviewRequest
+): Promise<ProductUrlPreviewResponse> {
+  return requestJson<ProductUrlPreviewResponse>("/sources/product-url/preview", {
+    method: "POST",
+    headers: authHeaders(apiKey),
+    body: JSON.stringify({ ...request, dry_run: true })
+  });
+}
+
+export async function ingestProductUrl(
+  apiKey: string,
+  request: ProductUrlPreviewRequest
+): Promise<ProductUrlIngestResponse> {
+  return requestJson<ProductUrlIngestResponse>("/sources/product-url/ingest", {
+    method: "POST",
+    headers: {
+      ...authHeaders(apiKey),
+      "X-Idempotency-Key": `product-url-ingest-${request.url}-${request.region}-${request.category}`
+    },
+    body: JSON.stringify({ ...request, approved: true })
+  });
+}
+
+export async function refreshKnownProductUrls(
+  apiKey: string,
+  request: {
+    region: string;
+    category?: string;
+    vendor?: string;
+    limit?: number;
+  }
+): Promise<ProductUrlRefreshResponse> {
+  return requestJson<ProductUrlRefreshResponse>("/sources/product-url/refresh", {
+    method: "POST",
+    headers: authHeaders(apiKey),
+    body: JSON.stringify(request)
+  });
+}
+
+export async function getKnownProductUrls(
+  apiKey: string,
+  request: {
+    region: string;
+    category?: string;
+    vendor?: string;
+    limit?: number;
+  }
+): Promise<KnownProductUrlView[]> {
+  const params = new URLSearchParams({
+    region: request.region,
+    limit: String(request.limit ?? 20)
+  });
+  if (request.category) params.set("category", request.category);
+  if (request.vendor) params.set("vendor", request.vendor);
+  return requestJson<KnownProductUrlView[]>(`/sources/product-url/known?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getCpuDuplicateCandidates(apiKey: string, region = "SA"): Promise<CpuDuplicateReport> {
+  const params = new URLSearchParams({ region });
+  return requestJson<CpuDuplicateReport>(`/ops/graph-integrity/cpu-duplicates?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function previewCanonicalMerge(
+  apiKey: string,
+  request: CanonicalMergePreviewRequest
+): Promise<CanonicalMergePreviewResponse> {
+  return requestJson<CanonicalMergePreviewResponse>("/products/canonical-merge-preview", {
+    method: "POST",
+    headers: authHeaders(apiKey),
+    body: JSON.stringify(request)
   });
 }
 
@@ -271,12 +375,14 @@ export async function discoverProducts({
   categories,
   query,
   region,
+  city,
   dryRun,
   limit
 }: {
   categories: string[];
   query?: string;
   region: string;
+  city?: string;
   dryRun?: boolean;
   limit?: number;
 }): Promise<ProductDiscoveryResponse> {
@@ -286,6 +392,7 @@ export async function discoverProducts({
       categories,
       query: query || undefined,
       region,
+      city,
       limit_per_query: limit ?? 8,
       limit,
       max_queries: 12,
@@ -335,5 +442,29 @@ export async function generateBuild(preferences: BuildPreferences): Promise<Buil
       preferences,
       max_candidates_per_type: 120
     })
+  });
+}
+
+export async function getSaudiBuildDataCompleteness(
+  region = "SA",
+  city = "Riyadh"
+): Promise<SaudiBuildDataCompleteness> {
+  const params = new URLSearchParams({ region, city });
+  return requestJson<SaudiBuildDataCompleteness>(`/build/data-completeness?${params.toString()}`);
+}
+
+export async function generateSaudiLocalBuild(request: SaudiBuildRequest): Promise<SaudiBuildResponse> {
+  return requestJson<SaudiBuildResponse>("/build/generate-local", {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+export async function validateSaudiLocalBuild(
+  request: SaudiBuildValidationRequest
+): Promise<SaudiBuildValidationResponse> {
+  return requestJson<SaudiBuildValidationResponse>("/build/validate", {
+    method: "POST",
+    body: JSON.stringify(request)
   });
 }

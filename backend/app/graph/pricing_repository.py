@@ -22,6 +22,15 @@ from app.models.pricing import (
 )
 from app.models.intelligence import HardwareIntelligence
 from app.services.hardware_taxonomy import GLOBAL_HARDWARE_CATEGORIES
+from app.services.pricing_classification import infer_listing_market
+from app.services.region_config import get_region_config, normalize_region, vendor_region_type, vendor_trust_profile
+
+
+ACTIVE_PRICE_AVAILABILITY = {"in_stock", "preorder", "backorder"}
+
+
+def _legacy_us_region_condition(alias: str = "snapshot") -> str:
+    return f"({alias}.region = $region OR ($region = \"US\" AND {alias}.region IS NULL))"
 
 
 def _clean_properties(values: dict[str, Any]) -> dict[str, Any]:
@@ -46,6 +55,7 @@ def _product_properties(identity: ProductIdentity) -> dict[str, Any]:
         "model": identity.model,
         "normalized_model": identity.normalized_model,
         "canonical_key": identity.canonical_key,
+        "data_origin": "live",
         "msrp": identity.msrp,
         "imageUrl": identity.image_url,
         "updated_at": datetime.now(UTC),
@@ -70,14 +80,67 @@ def _evidence_payload(evidence: FieldEvidence) -> dict[str, Any]:
 
 
 def _snapshot_view(data: dict[str, Any]) -> PriceSnapshotView:
-    return PriceSnapshotView(
+    inferred = infer_listing_market(
+        vendor_name=data.get("vendor_name"),
+        source=data.get("source"),
+        seller=data.get("seller"),
+        condition=data.get("listing_condition") or data.get("condition"),
+    )
+    listing_condition = data.get("listing_condition") or inferred.listing_condition
+    seller_type = data.get("seller_type") or inferred.seller_type
+    marketplace_risk_score = data.get("marketplace_risk_score")
+    flags = list(dict.fromkeys([*(data.get("flags") or []), *inferred.flags]))
+    region = data.get("region") or "US"
+    currency = data["currency"]
+    is_local_stock = data.get("is_local_stock")
+    if is_local_stock is None:
+        is_local_stock = region == "US" and currency == "USD"
+    is_imported = data.get("is_imported")
+    if is_imported is None:
+        is_imported = not bool(is_local_stock)
+    serves_saudi_value = data.get("serves_saudi")
+    view = PriceSnapshotView(
         id=data["id"],
         vendor_id=data["vendor_id"],
         vendor_name=data["vendor_name"],
         price=float(data["price"]),
-        currency=data["currency"],
+        currency=currency,
+        region=region,
+        country_code=data.get("country_code") or region,
+        city=data.get("city"),
+        raw_price=_optional_float(data.get("raw_price")),
+        item_price=_optional_float(data.get("item_price")),
+        item_price_sar=_optional_float(data.get("item_price_sar")),
+        shipping_cost_sar=_optional_float(data.get("shipping_cost_sar")),
+        final_landed_price=_optional_float(data.get("final_landed_price")),
+        final_landed_currency=data.get("final_landed_currency"),
+        final_landed_price_sar=_optional_float(data.get("final_landed_price_sar")),
+        vat_included=data.get("vat_included"),
+        vat_status=data.get("vat_status") or "vat_unknown",
+        shipping_status=data.get("shipping_status") or "unknown_shipping",
+        warranty_status=data.get("warranty_status") or "unknown_warranty",
+        local_stock_status=data.get("local_stock_status") or "unknown_stock",
+        vendor_region_type=data.get("vendor_region_type") or "unknown_vendor",
+        estimated_vat=_optional_float(data.get("estimated_vat")),
+        import_fee=_optional_float(data.get("import_fee")),
+        estimated_delivery_days=data.get("estimated_delivery_days"),
+        seller_country=data.get("seller_country"),
+        is_local_stock=bool(is_local_stock),
+        is_imported=bool(is_imported),
+        serves_saudi=bool(serves_saudi_value) if serves_saudi_value is not None else None,
+        warranty_type=data.get("warranty_type"),
+        local_warranty=data.get("local_warranty"),
+        region_rank_score=_optional_float(data.get("region_rank_score")),
+        recommended_saudi_price_candidate=bool(data.get("recommended_saudi_price_candidate", False)),
+        final_landed_price_confidence=_optional_float(data.get("final_landed_price_confidence")),
+        price_completeness_score=_optional_float(data.get("price_completeness_score")),
+        trust_tier=data.get("trust_tier") or vendor_trust_profile(data.get("vendor_name"), region).trust_tier,
+        delivery_status=data.get("delivery_status") or data.get("shipping_status") or "unknown_shipping",
+        local_stock_confidence=_optional_float(data.get("local_stock_confidence")),
+        warranty_confidence=_optional_float(data.get("warranty_confidence")),
+        delivery_confidence=_optional_float(data.get("delivery_confidence")),
         availability=data["availability"],
-        timestamp=data["timestamp"],
+        timestamp=_to_datetime(data["timestamp"]),
         shipping_cost=float(data.get("shipping_cost") or 0),
         product_url=data.get("product_url"),
         source=data["source"],
@@ -86,12 +149,19 @@ def _snapshot_view(data: dict[str, Any]) -> PriceSnapshotView:
         trust_score=float(data["trust_score"]),
         freshness_score=float(data["freshness_score"]),
         stale=bool(data.get("stale", False)),
-        flags=list(data.get("flags") or []),
+        accepted=bool(data.get("accepted", True)),
+        listing_condition=listing_condition,
+        seller_type=seller_type,
+        marketplace_risk_score=float(
+            marketplace_risk_score if marketplace_risk_score is not None else inferred.marketplace_risk_score
+        ),
+        flags=flags,
     )
+    return _with_listing_decision(view)
 
 
 def _search_result(data: dict[str, Any]) -> ProductSearchResult:
-    current = data.get("current_best_price")
+    current = data.get("current_recommended_price")
     previous = data.get("previous_price")
     drop = None
     if current and previous and previous > 0 and current < previous:
@@ -104,12 +174,46 @@ def _search_result(data: dict[str, Any]) -> ProductSearchResult:
         category=data["category"],
         model=data.get("model"),
         image_url=data.get("image_url"),
+        data_origin=data.get("data_origin") or "unknown",
+        price_status=data.get("price_status") or "unavailable",
+        flags=list(data.get("flags") or []),
+        region=data.get("region") or "US",
+        region_currency=data.get("region_currency"),
+        region_price_status=data.get("region_price_status") or data.get("price_status"),
+        recommended_reason=data.get("recommended_reason"),
+        recommended_level=data.get("recommended_level"),
+        price_confidence=data.get("price_confidence"),
+        lowest_price_warning=data.get("lowest_price_warning"),
         current_best_price=float(current) if current is not None else None,
-        current_best_currency=data.get("current_best_currency"),
-        current_best_vendor=data.get("current_best_vendor"),
+        current_best_currency=data.get("current_recommended_currency"),
+        current_best_vendor=data.get("current_recommended_vendor"),
+        current_recommended_price=float(current) if current is not None else None,
+        current_recommended_currency=data.get("current_recommended_currency"),
+        current_recommended_vendor=data.get("current_recommended_vendor"),
+        current_recommended_condition=data.get("current_recommended_condition"),
+        current_recommended_seller_type=data.get("current_recommended_seller_type"),
+        current_recommended_marketplace_risk_score=data.get("current_recommended_marketplace_risk_score"),
+        lowest_market_price=_optional_float(data.get("lowest_market_price")),
+        lowest_market_currency=data.get("lowest_market_currency"),
+        lowest_market_vendor=data.get("lowest_market_vendor"),
+        lowest_market_condition=data.get("lowest_market_condition"),
+        lowest_market_seller_type=data.get("lowest_market_seller_type"),
+        lowest_marketplace_risk_score=data.get("lowest_marketplace_risk_score"),
+        best_new_price=_optional_float(data.get("best_new_price")),
+        best_new_currency=data.get("best_new_currency"),
+        best_new_vendor=data.get("best_new_vendor"),
+        best_trusted_price=_optional_float(data.get("best_trusted_price")),
+        best_trusted_currency=data.get("best_trusted_currency"),
+        best_trusted_vendor=data.get("best_trusted_vendor"),
+        best_local_price=_optional_float(data.get("best_local_price")),
+        best_local_currency=data.get("best_local_currency"),
+        best_local_vendor=data.get("best_local_vendor"),
+        best_used_price=_optional_float(data.get("best_used_price")),
+        best_used_currency=data.get("best_used_currency"),
+        best_used_vendor=data.get("best_used_vendor"),
         current_price_freshness_score=data.get("current_price_freshness_score"),
         current_price_trust_score=data.get("current_price_trust_score"),
-        current_price_timestamp=data.get("current_price_timestamp"),
+        current_price_timestamp=_to_datetime(data.get("current_price_timestamp")),
         stale=bool(data.get("stale", False)),
         best_value=bool(data.get("best_value", False)),
         price_drop_percent=drop,
@@ -120,6 +224,522 @@ def _json_default(value: Any) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _to_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if hasattr(value, "to_native"):
+        return value.to_native()
+    return value
+
+
+def _optional_float(value: Any) -> float | None:
+    return float(value) if value is not None else None
+
+
+def _clamp_score(value: float) -> float:
+    return round(max(0.0, min(value, 1.0)), 2)
+
+
+def _price_total(price: PriceSnapshotView) -> float:
+    if price.region == "SA" and price.final_landed_price_sar is not None:
+        return price.final_landed_price_sar
+    if price.final_landed_price is not None:
+        return price.final_landed_price
+    return price.price + price.shipping_cost
+
+
+def _requires_price_review(price: PriceSnapshotView) -> bool:
+    return (
+        "price_requires_review" in price.flags
+        or price.listing_condition == "unknown"
+        or price.marketplace_risk_score >= 0.65
+        or (
+            price.listing_condition == "unknown"
+            and price.seller_type in {"marketplace", "third_party"}
+        )
+    )
+
+
+def _is_suspicious_price(price: PriceSnapshotView) -> bool:
+    return bool(
+        {
+            "unusually_low_price",
+            "unusually_high_price",
+            "suspicious_low_price",
+            "suspicious_high_price",
+            "suspicious_price_below_gpu_family_market_range",
+            "suspicious_price_above_gpu_family_market_range",
+            "suspicious_price_below_cpu_model_market_range",
+            "suspicious_price_above_cpu_model_market_range",
+            "suspicious_price_below_storage_model_market_range",
+            "suspicious_price_above_storage_model_market_range",
+            "suspicious_price_below_ram_family_market_range",
+            "suspicious_price_above_ram_family_market_range",
+            "suspicious_price_below_psu_family_market_range",
+            "suspicious_price_above_psu_family_market_range",
+        }.intersection(price.flags)
+    )
+
+
+def _price_completeness(price: PriceSnapshotView) -> float:
+    if price.price_completeness_score is not None:
+        return price.price_completeness_score
+    score = 1.0
+    has_sa_price = price.item_price_sar is not None or (price.region == "SA" and price.currency == "SAR")
+    if price.region == "SA" and not has_sa_price:
+        score -= 0.28
+    if price.vat_status == "vat_unknown":
+        score -= 0.16
+    if price.shipping_status == "unknown_shipping":
+        score -= 0.2
+    if price.warranty_status == "unknown_warranty":
+        score -= 0.14
+    if price.is_imported:
+        score -= 0.14
+    if price.listing_condition == "unknown":
+        score -= 0.1
+    score -= min(0.16, price.marketplace_risk_score * 0.12)
+    return _clamp_score(score)
+
+
+def _listing_warnings(price: PriceSnapshotView) -> list[str]:
+    warnings: list[str] = []
+    if price.vat_status == "vat_unknown":
+        warnings.append("VAT unclear")
+    if price.shipping_status == "unknown_shipping":
+        warnings.append("Shipping unclear")
+    if price.warranty_status == "unknown_warranty":
+        warnings.append("Warranty unclear")
+    if price.is_imported or price.local_stock_status == "imported_stock":
+        warnings.append("Imported listing")
+    if price.seller_type == "marketplace" or "marketplace_listing" in price.flags:
+        warnings.append("Marketplace seller")
+    if price.listing_condition == "unknown":
+        warnings.append("Condition unknown")
+    if _is_suspicious_price(price):
+        warnings.append("Price outside normal market range")
+    if "final_landed_price_incomplete" in price.flags or "price_not_final" in price.flags:
+        warnings.append("Final landed price is not fully proven")
+    return list(dict.fromkeys(warnings))
+
+
+def _trust_tier_rank(tier: str | None) -> int:
+    return {"high": 0, "medium": 1, "unknown": 2, "low": 3}.get(tier or "unknown", 2)
+
+
+def _trust_tier_score(tier: str | None) -> float:
+    return {"high": 0.92, "medium": 0.74, "unknown": 0.48, "low": 0.28}.get(tier or "unknown", 0.48)
+
+
+def _recommendation_level(price: PriceSnapshotView, confidence: float) -> str:
+    has_sa_price = price.item_price_sar is not None or (price.region == "SA" and price.currency == "SAR")
+    local_or_gcc = price.vendor_region_type in {"local_saudi_vendor", "local", "gcc_vendor"} or bool(price.is_local_stock)
+    trusted = price.trust_tier in {"high", "medium"} or price.seller_type in {"retailer", "manufacturer"}
+    marketplace_or_imported = (
+        bool(price.is_imported)
+        or price.seller_type in {"marketplace", "third_party"}
+        or price.marketplace_risk_score >= 0.65
+        or price.vendor_region_type in {"international_vendor", "marketplace_vendor"}
+    )
+    if price.availability not in ACTIVE_PRICE_AVAILABILITY or _is_suspicious_price(price):
+        return "not_recommended"
+    if price.region == "SA" and not has_sa_price:
+        return "insufficient_data"
+    if marketplace_or_imported:
+        return "not_recommended" if price.marketplace_risk_score >= 0.72 else "acceptable_with_risk"
+    if local_or_gcc and trusted:
+        clean = (
+            price.vat_status != "vat_unknown"
+            and price.shipping_status != "unknown_shipping"
+            and price.warranty_status in {"local_warranty", "manufacturer_warranty"}
+            and price.listing_condition == "new"
+        )
+        if clean and confidence >= 0.72:
+            return "recommended"
+        if confidence >= 0.55:
+            return "acceptable_with_risk"
+        return "insufficient_data"
+    if trusted and confidence >= 0.6:
+        return "good_if_price_matters"
+    return "insufficient_data"
+
+
+def _listing_reason(price: PriceSnapshotView, level: str, warnings: list[str]) -> str:
+    if level == "recommended":
+        return "Trusted Saudi/GCC option with clear enough price, delivery, and warranty signals."
+    if level == "good_if_price_matters":
+        return "Price is competitive and source trust is acceptable, but it is not the safest local option."
+    if level == "acceptable_with_risk":
+        return "Local or local-serving vendor looks usable, but some VAT, shipping, condition, or warranty evidence is incomplete."
+    if level == "not_recommended":
+        return "Cheaper option carries marketplace/import/imported or suspicious-price risk and should not be the default buy choice."
+    if warnings:
+        return "Not enough evidence to recommend because " + ", ".join(warnings[:3]).lower() + "."
+    return "Not enough listing evidence to recommend this option."
+
+
+def _with_listing_decision(price: PriceSnapshotView) -> PriceSnapshotView:
+    trust_profile = vendor_trust_profile(price.vendor_name, price.region)
+    trust_tier = price.trust_tier if price.trust_tier != "unknown" else trust_profile.trust_tier
+    completeness = _price_completeness(price)
+    confidence = _clamp_score(
+        price.trust_score * 0.28
+        + price.freshness_score * 0.18
+        + (1 - price.marketplace_risk_score) * 0.18
+        + _trust_tier_score(trust_tier) * 0.18
+        + completeness * 0.18
+    )
+    if price.is_local_stock:
+        confidence = _clamp_score(confidence + 0.04)
+    if price.vat_status == "vat_unknown":
+        confidence = _clamp_score(confidence - 0.05)
+    if price.shipping_status == "unknown_shipping":
+        confidence = _clamp_score(confidence - 0.06)
+    if price.warranty_status == "unknown_warranty":
+        confidence = _clamp_score(confidence - 0.04)
+    warnings = _listing_warnings(price)
+    decision_price = price.model_copy(update={"trust_tier": trust_tier})
+    level = _recommendation_level(decision_price, confidence)
+    reason = _listing_reason(price, level, warnings)
+    flags = list(price.flags)
+    if trust_tier in {"high", "medium"} and price.vendor_region_type in {"local_saudi_vendor", "local", "gcc_vendor"}:
+        flags.append("trusted_local_vendor")
+    if price.is_local_stock:
+        flags.append("local_stock_likely")
+    if price.local_warranty:
+        flags.append("local_warranty_likely")
+    if price.vat_status == "vat_unknown":
+        flags.append("vat_unknown")
+    if price.shipping_status == "unknown_shipping":
+        flags.append("shipping_unknown")
+    if price.warranty_status == "unknown_warranty":
+        flags.append("warranty_unknown")
+    if price.seller_type == "marketplace":
+        flags.append("marketplace_seller")
+    if price.is_imported:
+        flags.append("imported_listing")
+    if price.listing_condition == "unknown":
+        flags.append("used_or_unknown_condition")
+    if "final_landed_price_incomplete" in flags:
+        flags.append("price_not_final")
+    if level == "recommended":
+        flags.append("recommended_saudi_buy")
+    if level in {"recommended", "acceptable_with_risk"} and price.vendor_region_type in {"local_saudi_vendor", "gcc_vendor"}:
+        flags.append("good_local_deal")
+    return price.model_copy(
+        update={
+            "trust_tier": trust_tier,
+            "delivery_status": price.shipping_status,
+            "final_landed_price_confidence": price.final_landed_price_confidence
+            if price.final_landed_price_confidence is not None
+            else completeness,
+            "price_completeness_score": completeness,
+            "confidence_score": confidence,
+            "buy_recommendation_level": level,
+            "buy_recommendation_reason": reason,
+            "recommendation_reason": reason,
+            "warnings": warnings,
+            "flags": list(dict.fromkeys(flags)),
+        }
+    )
+
+
+def _price_map(price: PriceSnapshotView | None) -> dict[str, Any]:
+    if not price:
+        return {}
+    return {
+        "price": _price_total(price),
+        "currency": price.final_landed_currency or price.currency,
+        "vendor": price.vendor_name,
+        "condition": price.listing_condition,
+        "seller_type": price.seller_type,
+        "marketplace_risk_score": price.marketplace_risk_score,
+        "recommendation_level": price.buy_recommendation_level,
+        "recommendation_reason": price.recommendation_reason,
+        "confidence_score": price.confidence_score,
+        "warnings": price.warnings,
+        "trust_score": price.trust_score,
+        "freshness_score": price.freshness_score,
+        "timestamp": price.timestamp,
+        "is_local_stock": price.is_local_stock,
+        "is_imported": price.is_imported,
+        "region_rank_score": price.region_rank_score,
+    }
+
+
+def _best_by_price(prices: list[PriceSnapshotView], *, currency: str = "USD") -> PriceSnapshotView | None:
+    return min(
+        prices,
+        key=lambda price: (
+            0 if (price.final_landed_currency or price.currency) == currency else 1,
+            _price_total(price),
+            price.marketplace_risk_score,
+            -price.trust_score,
+            -price.freshness_score,
+        ),
+        default=None,
+    )
+
+
+def _best_recommended(
+    prices: list[PriceSnapshotView],
+    *,
+    currency: str = "USD",
+    region: str | None = None,
+) -> PriceSnapshotView | None:
+    region_code = normalize_region(region)
+    if region_code == "SA":
+        candidates = [
+            price
+            for price in prices
+            if price.buy_recommendation_level in {"recommended", "good_if_price_matters", "acceptable_with_risk"}
+        ]
+    else:
+        candidates = [price for price in prices if not _requires_price_review(price)]
+    if not candidates:
+        return None
+    level_rank = {
+        "recommended": 0,
+        "good_if_price_matters": 1,
+        "acceptable_with_risk": 2,
+        "insufficient_data": 3,
+        "not_recommended": 4,
+    }
+    return sorted(
+        candidates,
+        key=lambda price: (
+            level_rank.get(price.buy_recommendation_level, 3),
+            0 if price.recommended_saudi_price_candidate else 1,
+            _local_stock_rank(price.local_stock_status),
+            _vendor_region_rank(price.vendor_region_type),
+            _trust_tier_rank(price.trust_tier),
+            0 if price.vat_status != "vat_unknown" else 1,
+            0 if price.shipping_status != "unknown_shipping" else 1,
+            0 if price.warranty_status == "local_warranty" else 1,
+            0 if price.is_local_stock else 1,
+            0 if price.local_warranty else 1,
+            0 if (price.final_landed_currency or price.currency) == currency else 1,
+            0 if price.listing_condition == "new" else 1,
+            0 if price.seller_type in {"retailer", "manufacturer"} else 1,
+            price.marketplace_risk_score,
+            -(price.confidence_score or 0),
+            -(price.price_completeness_score or 0),
+            -(price.region_rank_score or 0),
+            -price.trust_score,
+            -price.freshness_score,
+            _price_total(price),
+        ),
+    )[0]
+
+
+def _best_local_price(prices: list[PriceSnapshotView], *, currency: str = "USD") -> PriceSnapshotView | None:
+    return _best_by_price(
+        [
+            price
+            for price in prices
+            if price.vendor_region_type in {"local_saudi_vendor", "local", "gcc_vendor"} or bool(price.is_local_stock)
+        ],
+        currency=currency,
+    )
+
+
+def _best_trusted_price(prices: list[PriceSnapshotView], *, currency: str = "USD", region: str | None = None) -> PriceSnapshotView | None:
+    if normalize_region(region) == "SA":
+        return _best_by_price(
+            [
+                price
+                for price in prices
+                if price.trust_tier in {"high", "medium"}
+                and price.vendor_region_type in {"local_saudi_vendor", "local", "gcc_vendor"}
+                and price.marketplace_risk_score < 0.65
+            ],
+            currency=currency,
+        )
+    return _best_by_price(
+        [
+            price
+            for price in prices
+            if price.seller_type in {"retailer", "manufacturer"} and not _requires_price_review(price)
+        ],
+        currency=currency,
+    )
+
+
+def _local_stock_rank(status: str | None) -> int:
+    return {
+        "local_stock": 0,
+        "gcc_stock": 1,
+        "unknown_stock": 2,
+        "imported_stock": 3,
+    }.get(status or "unknown_stock", 2)
+
+
+def _vendor_region_rank(vendor_region_type: str | None) -> int:
+    return {
+        "local_saudi_vendor": 0,
+        "local": 0,
+        "gcc_vendor": 1,
+        "unknown_vendor": 2,
+        "international_vendor": 3,
+        "marketplace_vendor": 4,
+    }.get(vendor_region_type or "unknown_vendor", 2)
+
+
+def _price_rollups(prices: list[PriceSnapshotView], *, region: str | None = None) -> dict[str, Any]:
+    resolved_region = normalize_region(region if region is not None else (prices[0].region if prices else None))
+    config = get_region_config(resolved_region)
+    active = [
+        _with_listing_decision(price)
+        for price in prices
+        if price.accepted and not price.stale and price.availability in ACTIVE_PRICE_AVAILABILITY
+    ]
+    stale = [price for price in prices if price.accepted and price.stale]
+    lowest = _best_by_price(active, currency=config.currency)
+    recommended = _best_recommended(active, currency=config.currency, region=config.region_code)
+    best_new = _best_by_price([price for price in active if price.listing_condition == "new"], currency=config.currency)
+    best_trusted = _best_trusted_price(active, currency=config.currency, region=config.region_code)
+    best_local = _best_local_price(active, currency=config.currency)
+    best_used = _best_by_price(
+        [price for price in active if price.listing_condition in {"used", "refurbished", "open_box"}],
+        currency=config.currency,
+    )
+    flags: list[str] = []
+    for price in active[:8]:
+        flags.extend(price.flags)
+    price_status = "active" if active else "stale" if stale else "unavailable"
+    low = _price_map(lowest)
+    rec = _price_map(recommended)
+    new = _price_map(best_new)
+    trusted = _price_map(best_trusted)
+    local = _price_map(best_local)
+    used = _price_map(best_used)
+    lowest_warning = _lowest_price_warning(lowest, recommended)
+    if lowest_warning:
+        flags.append("cheapest_but_risky")
+    if recommended:
+        flags.append("recommended_saudi_buy")
+    return {
+        "price_status": price_status,
+        "region": config.region_code,
+        "region_currency": config.currency,
+        "region_price_status": price_status,
+        "recommended_reason": _recommended_reason(recommended, config.currency),
+        "recommended_level": recommended.buy_recommendation_level if recommended else None,
+        "price_confidence": _price_confidence(recommended),
+        "lowest_price_warning": lowest_warning,
+        "flags": list(dict.fromkeys(flags)),
+        "current_recommended_price": rec.get("price"),
+        "current_recommended_currency": rec.get("currency"),
+        "current_recommended_vendor": rec.get("vendor"),
+        "current_recommended_condition": rec.get("condition"),
+        "current_recommended_seller_type": rec.get("seller_type"),
+        "current_recommended_marketplace_risk_score": rec.get("marketplace_risk_score"),
+        "lowest_market_price": low.get("price"),
+        "lowest_market_currency": low.get("currency"),
+        "lowest_market_vendor": low.get("vendor"),
+        "lowest_market_condition": low.get("condition"),
+        "lowest_market_seller_type": low.get("seller_type"),
+        "lowest_marketplace_risk_score": low.get("marketplace_risk_score"),
+        "best_new_price": new.get("price"),
+        "best_new_currency": new.get("currency"),
+        "best_new_vendor": new.get("vendor"),
+        "best_trusted_price": trusted.get("price"),
+        "best_trusted_currency": trusted.get("currency"),
+        "best_trusted_vendor": trusted.get("vendor"),
+        "best_local_price": local.get("price"),
+        "best_local_currency": local.get("currency"),
+        "best_local_vendor": local.get("vendor"),
+        "best_used_price": used.get("price"),
+        "best_used_currency": used.get("currency"),
+        "best_used_vendor": used.get("vendor"),
+        "current_price_freshness_score": rec.get("freshness_score"),
+        "current_price_trust_score": rec.get("trust_score"),
+        "current_price_timestamp": rec.get("timestamp"),
+    }
+
+
+def _lowest_price_warning(lowest: PriceSnapshotView | None, recommended: PriceSnapshotView | None) -> str | None:
+    if not lowest:
+        return None
+    if recommended and lowest.id == recommended.id:
+        return None
+    warnings = _listing_warnings(lowest)
+    if lowest.buy_recommendation_level in {"not_recommended", "insufficient_data"} or warnings:
+        return "Cheapest listing is not the safest buy option: " + ", ".join((warnings or ["insufficient evidence"])[:3]).lower() + "."
+    return None
+
+
+def _recommended_reason(price: PriceSnapshotView | None, currency: str) -> str | None:
+    if not price:
+        return None
+    if price.recommendation_reason:
+        return price.recommendation_reason
+    reasons = ["quality-passed snapshot"]
+    if price.is_local_stock:
+        reasons.append("local stock")
+    if price.local_warranty:
+        reasons.append("local warranty")
+    if (price.final_landed_currency or price.currency) == currency:
+        reasons.append(f"{currency} market price")
+    return ", ".join(reasons)
+
+
+def _price_confidence(price: PriceSnapshotView | None) -> float | None:
+    if not price:
+        return None
+    if price.confidence_score is not None:
+        return price.confidence_score
+    confidence = price.trust_score * 0.45 + price.freshness_score * 0.3 + (1 - price.marketplace_risk_score) * 0.2
+    if price.is_local_stock:
+        confidence += 0.05
+    for value in (price.local_stock_confidence, price.warranty_confidence, price.delivery_confidence):
+        if value is not None:
+            confidence += value * 0.025
+    if price.vat_status == "vat_unknown":
+        confidence -= 0.08
+    if price.shipping_status == "unknown_shipping":
+        confidence -= 0.08
+    if price.warranty_status == "unknown_warranty":
+        confidence -= 0.06
+    return round(max(0.0, min(confidence, 1.0)), 2)
+
+
+def _finalize_search_data(data: dict[str, Any], rollups: dict[str, Any]) -> dict[str, Any]:
+    data = {**data, **rollups}
+    seed_without_price = not data.get("canonical_key") and data["price_status"] == "unavailable"
+    data["data_origin"] = data.get("data_origin") or ("seed" if seed_without_price else "live")
+    if seed_without_price:
+        data["stale"] = True
+        data["flags"] = list(dict.fromkeys([*(data.get("flags") or []), "stale_seed_product"]))
+    return data
+
+
+def _search_sort_key(product: ProductSearchResult) -> tuple[int, float, float, str]:
+    live = product.data_origin == "live"
+    if live and product.price_status == "active" and product.current_recommended_price is not None:
+        bucket = 0
+    elif live and product.price_status == "active":
+        bucket = 1
+    elif live and product.price_status == "stale":
+        bucket = 2
+    else:
+        bucket = 3
+    canonical_penalty = _canonical_search_penalty(product)
+    price = product.current_recommended_price or product.lowest_market_price or float("inf")
+    return bucket, canonical_penalty, price, product.name.lower()
+
+
+def _canonical_search_penalty(product: ProductSearchResult) -> float:
+    if product.category != "CPU":
+        return 0
+    text = f"{product.canonical_key or ''} {product.model or ''} {product.name}".upper().replace(" ", "")
+    if "7800X3D" in text and "RYZEN_7_7800X3D" not in (product.canonical_key or ""):
+        return 1
+    return 0
 
 
 def _intelligence_from_record(data: dict[str, Any]) -> HardwareIntelligence:
@@ -139,8 +759,24 @@ class Neo4jPricingRepository:
             "FOR (n:PriceSnapshot) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT pricing_job_id IF NOT EXISTS "
             "FOR (n:PricingJob) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT product_url_normalized IF NOT EXISTS "
+            "FOR (n:ProductURL) REQUIRE n.normalized_url IS UNIQUE",
             "CREATE CONSTRAINT hardware_intelligence_id IF NOT EXISTS "
             "FOR (n:HardwareIntelligence) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT gpu_family_key IF NOT EXISTS "
+            "FOR (n:GPUFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT cpu_family_key IF NOT EXISTS "
+            "FOR (n:CPUFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT storage_family_key IF NOT EXISTS "
+            "FOR (n:StorageFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT ram_family_key IF NOT EXISTS "
+            "FOR (n:RAMFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT psu_family_key IF NOT EXISTS "
+            "FOR (n:PSUFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT case_family_key IF NOT EXISTS "
+            "FOR (n:CaseFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT cooler_family_key IF NOT EXISTS "
+            "FOR (n:CoolerFamily) REQUIRE n.family_key IS UNIQUE",
             "CREATE INDEX product_name IF NOT EXISTS FOR (n:Product) ON (n.name)",
             "CREATE INDEX product_category IF NOT EXISTS FOR (n:Product) ON (n.category)",
             "CREATE INDEX product_current_price_timestamp IF NOT EXISTS "
@@ -149,6 +785,10 @@ class Neo4jPricingRepository:
             "FOR (n:PriceSnapshot) ON (n.timestamp)",
             "CREATE INDEX price_snapshot_vendor IF NOT EXISTS "
             "FOR (n:PriceSnapshot) ON (n.vendor_id)",
+            "CREATE INDEX price_snapshot_region IF NOT EXISTS "
+            "FOR (n:PriceSnapshot) ON (n.region)",
+            "CREATE INDEX product_url_region IF NOT EXISTS "
+            "FOR (n:ProductURL) ON (n.region, n.category)",
             "CREATE INDEX hardware_intelligence_generated_at IF NOT EXISTS "
             "FOR (n:HardwareIntelligence) ON (n.generated_at)",
         ]
@@ -156,7 +796,6 @@ class Neo4jPricingRepository:
             self.driver.execute_query(statement, database_=settings.neo4j_database)
 
     def find_product_id(self, identity: ProductIdentity) -> str | None:
-        model_probe = " ".join(identity.model.upper().split()[:3])
         records, _, _ = self.driver.execute_query(
             """
             MATCH (candidate)
@@ -164,35 +803,34 @@ class Neo4jPricingRepository:
               AND (
                 candidate.canonical_key = $canonical_key
                 OR toUpper(candidate.name) = toUpper($name)
-                OR (
-                  $category IN labels(candidate)
-                  AND $model_probe <> ""
-                  AND toUpper(candidate.name) CONTAINS $model_probe
-                )
               )
             RETURN candidate.id AS id,
                    CASE
                      WHEN candidate.canonical_key = $canonical_key THEN 0
                      WHEN toUpper(candidate.name) = toUpper($name) THEN 1
-                     ELSE 2
                    END AS rank
             ORDER BY rank
             LIMIT 1
             """,
             canonical_key=identity.canonical_key,
             name=identity.name,
-            category=identity.category,
-            model_probe=model_probe,
             database_=settings.neo4j_database,
         )
         return records[0]["id"] if records else None
 
-    def previous_price(self, product_id_or_key: str, vendor_id: str | None = None) -> float | None:
+    def previous_price(
+        self,
+        product_id_or_key: str,
+        vendor_id: str | None = None,
+        region: str | None = None,
+    ) -> float | None:
+        region = normalize_region(region)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p)-[:HAS_PRICE]->(snapshot:PriceSnapshot)
             WHERE (p.id = $product_id_or_key OR p.canonical_key = $product_id_or_key)
               AND ($vendor_id IS NULL OR snapshot.vendor_id = $vendor_id)
+              AND (snapshot.region = $region OR ($region = "US" AND snapshot.region IS NULL))
               AND snapshot.accepted = true
             RETURN snapshot.price AS price
             ORDER BY snapshot.timestamp DESC
@@ -200,6 +838,7 @@ class Neo4jPricingRepository:
             """,
             product_id_or_key=product_id_or_key,
             vendor_id=vendor_id,
+            region=region,
             database_=settings.neo4j_database,
         )
         return float(records[0]["price"]) if records else None
@@ -241,6 +880,40 @@ class Neo4jPricingRepository:
                 "id": offer.id,
                 "price": offer.price,
                 "currency": offer.currency,
+                "region": offer.region,
+                "country_code": offer.country_code,
+                "city": offer.city,
+                "raw_price": offer.raw_price,
+                "item_price": offer.item_price,
+                "item_price_sar": offer.item_price_sar,
+                "shipping_cost_sar": offer.shipping_cost_sar,
+                "final_landed_price": offer.final_landed_price,
+                "final_landed_currency": offer.final_landed_currency,
+                "final_landed_price_sar": offer.final_landed_price_sar,
+                "vat_included": offer.vat_included,
+                "vat_status": offer.vat_status,
+                "shipping_status": offer.shipping_status,
+                "warranty_status": offer.warranty_status,
+                "local_stock_status": offer.local_stock_status,
+                "vendor_region_type": offer.vendor_region_type,
+                "estimated_vat": offer.estimated_vat,
+                "import_fee": offer.import_fee,
+                "estimated_delivery_days": offer.estimated_delivery_days,
+                "seller_country": offer.seller_country,
+                "is_local_stock": offer.is_local_stock,
+                "is_imported": offer.is_imported,
+                "serves_saudi": offer.serves_saudi,
+                "warranty_type": offer.warranty_type,
+                "local_warranty": offer.local_warranty,
+                "region_rank_score": offer.region_rank_score,
+                "recommended_saudi_price_candidate": offer.recommended_saudi_price_candidate,
+                "final_landed_price_confidence": offer.final_landed_price_confidence,
+                "price_completeness_score": offer.price_completeness_score,
+                "trust_tier": offer.trust_tier,
+                "delivery_status": offer.shipping_status,
+                "local_stock_confidence": offer.local_stock_confidence,
+                "warranty_confidence": offer.warranty_confidence,
+                "delivery_confidence": offer.delivery_confidence,
                 "availability": offer.availability,
                 "timestamp": offer.timestamp,
                 "shipping_cost": offer.shipping_cost,
@@ -249,6 +922,9 @@ class Neo4jPricingRepository:
                 "source_product_id": offer.source_product_id,
                 "seller": offer.seller,
                 "condition": offer.condition,
+                "listing_condition": offer.listing_condition,
+                "seller_type": offer.seller_type,
+                "marketplace_risk_score": offer.marketplace_risk_score,
                 "rating": offer.rating,
                 "source": offer.source.source,
                 "source_type": offer.source.source_type.value,
@@ -267,6 +943,15 @@ class Neo4jPricingRepository:
                 "id": offer.vendor.id,
                 "name": offer.vendor.name,
                 "region": offer.vendor.region,
+                "country_code": offer.country_code,
+                "vendor_region_type": vendor_region_type(offer.vendor.name, offer.region),
+                "trust_tier": offer.trust_tier,
+                "serves_saudi": offer.serves_saudi,
+                "local_stock_confidence": offer.local_stock_confidence,
+                "warranty_confidence": offer.warranty_confidence,
+                "delivery_confidence": offer.delivery_confidence,
+                "serves_regions": [offer.region],
+                "local_regions": [offer.region] if offer.is_local_stock else [],
                 "apiType": offer.vendor.api_type.value,
                 "trust_score": offer.vendor.trust_score,
                 "updated_at": datetime.now(UTC),
@@ -279,6 +964,14 @@ class Neo4jPricingRepository:
             MERGE (vendor:Vendor {id: $vendor.id})
             SET vendor += $vendor
             MERGE (p)-[:SOLD_BY]->(vendor)
+            SET p.supported_regions = CASE
+                  WHEN $region IN coalesce(p.supported_regions, []) THEN p.supported_regions
+                  ELSE coalesce(p.supported_regions, []) + $region
+                END,
+                p.region_availability = CASE
+                  WHEN $region IN coalesce(p.region_availability, []) THEN p.region_availability
+                  ELSE coalesce(p.region_availability, []) + $region
+                END
             CREATE (snapshot:PriceSnapshot)
             SET snapshot += $snapshot
             MERGE (p)-[:HAS_PRICE]->(snapshot)
@@ -292,33 +985,399 @@ class Neo4jPricingRepository:
             WITH DISTINCT p
             OPTIONAL MATCH (p)-[:HAS_PRICE]->(candidate:PriceSnapshot)
             WHERE candidate.accepted = true
+              AND (candidate.region = $region OR ($region = "US" AND candidate.region IS NULL))
               AND candidate.availability IN ["in_stock", "preorder", "backorder"]
-            WITH p, candidate
+            OPTIONAL MATCH (candidate)-[:FROM_VENDOR]->(candidateVendor:Vendor)
+            WITH p, candidate, candidateVendor,
+                 coalesce(candidate.listing_condition, candidate.condition, "unknown") AS listingCondition,
+                 coalesce(candidate.seller_type,
+                   CASE
+                     WHEN toLower(coalesce(candidateVendor.name, "")) CONTAINS "swappa"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "ebay"
+                       OR toLower(coalesce(candidate.source, "")) CONTAINS "ebay"
+                       THEN "marketplace"
+                     WHEN coalesce(candidateVendor.name, "") CONTAINS " - " THEN "third_party"
+                     WHEN toLower(coalesce(candidateVendor.name, "")) CONTAINS "bestbuy"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "best buy"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "amazon"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "micro center"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "newegg"
+                       THEN "retailer"
+                     ELSE "unknown"
+                   END
+                 ) AS sellerType,
+                 coalesce(candidate.marketplace_risk_score,
+                   CASE
+                     WHEN toLower(coalesce(candidateVendor.name, "")) CONTAINS "swappa"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "ebay"
+                       THEN 0.84
+                     WHEN coalesce(candidateVendor.name, "") CONTAINS " - " THEN 0.74
+                     WHEN toLower(coalesce(candidateVendor.name, "")) CONTAINS "bestbuy"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "best buy"
+                       OR toLower(coalesce(candidateVendor.name, "")) CONTAINS "amazon"
+                       THEN 0.24
+                     ELSE 0.5
+                   END
+                 ) AS risk,
+                 coalesce(candidate.flags, []) AS flags
+            WITH p, candidate, candidateVendor, listingCondition, sellerType, risk, flags,
+                 CASE
+                   WHEN candidate IS NULL THEN 1
+                   WHEN "price_requires_review" IN flags THEN 1
+                   WHEN listingCondition = "unknown" THEN 1
+                   WHEN risk >= 0.65 THEN 1
+                   WHEN listingCondition = "unknown" AND sellerType IN ["marketplace", "third_party"] THEN 1
+                   ELSE 0
+                 END AS reviewRank
             ORDER BY
-              CASE candidate.currency WHEN "USD" THEN 0 ELSE 1 END,
-              candidate.price + coalesce(candidate.shipping_cost, 0),
+              reviewRank,
+              CASE listingCondition WHEN "new" THEN 0 WHEN "unknown" THEN 1 ELSE 2 END,
+              CASE WHEN sellerType IN ["retailer", "manufacturer"] THEN 0 WHEN sellerType = "unknown" THEN 1 ELSE 2 END,
+              risk,
+              CASE coalesce(candidate.final_landed_currency, candidate.currency) WHEN $region_currency THEN 0 ELSE 1 END,
               candidate.source_tier,
               candidate.trust_score DESC,
-              candidate.timestamp DESC
-            WITH p, collect(candidate)[0] AS best
-            OPTIONAL MATCH (best)-[:FROM_VENDOR]->(bestVendor:Vendor)
-            SET p.current_best_price = best.price,
-                p.current_best_currency = best.currency,
-                p.current_best_vendor = bestVendor.name,
-                p.current_price_timestamp = best.timestamp,
-                p.current_price_freshness_score = best.freshness_score,
-                p.current_price_trust_score = best.trust_score,
-                p.current_price_source = best.source,
+              candidate.freshness_score DESC,
+              coalesce(candidate.final_landed_price, candidate.price + coalesce(candidate.shipping_cost, 0))
+            WITH p, [item IN collect({
+              snapshot: candidate,
+              vendor: candidateVendor,
+              reviewRank: reviewRank
+            }) WHERE item.snapshot IS NOT NULL AND item.reviewRank = 0][0] AS best
+            SET p.current_best_price = CASE WHEN best IS NULL THEN null ELSE coalesce(best.snapshot.final_landed_price, best.snapshot.price) END,
+                p.current_best_currency = CASE WHEN best IS NULL THEN null ELSE coalesce(best.snapshot.final_landed_currency, best.snapshot.currency) END,
+                p.current_best_vendor = CASE WHEN best IS NULL THEN null ELSE best.vendor.name END,
+                p.current_price_timestamp = CASE WHEN best IS NULL THEN null ELSE best.snapshot.timestamp END,
+                p.current_price_freshness_score = CASE WHEN best IS NULL THEN null ELSE best.snapshot.freshness_score END,
+                p.current_price_trust_score = CASE WHEN best IS NULL THEN null ELSE best.snapshot.trust_score END,
+                p.current_price_source = CASE WHEN best IS NULL THEN null ELSE best.snapshot.source END,
                 p.stale = false,
-                p.price_usd = CASE WHEN best.currency = "USD" THEN best.price ELSE p.price_usd END
+                p.price_usd = CASE
+                  WHEN $region = "US" AND best IS NOT NULL AND coalesce(best.snapshot.final_landed_currency, best.snapshot.currency) = "USD"
+                    THEN coalesce(best.snapshot.final_landed_price, best.snapshot.price)
+                  ELSE p.price_usd
+                END
             """,
             product_id=product_id,
             vendor=vendor,
             snapshot=snapshot,
             evidence=evidence,
+            region=offer.region,
+            region_currency=get_region_config(offer.region).currency,
             database_=settings.neo4j_database,
         )
+        self._upsert_gpu_family_link(product_id, offer.product.specs)
+        self._upsert_cpu_family_link(product_id, offer.product.specs)
+        self._upsert_storage_family_link(product_id, offer.product.specs)
+        self._upsert_ram_family_link(product_id, offer.product.specs)
+        self._upsert_psu_family_link(product_id, offer.product.specs)
+        self._upsert_case_family_link(product_id, offer.product.specs)
+        self._upsert_cooler_family_link(product_id, offer.product.specs)
         return product_id
+
+    def upsert_product_url(
+        self,
+        *,
+        normalized_url: str,
+        url: str,
+        source_name: str,
+        vendor_name: str,
+        region: str,
+        category: str,
+        product_id: str,
+        vendor_id: str,
+        approved: bool,
+        refresh_allowed: bool,
+        source_policy_status: str,
+        last_price: float | None = None,
+        last_currency: str | None = None,
+    ) -> None:
+        self.driver.execute_query(
+            """
+            MATCH (product:Product {id: $product_id})
+            MATCH (vendor:Vendor {id: $vendor_id})
+            MERGE (url:ProductURL {normalized_url: $normalized_url})
+            ON CREATE SET url.created_at = datetime()
+            SET url.url = $url,
+                url.source_name = $source_name,
+                url.vendor_name = $vendor_name,
+                url.region = $region,
+                url.category = $category,
+                url.approved = $approved,
+                url.refresh_allowed = $refresh_allowed,
+                url.last_checked_at = datetime(),
+                url.last_success_at = datetime(),
+                url.last_failure_at = null,
+                url.last_error_sanitized = null,
+                url.source_policy_status = $source_policy_status,
+                url.last_price = $last_price,
+                url.last_currency = $last_currency,
+                url.updated_at = datetime()
+            MERGE (url)-[:FOR_PRODUCT]->(product)
+            MERGE (url)-[:FROM_VENDOR]->(vendor)
+            """,
+            normalized_url=normalized_url,
+            url=url,
+            source_name=source_name,
+            vendor_name=vendor_name,
+            region=region,
+            category=category,
+            product_id=product_id,
+            vendor_id=vendor_id,
+            approved=approved,
+            refresh_allowed=refresh_allowed,
+            source_policy_status=source_policy_status,
+            last_price=last_price,
+            last_currency=last_currency,
+            database_=settings.neo4j_database,
+        )
+
+    def known_product_urls(
+        self,
+        *,
+        region: str = "SA",
+        category: str | None = None,
+        vendor: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        region = normalize_region(region)
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (url:ProductURL)
+            WHERE url.approved = true
+              AND url.refresh_allowed = true
+              AND url.region = $region
+              AND ($category IS NULL OR url.category = $category)
+              AND ($vendor IS NULL OR toLower(url.vendor_name) CONTAINS toLower($vendor))
+            RETURN url.url AS url,
+                   url.normalized_url AS normalized_url,
+                   url.source_name AS source_name,
+                   url.vendor_name AS vendor_name,
+                   url.region AS region,
+                   url.category AS category,
+                   coalesce(url.approved, false) AS approved,
+                   coalesce(url.refresh_allowed, false) AS refresh_allowed,
+                   url.last_checked_at AS last_checked_at,
+                   url.last_success_at AS last_success_at,
+                   url.last_failure_at AS last_failure_at,
+                   url.last_error_sanitized AS last_error_sanitized,
+                   coalesce(url.source_policy_status, "allowed") AS source_policy_status,
+                   url.last_price AS last_price,
+                   url.last_currency AS last_currency
+            ORDER BY coalesce(url.last_checked_at, datetime("1970-01-01T00:00:00Z")) ASC
+            LIMIT $limit
+            """,
+            region=region,
+            category=category,
+            vendor=vendor,
+            limit=limit,
+            database_=settings.neo4j_database,
+        )
+        return [record.data() for record in records]
+
+    def update_product_url_refresh_status(self, *, normalized_url: str, success: bool, error: str | None = None) -> None:
+        self.driver.execute_query(
+            """
+            MERGE (url:ProductURL {normalized_url: $normalized_url})
+            SET url.last_checked_at = datetime(),
+                url.last_success_at = CASE WHEN $success THEN datetime() ELSE url.last_success_at END,
+                url.last_failure_at = CASE WHEN $success THEN url.last_failure_at ELSE datetime() END,
+                url.last_error_sanitized = CASE WHEN $success THEN null ELSE $error END,
+                url.updated_at = datetime()
+            """,
+            normalized_url=normalized_url,
+            success=success,
+            error=error,
+            database_=settings.neo4j_database,
+        )
+
+    def link_product_url_audit(self, *, normalized_url: str, audit_id: str) -> None:
+        self.driver.execute_query(
+            """
+            MATCH (url:ProductURL {normalized_url: $normalized_url})
+            MATCH (event:AuditEvent {id: $audit_id})
+            MERGE (url)-[:AUDITED_BY]->(event)
+            """,
+            normalized_url=normalized_url,
+            audit_id=audit_id,
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_gpu_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("gpu_family_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:GPUFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.chipset = $chipset,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("gpu_family_name") or family_key,
+            chipset=specs.get("chipset"),
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_cpu_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("cpu_family_key") or specs.get("cpu_model_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:CPUFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.socket = $socket,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("cpu_family_name") or str(family_key).replace("_", " "),
+            socket=specs.get("socket"),
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_storage_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("storage_family_key") or specs.get("storage_model_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:StorageFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.capacity_gb = $capacity_gb,
+                family.interface = $interface,
+                family.form_factor = $form_factor,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("storage_family_name") or str(family_key).replace("_", " "),
+            capacity_gb=specs.get("capacity_gb"),
+            interface=specs.get("interface"),
+            form_factor=specs.get("form_factor"),
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_ram_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("ram_family_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:RAMFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.memory_type = $memory_type,
+                family.capacity_gb = $capacity_gb,
+                family.speed_mhz = $speed_mhz,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("ram_family_name") or str(family_key).replace("_", " "),
+            memory_type=specs.get("memory_type"),
+            capacity_gb=specs.get("capacity_gb"),
+            speed_mhz=specs.get("speed_mhz") or specs.get("speed_mt_s"),
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_psu_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("psu_family_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:PSUFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.wattage_w = $wattage_w,
+                family.efficiency_rating = $efficiency_rating,
+                family.modularity = $modularity,
+                family.pcie_5_support = $pcie_5_support,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("psu_family_name") or str(family_key).replace("_", " "),
+            wattage_w=specs.get("wattage_w") or specs.get("wattage"),
+            efficiency_rating=specs.get("efficiency_rating"),
+            modularity=specs.get("modularity"),
+            pcie_5_support=specs.get("pcie_5_support"),
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_case_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("case_family_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:CaseFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.supported_motherboard_form_factors = $supported_motherboard_form_factors,
+                family.case_type = $case_type,
+                family.max_gpu_length_mm = $max_gpu_length_mm,
+                family.max_cpu_cooler_height_mm = $max_cpu_cooler_height_mm,
+                family.radiator_support_top_mm = $radiator_support_top_mm,
+                family.radiator_support_front_mm = $radiator_support_front_mm,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("case_family_name") or str(family_key).replace("_", " "),
+            supported_motherboard_form_factors=specs.get("supported_motherboard_form_factors"),
+            case_type=specs.get("case_type"),
+            max_gpu_length_mm=specs.get("max_gpu_length_mm"),
+            max_cpu_cooler_height_mm=specs.get("max_cpu_cooler_height_mm"),
+            radiator_support_top_mm=specs.get("radiator_support_top_mm"),
+            radiator_support_front_mm=specs.get("radiator_support_front_mm"),
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_cooler_family_link(self, product_id: str, specs: dict[str, Any]) -> None:
+        family_key = specs.get("cooler_family_key")
+        if not family_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:CoolerFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.cooler_type = $cooler_type,
+                family.supported_sockets = $supported_sockets,
+                family.radiator_size_mm = $radiator_size_mm,
+                family.radiator_fan_count = $radiator_fan_count,
+                family.fan_size_mm = $fan_size_mm,
+                family.cooler_height_mm = $cooler_height_mm,
+                family.tdp_rating_w = $tdp_rating_w,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=family_key,
+            family_name=specs.get("cooler_family_name") or str(family_key).replace("_", " "),
+            cooler_type=specs.get("cooler_type"),
+            supported_sockets=specs.get("supported_sockets"),
+            radiator_size_mm=specs.get("radiator_size_mm"),
+            radiator_fan_count=specs.get("radiator_fan_count"),
+            fan_size_mm=specs.get("fan_size_mm"),
+            cooler_height_mm=specs.get("cooler_height_mm") or specs.get("height_mm"),
+            tdp_rating_w=specs.get("tdp_rating_w") or specs.get("cooling_capacity_w"),
+            database_=settings.neo4j_database,
+        )
 
     def mark_product_stale(self, product_id: str, reason: str) -> None:
         self.driver.execute_query(
@@ -342,7 +1401,8 @@ class Neo4jPricingRepository:
         region: str | None = None,
         limit: int = 25,
     ) -> list[ProductSearchResult]:
-        del region
+        region = normalize_region(region)
+        candidate_limit = min(max(limit * 4, 50), 250)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p)
@@ -355,6 +1415,7 @@ class Neo4jPricingRepository:
                 OR toLower(coalesce(p.model, "")) CONTAINS toLower($q)
               )
             OPTIONAL MATCH (p)-[:HAS_PRICE]->(s:PriceSnapshot)
+            WHERE (s IS NULL OR s.region = $region OR ($region = "US" AND s.region IS NULL))
             WITH p, s
             ORDER BY s.timestamp DESC
             WITH p, collect(s)[0..2] AS latest
@@ -365,24 +1426,28 @@ class Neo4jPricingRepository:
                    coalesce(p.category, head([label IN labels(p) WHERE label <> "Component" AND label <> "Product"])) AS category,
                    p.model AS model,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
-                   p.current_best_price AS current_best_price,
-                   p.current_best_currency AS current_best_currency,
-                   p.current_best_vendor AS current_best_vendor,
-                   p.current_price_freshness_score AS current_price_freshness_score,
-                   p.current_price_trust_score AS current_price_trust_score,
-                   p.current_price_timestamp AS current_price_timestamp,
+                   p.data_origin AS data_origin,
                    coalesce(p.stale, false) AS stale,
                    coalesce(p.best_value, false) AS best_value,
                    latest[1].price AS previous_price
-            ORDER BY coalesce(p.current_best_price, p.price_usd, 999999), p.name
-            LIMIT $limit
+            ORDER BY
+              CASE WHEN p.canonical_key IS NULL AND latest[0] IS NULL THEN 1 ELSE 0 END,
+              p.name
+            LIMIT $candidate_limit
             """,
             q=q,
             category=category,
-            limit=limit,
+            region=region,
+            candidate_limit=candidate_limit,
             database_=settings.neo4j_database,
         )
-        return [_search_result(record.data()) for record in records]
+        products: list[ProductSearchResult] = []
+        for record in records:
+            data = record.data()
+            prices = self.vendor_prices(str(data["id"]), region=region)
+            rollups = _price_rollups(prices, region=region)
+            products.append(_search_result(_finalize_search_data(data, rollups)))
+        return sorted(products, key=_search_sort_key)[:limit]
 
     def product_categories(self) -> list[str]:
         records, _, _ = self.driver.execute_query(
@@ -475,6 +1540,50 @@ class Neo4jPricingRepository:
             "price_snapshots": prices,
         }
 
+    def product_merge_facts(self, product_id: str, region: str | None = None) -> dict[str, Any] | None:
+        region = normalize_region(region)
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p)
+            WHERE (p.id = $product_id OR p.canonical_key = $product_id)
+              AND (p:Product OR p:Component)
+            OPTIONAL MATCH (p)-[:HAS_PRICE]->(snapshot:PriceSnapshot)
+            WHERE snapshot IS NULL OR snapshot.region = $region OR ($region = "US" AND snapshot.region IS NULL)
+            OPTIONAL MATCH (snapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+            OPTIONAL MATCH (p)-[:HAS_FIELD_EVIDENCE]->(evidence:FieldEvidence)
+            OPTIONAL MATCH (event:AuditEvent)
+            WHERE event.target = p.id
+            WITH p,
+                 collect(DISTINCT snapshot) AS snapshots,
+                 collect(DISTINCT vendor.name) AS vendors,
+                 count(DISTINCT evidence) AS evidence_count,
+                 count(DISTINCT event) AS audit_count
+            RETURN p.id AS id,
+                   p.canonical_key AS canonical_key,
+                   p.name AS name,
+                   p.brand AS brand,
+                   p.category AS category,
+                   p.model AS model,
+                   size([snapshot IN snapshots WHERE snapshot IS NOT NULL]) AS price_snapshot_count,
+                   [vendor IN vendors WHERE vendor IS NOT NULL] AS vendors,
+                   evidence_count AS field_evidence_count,
+                   audit_count AS audit_event_count,
+                   [snapshot IN snapshots WHERE snapshot IS NOT NULL | {
+                     id: snapshot.id,
+                     region: snapshot.region,
+                     vendor_id: snapshot.vendor_id,
+                     price: snapshot.price,
+                     currency: snapshot.currency,
+                     timestamp: toString(snapshot.timestamp)
+                   }] AS prices
+            LIMIT 1
+            """,
+            product_id=product_id,
+            region=region,
+            database_=settings.neo4j_database,
+        )
+        return records[0].data() if records else None
+
     def products_for_enrichment(
         self,
         *,
@@ -558,11 +1667,13 @@ class Neo4jPricingRepository:
         return _intelligence_from_record(records[0].data()) if records else None
 
     def product_detail(self, product_id: str, region: str | None = None) -> ProductDetail | None:
+        region = normalize_region(region)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p)
             WHERE p.id = $product_id OR p.canonical_key = $product_id
             OPTIONAL MATCH (p)-[:HAS_PRICE]->(s:PriceSnapshot)
+            WHERE (s IS NULL OR s.region = $region OR ($region = "US" AND s.region IS NULL))
             WITH p, s
             ORDER BY s.timestamp DESC
             WITH p, collect(s)[0..2] AS latest
@@ -574,12 +1685,7 @@ class Neo4jPricingRepository:
                    coalesce(p.category, head([label IN labels(p) WHERE label <> "Component" AND label <> "Product"])) AS category,
                    p.model AS model,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
-                   p.current_best_price AS current_best_price,
-                   p.current_best_currency AS current_best_currency,
-                   p.current_best_vendor AS current_best_vendor,
-                   p.current_price_freshness_score AS current_price_freshness_score,
-                   p.current_price_trust_score AS current_price_trust_score,
-                   p.current_price_timestamp AS current_price_timestamp,
+                   p.data_origin AS data_origin,
                    coalesce(p.stale, false) AS stale,
                    coalesce(p.best_value, false) AS best_value,
                    latest[1].price AS previous_price,
@@ -588,11 +1694,13 @@ class Neo4jPricingRepository:
             LIMIT 1
             """,
             product_id=product_id,
+            region=region,
             database_=settings.neo4j_database,
         )
         if not records:
             return None
-        product = _search_result(records[0].data())
+        prices = self.vendor_prices(product_id, region=region)
+        product = _search_result(_finalize_search_data(records[0].data(), _price_rollups(prices, region=region)))
         props = records[0]["properties"] if records else {}
         specs = {
             key.removeprefix("spec_"): value
@@ -608,7 +1716,7 @@ class Neo4jPricingRepository:
                     field=item["field"],
                     value=json.loads(item["value_json"]),
                     source=item["source"],
-                    timestamp=item["timestamp"],
+                    timestamp=_to_datetime(item["timestamp"]),
                     trust_score=float(item["trust_score"]),
                     freshness_score=float(item["freshness_score"]),
                     source_tier=SourceTier(int(item["source_tier"])),
@@ -619,15 +1727,16 @@ class Neo4jPricingRepository:
             specs=specs,
             msrp=props.get("msrp"),
             field_evidence=evidence,
-            latest_prices=self.vendor_prices(product_id, region=region),
+            latest_prices=prices,
         )
 
     def vendor_prices(self, product_id: str, region: str | None = None) -> list[PriceSnapshotView]:
+        region = normalize_region(region)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p)-[:HAS_PRICE]->(snapshot:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
             WHERE (p.id = $product_id OR p.canonical_key = $product_id)
-              AND ($region IS NULL OR vendor.region = $region)
+              AND (snapshot.region = $region OR ($region = "US" AND snapshot.region IS NULL))
             WITH vendor, snapshot
             ORDER BY snapshot.timestamp DESC
             WITH vendor, collect(snapshot)[0] AS latest
@@ -636,20 +1745,60 @@ class Neo4jPricingRepository:
                    vendor.name AS vendor_name,
                    latest.price AS price,
                    latest.currency AS currency,
+                   coalesce(latest.region, "US") AS region,
+                   latest.country_code AS country_code,
+                   latest.city AS city,
+                   latest.raw_price AS raw_price,
+                   latest.item_price AS item_price,
+                   latest.item_price_sar AS item_price_sar,
+                   latest.shipping_cost_sar AS shipping_cost_sar,
+                   latest.final_landed_price AS final_landed_price,
+                   latest.final_landed_currency AS final_landed_currency,
+                   latest.final_landed_price_sar AS final_landed_price_sar,
+                   latest.vat_included AS vat_included,
+                   latest.vat_status AS vat_status,
+                   latest.shipping_status AS shipping_status,
+                   latest.warranty_status AS warranty_status,
+                   latest.local_stock_status AS local_stock_status,
+                   latest.vendor_region_type AS vendor_region_type,
+                   latest.estimated_vat AS estimated_vat,
+                   latest.import_fee AS import_fee,
+                   latest.estimated_delivery_days AS estimated_delivery_days,
+                   latest.seller_country AS seller_country,
+                   latest.is_local_stock AS is_local_stock,
+                   latest.is_imported AS is_imported,
+                   latest.serves_saudi AS serves_saudi,
+                   latest.warranty_type AS warranty_type,
+                   latest.local_warranty AS local_warranty,
+                   latest.region_rank_score AS region_rank_score,
+                   latest.recommended_saudi_price_candidate AS recommended_saudi_price_candidate,
+                   latest.final_landed_price_confidence AS final_landed_price_confidence,
+                   latest.price_completeness_score AS price_completeness_score,
+                   latest.trust_tier AS trust_tier,
+                   latest.delivery_status AS delivery_status,
+                   latest.local_stock_confidence AS local_stock_confidence,
+                   latest.warranty_confidence AS warranty_confidence,
+                   latest.delivery_confidence AS delivery_confidence,
                    latest.availability AS availability,
                    latest.timestamp AS timestamp,
                    coalesce(latest.shipping_cost, 0) AS shipping_cost,
                    latest.product_url AS product_url,
+                   latest.seller AS seller,
+                   latest.condition AS condition,
+                   latest.listing_condition AS listing_condition,
+                   latest.seller_type AS seller_type,
+                   latest.marketplace_risk_score AS marketplace_risk_score,
                    latest.source AS source,
                    latest.source_type AS source_type,
                    latest.source_tier AS source_tier,
                    latest.trust_score AS trust_score,
                    latest.freshness_score AS freshness_score,
                    coalesce(latest.stale, false) AS stale,
+                   coalesce(latest.accepted, true) AS accepted,
                    coalesce(latest.flags, []) AS flags
             ORDER BY
               CASE latest.availability WHEN "in_stock" THEN 0 ELSE 1 END,
-              latest.price + coalesce(latest.shipping_cost, 0)
+              coalesce(latest.final_landed_price, latest.price + coalesce(latest.shipping_cost, 0))
             """,
             product_id=product_id,
             region=region,
@@ -663,15 +1812,16 @@ class Neo4jPricingRepository:
         region: str | None = None,
         limit: int = 200,
     ) -> list[PriceHistoryPoint]:
+        region = normalize_region(region)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p)-[:HAS_PRICE]->(snapshot:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
             WHERE (p.id = $product_id OR p.canonical_key = $product_id)
-              AND ($region IS NULL OR vendor.region = $region)
+              AND (snapshot.region = $region OR ($region = "US" AND snapshot.region IS NULL))
             RETURN snapshot.timestamp AS timestamp,
                    vendor.name AS vendor_name,
-                   snapshot.price AS price,
-                   snapshot.currency AS currency,
+                   coalesce(snapshot.final_landed_price, snapshot.price + coalesce(snapshot.shipping_cost, 0)) AS price,
+                   coalesce(snapshot.final_landed_currency, snapshot.currency) AS currency,
                    snapshot.availability AS availability,
                    snapshot.trust_score AS trust_score,
                    snapshot.freshness_score AS freshness_score
@@ -685,7 +1835,7 @@ class Neo4jPricingRepository:
         )
         return [
             PriceHistoryPoint(
-                timestamp=record["timestamp"],
+                timestamp=_to_datetime(record["timestamp"]),
                 vendor_name=record["vendor_name"],
                 price=float(record["price"]),
                 currency=record["currency"],

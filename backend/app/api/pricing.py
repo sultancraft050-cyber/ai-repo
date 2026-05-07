@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
-from app.api.dependencies import get_pricing_repository
+from app.api.dependencies import get_pricing_repository, resolve_market_region
 from app.graph.pricing_repository import Neo4jPricingRepository
 from app.models.pricing import (
     CanonicalizationValidationRequest,
@@ -29,7 +29,12 @@ router = APIRouter(prefix="/pricing", tags=["pricing"])
 
 
 class _NoopPricingRepository:
-    def previous_price(self, product_id_or_key: str, vendor_id: str | None = None) -> None:
+    def previous_price(
+        self,
+        product_id_or_key: str,
+        vendor_id: str | None = None,
+        region: str | None = None,
+    ) -> None:
         return None
 
     def find_product_id(self, identity) -> None:
@@ -44,6 +49,8 @@ def refresh_pricing(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> PricingRefreshResponse:
     payload = request_body.model_dump()
+    region = resolve_market_region(request_body.region)
+    payload["region"] = region
     if request_body.wait:
         service = PricingIngestionService(repository)
         if request_body.product_ids:
@@ -51,7 +58,8 @@ def refresh_pricing(
             for product_id in request_body.product_ids:
                 result = service.refresh_product(
                     product_id=product_id,
-                    region=request_body.region,
+                    region=region,
+                    city=request_body.city,
                     providers=request_body.providers,
                 )
                 if aggregate is None:
@@ -64,7 +72,8 @@ def refresh_pricing(
         result = service.sync_query(
             query=request_body.query or "",
             category=request_body.category or "GPU",
-            region=request_body.region,
+            region=region,
+            city=request_body.city,
             providers=request_body.providers,
         )
         return refresh_response([], result)
@@ -91,6 +100,8 @@ def sync_pricing(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> PricingSyncResponse:
     payload = request_body.model_dump()
+    region = resolve_market_region(request_body.region)
+    payload["region"] = region
     if request_body.wait:
         service = PricingIngestionService(repository)
         aggregate = None
@@ -98,7 +109,8 @@ def sync_pricing(
             result = service.sync_query(
                 query=query,
                 category=request_body.category,
-                region=request_body.region,
+                region=region,
+                city=request_body.city,
                 providers=request_body.providers,
                 limit=request_body.limit_per_query,
             )
@@ -132,6 +144,8 @@ def discover_products(
     manager = request.app.state.neo4j
     repository = Neo4jPricingRepository(manager.driver)
     payload = request_body.model_dump()
+    region = resolve_market_region(request_body.region)
+    payload["region"] = region
     plan = discovery_queries(
         categories=request_body.resolved_categories(),
         query=request_body.query,
@@ -148,7 +162,8 @@ def discover_products(
         result = ingestion.preview_query(
             query=request_body.query or (plan[0][1] if plan else ""),
             category=request_body.category or (request_body.resolved_categories() or ["GPU"])[0],
-            region=request_body.region,
+            region=region,
+            city=request_body.city,
             providers=request_body.providers,
             limit=request_body.resolved_limit(),
         )
@@ -181,7 +196,8 @@ def discover_products(
         result, plan = ProductDiscoveryService(ingestion).discover(
             categories=request_body.resolved_categories(),
             query=request_body.query,
-            region=request_body.region,
+            region=region,
+            city=request_body.city,
             providers=request_body.providers,
             limit_per_query=request_body.resolved_limit(),
             max_queries=request_body.max_queries,
@@ -216,7 +232,8 @@ def _run_refresh_job(repository: Neo4jPricingRepository, job: PricingJob) -> Non
         for product_id in product_ids:
             result = service.refresh_product(
                 product_id=product_id,
-                region=job.payload.get("region", "US"),
+                region=job.payload.get("region", "SA"),
+                city=job.payload.get("city"),
                 providers=job.payload.get("providers") or [],
             )
             job.accepted_snapshots += result.accepted_snapshots
@@ -225,7 +242,8 @@ def _run_refresh_job(repository: Neo4jPricingRepository, job: PricingJob) -> Non
         result = service.sync_query(
             query=job.payload.get("query") or "",
             category=job.payload.get("category") or "GPU",
-            region=job.payload.get("region", "US"),
+            region=job.payload.get("region", "SA"),
+            city=job.payload.get("city"),
             providers=job.payload.get("providers") or [],
         )
         job.accepted_snapshots = result.accepted_snapshots
@@ -240,7 +258,8 @@ def _run_sync_job(repository: Neo4jPricingRepository, job: PricingJob) -> None:
         result = service.sync_query(
             query=query,
             category=job.payload.get("category") or "GPU",
-            region=job.payload.get("region", "US"),
+            region=job.payload.get("region", "SA"),
+            city=job.payload.get("city"),
             providers=job.payload.get("providers") or [],
             limit=job.payload.get("limit_per_query", 8),
         )
@@ -255,7 +274,8 @@ def _run_discover_job(repository: Neo4jPricingRepository, job: PricingJob) -> No
     result, _ = ProductDiscoveryService(service).discover(
         categories=job.payload.get("categories") or ([job.payload.get("category")] if job.payload.get("category") else []),
         query=job.payload.get("query"),
-        region=job.payload.get("region", "US"),
+        region=job.payload.get("region", "SA"),
+        city=job.payload.get("city"),
         providers=job.payload.get("providers") or [],
         limit_per_query=job.payload.get("limit") or job.payload.get("limit_per_query", 8),
         max_queries=job.payload.get("max_queries", 24),

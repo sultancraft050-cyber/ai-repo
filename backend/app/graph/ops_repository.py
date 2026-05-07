@@ -426,6 +426,129 @@ class Neo4jOpsRepository:
             current.setdefault("last_error_sanitized", _sanitize_error(error))
         return activity
 
+    def saudi_market_quality_summary(self) -> dict[str, Any]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product)-[:HAS_PRICE]->(snapshot:PriceSnapshot {region: "SA"})
+            WHERE coalesce(snapshot.accepted, true) = true
+            OPTIONAL MATCH (snapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+            WITH collect({
+              product_id: p.id,
+              vendor: vendor.name,
+              flags: coalesce(snapshot.flags, []),
+              vendor_region_type: coalesce(snapshot.vendor_region_type, ""),
+              risk: coalesce(snapshot.marketplace_risk_score, 0.5),
+              accepted: coalesce(snapshot.accepted, true),
+              imported: coalesce(snapshot.is_imported, false) OR coalesce(snapshot.local_stock_status, "") = "imported_stock",
+              item_price_sar: snapshot.item_price_sar,
+              vat_status: snapshot.vat_status,
+              shipping_status: snapshot.shipping_status
+            }) AS rows
+            UNWIND rows AS row
+            WITH rows, row.product_id AS product_id, collect(row) AS productRows
+            WITH rows, collect({
+              has_safe: any(item IN productRows WHERE item.accepted
+                AND item.vendor_region_type IN ["local_saudi_vendor", "local", "gcc_vendor"]
+                AND item.risk < 0.65
+                AND item.item_price_sar IS NOT NULL
+                AND NOT ("unusually_low_price" IN item.flags OR "unusually_high_price" IN item.flags)),
+              has_risky: any(item IN productRows WHERE item.imported OR item.risk >= 0.65
+                OR "price_requires_review" IN item.flags OR item.item_price_sar IS NULL)
+            }) AS productQuality
+            WITH rows, productQuality,
+                 [row IN rows WHERE row.vendor_region_type IN ["local_saudi_vendor", "local", "gcc_vendor"]] AS localRows,
+                 [row IN rows WHERE row.imported] AS importedRows,
+                 [row IN rows WHERE "unusually_low_price" IN row.flags OR "unusually_high_price" IN row.flags
+                   OR "suspicious_price_below_gpu_family_market_range" IN row.flags
+                   OR "suspicious_price_above_gpu_family_market_range" IN row.flags
+                   OR "suspicious_price_below_cpu_model_market_range" IN row.flags
+                   OR "suspicious_price_above_cpu_model_market_range" IN row.flags] AS suspiciousRows,
+                 [row IN rows WHERE row.vat_status = "vat_unknown" AND row.vendor IS NOT NULL | row.vendor] AS vatVendorRows,
+                 [row IN rows WHERE row.shipping_status = "unknown_shipping" AND row.vendor IS NOT NULL | row.vendor] AS shippingVendorRows
+            RETURN size(rows) AS listings,
+                   size(localRows) AS local_count,
+                   size(importedRows) AS imported_count,
+                   size(suspiciousRows) AS suspicious_count,
+                   size([item IN productQuality WHERE item.has_safe]) AS recommended_products,
+                   size([item IN productQuality WHERE item.has_risky AND NOT item.has_safe]) AS risky_only_products,
+                   size([item IN productQuality WHERE NOT item.has_safe]) AS products_needing_review,
+                   [name IN vatVendorRows | name][0..8] AS unknown_vat_vendors,
+                   [name IN shippingVendorRows | name][0..8] AS unknown_shipping_vendors
+            """,
+            database_=settings.neo4j_database,
+        )
+        if not records:
+            return {}
+        data = records[0].data()
+        return {
+            "saudi_listings_ingested": int(data.get("listings") or 0),
+            "saudi_listings_with_recommended_option": int(data.get("recommended_products") or 0),
+            "saudi_risky_only_products": int(data.get("risky_only_products") or 0),
+            "saudi_local_listing_count": int(data.get("local_count") or 0),
+            "saudi_imported_listing_count": int(data.get("imported_count") or 0),
+            "saudi_suspicious_price_count": int(data.get("suspicious_count") or 0),
+            "saudi_products_needing_review": int(data.get("products_needing_review") or 0),
+            "saudi_unknown_vat_vendors": [str(item) for item in data.get("unknown_vat_vendors") or []],
+            "saudi_unknown_shipping_vendors": [str(item) for item in data.get("unknown_shipping_vendors") or []],
+        }
+
+    def saudi_build_readiness_summary(self) -> dict[str, Any]:
+        required = ["CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"]
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product)-[:HAS_PRICE]->(snapshot:PriceSnapshot {region: "SA"})
+            WHERE coalesce(snapshot.accepted, true) = true
+              AND snapshot.availability IN ["in_stock", "preorder", "backorder"]
+            WITH coalesce(p.category, head([label IN labels(p) WHERE label <> "Product" AND label <> "Component"])) AS category,
+                 p,
+                 snapshot
+            WHERE category IN $required
+            WITH category,
+                 count(DISTINCT p) AS priced_count,
+                 count(DISTINCT CASE
+                   WHEN snapshot.item_price_sar IS NOT NULL
+                    AND coalesce(snapshot.marketplace_risk_score, 0.5) < 0.65
+                    AND coalesce(snapshot.vendor_region_type, "") IN ["local_saudi_vendor", "local", "gcc_vendor"]
+                   THEN p END) AS trusted_count,
+                 count(DISTINCT CASE
+                   WHEN coalesce(snapshot.marketplace_risk_score, 0.5) >= 0.65
+                    OR "price_requires_review" IN coalesce(snapshot.flags, [])
+                    OR coalesce(snapshot.is_imported, false)
+                   THEN p END) AS risky_count
+            RETURN collect({
+              category: category,
+              priced_count: priced_count,
+              trusted_count: trusted_count,
+              risky_count: risky_count
+            }) AS rows
+            """,
+            required=required,
+            database_=settings.neo4j_database,
+        )
+        rows = records[0]["rows"] if records else []
+        by_category = {str(row["category"]): row for row in rows}
+        ready = [category for category in required if int(by_category.get(category, {}).get("trusted_count") or 0) > 0]
+        missing = [category for category in required if category not in ready]
+        jobs = [
+            {
+                "category": category,
+                "query": _build_discovery_query(category),
+                "region": "SA",
+                "city": "Riyadh",
+                "limit": 5,
+                "dry_run": True,
+                "reason": f"{category} lacks enough trusted Saudi market data for build generation.",
+            }
+            for category in missing
+        ]
+        return {
+            "saudi_build_readiness_score": round(len(ready) / len(required), 2),
+            "saudi_build_ready_categories": ready,
+            "saudi_build_missing_categories": missing,
+            "common_missing_build_components": missing,
+            "recommended_build_discovery_jobs": jobs[:12],
+        }
+
 
 def _sanitize_error(error: str) -> str:
     sanitized = error
@@ -434,3 +557,16 @@ def _sanitize_error(error: str) -> str:
             prefix = sanitized.split(marker, 1)[0]
             sanitized = f"{prefix}{marker}REDACTED"
     return sanitized[:240]
+
+
+def _build_discovery_query(category: str) -> str:
+    return {
+        "CPU": "Ryzen 7 7800X3D processor",
+        "GPU": "RTX 4070 Super graphics card",
+        "Motherboard": "B650 AM5 DDR5 ATX motherboard",
+        "RAM": "32GB DDR5 6000 RAM kit",
+        "Storage": "1TB NVMe PCIe 4 SSD",
+        "PSU": "750W Gold PSU",
+        "Case": "ATX airflow PC case",
+        "Cooler": "AM5 CPU air cooler",
+    }.get(category, f"{category} PC component")

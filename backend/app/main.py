@@ -8,7 +8,24 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import alignment, approvals, autonomy, build, cognition, compatibility, components, evolution, governance, intelligence, ops, performance, pricing, products, telemetry
+from app.api import (
+    alignment,
+    approvals,
+    autonomy,
+    build,
+    cognition,
+    compatibility,
+    components,
+    evolution,
+    governance,
+    intelligence,
+    ops,
+    performance,
+    pricing,
+    products,
+    sources,
+    telemetry,
+)
 from app.core.config import settings
 from app.core.security import RateLimiter, authenticate_api_key, endpoint_rule, has_role, payload_hash, trace_id
 from app.graph.driver import Neo4jSessionManager
@@ -105,6 +122,7 @@ async def security_audit_middleware(request: Request, call_next):
     current_trace_id = request.headers.get("X-Trace-ID") or trace_id()
     request.state.trace_id = current_trace_id
     body = await request.body()
+    audit_metadata = _audit_metadata(request, body)
 
     async def receive():
         return {"type": "http.request", "body": body, "more_body": False}
@@ -136,6 +154,7 @@ async def security_audit_middleware(request: Request, call_next):
                     trace_id=current_trace_id,
                     approval_required=rule.approval_required,
                     risk_level=rule.risk_level,
+                    metadata=audit_metadata,
                 ),
             )
             return JSONResponse(
@@ -180,12 +199,16 @@ async def security_audit_middleware(request: Request, call_next):
                     trace_id=current_trace_id,
                     approval_required=rule.approval_required,
                     risk_level=rule.risk_level,
-                    metadata={"error_type": type(error).__name__},
+                    metadata={**audit_metadata, "error_type": type(error).__name__},
                 ),
             )
         return JSONResponse(
             status_code=500,
-            content={"error": "internal_error", "detail": "Request failed. Check trace ID.", "trace_id": current_trace_id},
+            content={
+                "error": "internal_error",
+                "detail": "Request failed. Check trace ID.",
+                "trace_id": current_trace_id,
+            },
             headers={"X-Trace-ID": current_trace_id},
         )
     response.headers["X-Trace-ID"] = current_trace_id
@@ -205,6 +228,7 @@ async def security_audit_middleware(request: Request, call_next):
                 trace_id=current_trace_id,
                 approval_required=rule.approval_required,
                 risk_level=rule.risk_level,
+                metadata=audit_metadata,
             ),
         )
     return response
@@ -217,6 +241,30 @@ def _write_audit_safely(request: Request, event: AuditEvent) -> None:
             Neo4jOpsRepository(manager.driver).create_audit_event(event)
     except Exception:
         logger.warning(json.dumps({"event": "audit_write_failed", "trace_id": event.trace_id}))
+
+
+def _audit_metadata(request: Request, body: bytes) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    region = request.query_params.get("region")
+    market_source = request.query_params.get("provider") or request.query_params.get("source")
+    if body:
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            if payload.get("region"):
+                region = str(payload["region"])
+            providers = payload.get("providers")
+            if isinstance(providers, list) and providers:
+                market_source = ",".join(str(provider) for provider in providers[:5])
+            elif payload.get("source"):
+                market_source = str(payload["source"])
+    if region:
+        metadata["region"] = region.upper()
+    if market_source:
+        metadata["market_source"] = market_source
+    return metadata
 
 
 def _idempotency_seen_safely(request: Request, key: str) -> bool:
@@ -234,6 +282,7 @@ app.include_router(components.router)
 app.include_router(build.router)
 app.include_router(products.router)
 app.include_router(pricing.router)
+app.include_router(sources.router)
 app.include_router(intelligence.router)
 app.include_router(telemetry.router)
 app.include_router(cognition.router)

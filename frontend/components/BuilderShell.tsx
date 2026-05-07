@@ -6,6 +6,7 @@ import { useMachine } from "@xstate/react";
 import { Activity, Cpu, Database, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { builderMachine } from "@/machines/builderMachine";
 import { fetchComponentOptions } from "@/lib/api";
+import { useRegion } from "@/components/RegionProvider";
 import {
   componentOrder,
   selectionKeyByKind,
@@ -19,7 +20,9 @@ import { CompatibilityPanel } from "@/components/CompatibilityPanel";
 import { PerformancePanel } from "@/components/PerformancePanel";
 import { PreferencePanel } from "@/components/PreferencePanel";
 import { PricingIntelligencePanel } from "@/components/PricingIntelligencePanel";
+import { SaudiBuildWizard } from "@/components/SaudiBuildWizard";
 import { SoloFounderOpsPanel } from "@/components/SoloFounderOpsPanel";
+import { RegionSelector } from "@/components/RegionSelector";
 
 const kindIcon: Record<ComponentKind, string> = {
   CPU: "CPU",
@@ -44,6 +47,7 @@ function createEmptyOptions(): Record<ComponentKind, ComponentOption[]> {
 
 export function BuilderShell() {
   const [state, send] = useMachine(builderMachine);
+  const { region, setRegion } = useRegion();
   const [options, setOptions] = useState<Record<ComponentKind, ComponentOption[]>>(createEmptyOptions);
   const [optionError, setOptionError] = useState<string | null>(null);
   const [loadingKind, setLoadingKind] = useState<ComponentKind | null>(null);
@@ -52,6 +56,12 @@ export function BuilderShell() {
   const stateLabel = String(state.value).replaceAll("_", " ");
   const compatibility = state.context.validation?.compatibility;
   const performance = state.context.validation?.performance;
+
+  useEffect(() => {
+    if (state.context.preferences.region !== region) {
+      send({ type: "SET_PREFERENCES", preferences: { ...state.context.preferences, region } });
+    }
+  }, [region, send, state.context.preferences]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +100,9 @@ export function BuilderShell() {
   }, [options, state.context.selected]);
 
   function updatePreferences(preferences: BuildPreferences) {
+    if (preferences.region !== region) {
+      setRegion(preferences.region);
+    }
     send({ type: "SET_PREFERENCES", preferences });
   }
 
@@ -106,7 +119,8 @@ export function BuilderShell() {
               Custom PC Compatibility Intelligence
             </h1>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-sm">
+          <div className="grid gap-2 text-sm sm:grid-cols-[auto_auto_auto] lg:grid-cols-[minmax(190px,auto)_auto_auto_auto]">
+            <RegionSelector />
             <StatusChip icon={<Activity size={16} />} label="State" value={stateLabel} tone="signal" />
             <StatusChip icon={<Cpu size={16} />} label="Selected" value={`${selectedCount}/8`} tone="violet" />
             <StatusChip
@@ -131,9 +145,11 @@ export function BuilderShell() {
               onApply={(selection) => send({ type: "APPLY_GENERATED_BUILD", selection })}
             />
 
+            <SaudiBuildWizard />
+
             <SoloFounderOpsPanel />
 
-            <PricingIntelligencePanel region={state.context.preferences.region} />
+            <PricingIntelligencePanel />
 
             <div className="rounded-lg border border-line bg-white p-3 shadow-tight">
               <div className="mb-3 flex items-center justify-between gap-3">

@@ -1,6 +1,7 @@
 "use client";
 
 import { SlidersHorizontal } from "lucide-react";
+import { MARKET_REGIONS } from "@/lib/region";
 import type { BuildPreferences, CaseSize, NoisePreference, Purpose, Resolution } from "@/types/builder";
 
 export function PreferencePanel({
@@ -49,7 +50,7 @@ export function PreferencePanel({
         <SelectField
           label="Pricing region"
           value={preferences.region}
-          options={["US", "SA", "EU", "UK", "CA"]}
+          options={MARKET_REGIONS.map((region) => region.code)}
           onChange={(region) => onChange({ ...preferences, region })}
         />
 

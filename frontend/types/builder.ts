@@ -129,12 +129,217 @@ export type BuildGenerateResponse = {
   fallback_explanation?: string;
 };
 
+export type SaudiBuildUseCase =
+  | "gaming"
+  | "simulation"
+  | "workstation"
+  | "content_creation"
+  | "ai_ml"
+  | "streaming"
+  | "general";
+export type SaudiBuildResolution = "1080p" | "1440p" | "4k" | "ultrawide";
+export type SaudiBuildPriority =
+  | "best_value"
+  | "maximum_performance"
+  | "quiet_build"
+  | "upgrade_path"
+  | "local_availability"
+  | "lowest_risk";
+export type SaudiBuildRequest = {
+  region: "SA";
+  city: string;
+  budget_sar: number;
+  use_case: SaudiBuildUseCase;
+  target_resolution: SaudiBuildResolution;
+  refresh_rate_target: 60 | 120 | 144 | 165 | 240;
+  brand_preferences: ("AMD" | "Intel" | "NVIDIA" | "no_preference")[];
+  case_size: "ATX" | "mATX" | "ITX" | "no_preference";
+  priority: SaudiBuildPriority;
+  strict_budget: boolean;
+  include_monitor: boolean;
+  include_peripherals: boolean;
+};
+export type RecommendedDiscoveryJob = {
+  category: string;
+  query: string;
+  region: "SA";
+  city: string;
+  limit: number;
+  dry_run: boolean;
+  reason: string;
+};
+export type CategoryCoverage = {
+  category: string;
+  priced_product_count: number;
+  trusted_local_listing_count: number;
+  risky_listing_count: number;
+  usable_with_warnings_count: number;
+  unknown_vat_count: number;
+  unknown_shipping_count: number;
+  unknown_warranty_count: number;
+  suspicious_price_count: number;
+  recommended_option_count: number;
+  stale_listing_count: number;
+  ready: boolean;
+  readiness_level: "ready" | "usable_with_warnings" | "not_ready";
+  notes: string[];
+};
+export type SaudiBuildDataCompleteness = {
+  region: "SA";
+  city: string;
+  readiness_score: number;
+  required_categories: string[];
+  ready_categories: string[];
+  missing_categories: string[];
+  category_coverage: CategoryCoverage[];
+  recommended_discovery_jobs: RecommendedDiscoveryJob[];
+  enough_data_for_full_build: boolean;
+  message: string;
+};
+export type SaudiBuildComponent = {
+  product_id: string;
+  name: string;
+  category: string;
+  brand?: string | null;
+  recommended_vendor?: string | null;
+  recommended_price_sar?: number | null;
+  lowest_market_price_sar?: number | null;
+  price_confidence?: number | null;
+  seller_type?: string | null;
+  vendor_region_type?: string | null;
+  stock_badge: "local" | "gcc" | "imported" | "unknown";
+  vat_status: string;
+  shipping_status: string;
+  warranty_status: string;
+  reason_selected: string;
+  alternatives: string[];
+  warnings: string[];
+};
+export type SaudiBuildSummary = {
+  total_recommended_price_sar?: number | null;
+  total_lowest_possible_price_sar?: number | null;
+  budget_remaining_or_overage?: number | null;
+  budget_sar?: number | null;
+  budget_delta_sar?: number | null;
+  over_budget_amount_sar: number;
+  over_budget_percent: number;
+  budget_status: "under_budget" | "slightly_over_budget" | "over_budget" | "no_valid_build_under_budget";
+  most_expensive_components: string[];
+  easiest_savings_opportunities: string[];
+  compatibility_status: "valid" | "invalid" | "incomplete" | "not_validated";
+  performance_estimate: string;
+  bottleneck_summary: string;
+  risk_summary: string[];
+  data_completeness_score: number;
+  warning_summary: string[];
+  components_with_uncertainty: string[];
+  confidence_level: "high" | "medium" | "low";
+  confidence_score: number;
+  missing_data_warnings: string[];
+};
+export type SaudiBuildOption = {
+  label: "recommended_saudi_build" | "budget_fit_build" | "best_value_build" | "lowest_risk_local_build";
+  title: string;
+  components: SaudiBuildComponent[];
+  summary: SaudiBuildSummary;
+  why_this_build: string;
+  upgrade_notes: string[];
+};
+export type SaudiBuildResponse = {
+  region: "SA";
+  city: string;
+  build_status: "ready" | "incomplete_data" | "no_valid_build" | "incomplete_budget_fit";
+  builds: SaudiBuildOption[];
+  data_completeness: SaudiBuildDataCompleteness;
+  recommended_discovery_jobs: RecommendedDiscoveryJob[];
+  missing_data_warnings: string[];
+  audit_trace_id?: string | null;
+};
+export type SaudiBuildValidationRequest = {
+  region: "SA";
+  city: string;
+  component_ids: Record<string, string>;
+  budget_sar?: number | null;
+};
+export type SaudiBuildValidationResponse = {
+  valid: boolean;
+  compatibility_status: "valid" | "invalid" | "incomplete" | "not_validated";
+  market_confidence: number;
+  total_recommended_price_sar?: number | null;
+  warnings: string[];
+  missing_categories: string[];
+};
+export type DuplicateConfidence = "high" | "medium" | "low";
+export type CpuDuplicateCandidate = {
+  canonical_cpu_key: string;
+  region: string;
+  suspected_duplicate_product_ids: string[];
+  product_names: string[];
+  vendors: string[];
+  prices: Record<string, unknown>[];
+  confidence: DuplicateConfidence;
+  reason: string;
+  recommended_action: string;
+  approval_required: boolean;
+  approval_id?: string | null;
+};
+export type CpuDuplicateReport = {
+  region: string;
+  candidates: CpuDuplicateCandidate[];
+  approval_items_created: number;
+  trace_id?: string | null;
+};
+export type CanonicalMergePreviewRequest = {
+  product_ids: string[];
+  region: string;
+};
+export type CanonicalMergePreviewResponse = {
+  proposed_canonical_product: Record<string, unknown>;
+  relationships_to_preserve: Record<string, number>;
+  price_snapshots_to_preserve: number;
+  vendors_to_preserve: number;
+  field_evidence_to_preserve: number;
+  audit_events_to_preserve: number;
+  risks: string[];
+  rollback_plan: string;
+  would_execute: boolean;
+  approval_required: boolean;
+  approval_id?: string | null;
+};
+
 export type SourceType =
   | "manufacturer"
   | "retailer_api"
   | "aggregator_api"
   | "verified_scraping"
   | "inferred";
+
+export type ListingCondition = "new" | "used" | "refurbished" | "open_box" | "unknown";
+export type SellerType = "retailer" | "manufacturer" | "marketplace" | "third_party" | "unknown";
+export type PriceStatus = "active" | "stale" | "unavailable";
+export type DataOrigin = "live" | "seed" | "demo" | "unknown";
+export type BuyRecommendationLevel =
+  | "recommended"
+  | "good_if_price_matters"
+  | "acceptable_with_risk"
+  | "not_recommended"
+  | "insufficient_data";
+export type TrustTier = "high" | "medium" | "low" | "unknown";
+export type VatStatus = "vat_included" | "vat_excluded" | "vat_unknown";
+export type ShippingStatus = "free_shipping" | "paid_shipping" | "unknown_shipping" | "pickup_only";
+export type WarrantyStatus =
+  | "local_warranty"
+  | "seller_warranty"
+  | "manufacturer_warranty"
+  | "unknown_warranty";
+export type LocalStockStatus = "local_stock" | "gcc_stock" | "imported_stock" | "unknown_stock";
+export type VendorRegionType =
+  | "local_saudi_vendor"
+  | "gcc_vendor"
+  | "international_vendor"
+  | "marketplace_vendor"
+  | "unknown_vendor"
+  | "local";
 
 export type ProductSearchResult = {
   id: string;
@@ -144,9 +349,43 @@ export type ProductSearchResult = {
   category: ProductCategory | string;
   model?: string;
   image_url?: string;
+  data_origin: DataOrigin;
+  price_status: PriceStatus;
+  flags: string[];
+  region: string;
+  region_currency?: string;
+  region_price_status?: PriceStatus;
+  recommended_reason?: string;
+  recommended_level?: BuyRecommendationLevel | null;
+  price_confidence?: number;
+  lowest_price_warning?: string | null;
   current_best_price?: number;
   current_best_currency?: string;
   current_best_vendor?: string;
+  current_recommended_price?: number;
+  current_recommended_currency?: string;
+  current_recommended_vendor?: string;
+  current_recommended_condition?: ListingCondition;
+  current_recommended_seller_type?: SellerType;
+  current_recommended_marketplace_risk_score?: number;
+  lowest_market_price?: number;
+  lowest_market_currency?: string;
+  lowest_market_vendor?: string;
+  lowest_market_condition?: ListingCondition;
+  lowest_market_seller_type?: SellerType;
+  lowest_marketplace_risk_score?: number;
+  best_new_price?: number;
+  best_new_currency?: string;
+  best_new_vendor?: string;
+  best_trusted_price?: number;
+  best_trusted_currency?: string;
+  best_trusted_vendor?: string;
+  best_local_price?: number;
+  best_local_currency?: string;
+  best_local_vendor?: string;
+  best_used_price?: number;
+  best_used_currency?: string;
+  best_used_vendor?: string;
   current_price_freshness_score?: number;
   current_price_trust_score?: number;
   current_price_timestamp?: string;
@@ -161,6 +400,45 @@ export type PriceSnapshotView = {
   vendor_name: string;
   price: number;
   currency: string;
+  region: string;
+  country_code?: string | null;
+  city?: string | null;
+  raw_price?: number | null;
+  item_price?: number | null;
+  item_price_sar?: number | null;
+  shipping_cost_sar?: number | null;
+  final_landed_price?: number | null;
+  final_landed_currency?: string | null;
+  final_landed_price_sar?: number | null;
+  vat_included?: boolean | null;
+  vat_status: VatStatus;
+  shipping_status: ShippingStatus;
+  warranty_status: WarrantyStatus;
+  local_stock_status: LocalStockStatus;
+  vendor_region_type: VendorRegionType;
+  estimated_vat?: number | null;
+  import_fee?: number | null;
+  estimated_delivery_days?: number | null;
+  seller_country?: string | null;
+  is_local_stock?: boolean | null;
+  is_imported?: boolean | null;
+  serves_saudi?: boolean | null;
+  warranty_type?: string | null;
+  local_warranty?: boolean | null;
+  region_rank_score?: number | null;
+  recommended_saudi_price_candidate: boolean;
+  final_landed_price_confidence?: number | null;
+  price_completeness_score?: number | null;
+  trust_tier: TrustTier;
+  delivery_status: ShippingStatus;
+  confidence_score?: number | null;
+  buy_recommendation_level: BuyRecommendationLevel;
+  buy_recommendation_reason?: string | null;
+  recommendation_reason?: string | null;
+  warnings: string[];
+  local_stock_confidence?: number | null;
+  warranty_confidence?: number | null;
+  delivery_confidence?: number | null;
   availability: "in_stock" | "out_of_stock" | "preorder" | "backorder" | "unknown";
   timestamp: string;
   shipping_cost: number;
@@ -171,6 +449,10 @@ export type PriceSnapshotView = {
   trust_score: number;
   freshness_score: number;
   stale: boolean;
+  accepted: boolean;
+  listing_condition: ListingCondition;
+  seller_type: SellerType;
+  marketplace_risk_score: number;
   flags: string[];
 };
 
@@ -215,7 +497,33 @@ export type ProductDiscoveryResponse = {
 
 export type DiscoveryPreviewItem = {
   raw_listing_name: string;
+  category: string;
+  product_type:
+    | "standalone_gpu"
+    | "standalone_cpu"
+    | "standalone_storage"
+    | "standalone_ram"
+    | "standalone_psu"
+    | "standalone_case"
+    | "standalone_cooler"
+    | "standalone_motherboard"
+    | "prebuilt_pc"
+    | "laptop"
+    | "bundle"
+    | "motherboard"
+    | "cooler"
+    | "accessory"
+    | "unknown_low_confidence"
+    | "hardware_product";
+  product_type_confidence: number;
   normalized_name: string;
+  gpu_family_key?: string | null;
+  ram_family_key?: string | null;
+  psu_family_key?: string | null;
+  case_family_key?: string | null;
+  cooler_family_key?: string | null;
+  motherboard_family_key?: string | null;
+  canonical_product_key: string;
   canonical_key: string;
   canonical_product_id?: string | null;
   merge_decision: "new_product" | "merge_existing" | "rejected";
@@ -224,7 +532,37 @@ export type DiscoveryPreviewItem = {
   vendor_name: string;
   price: number;
   currency: string;
+  region: string;
+  city?: string | null;
+  item_price_sar?: number | null;
+  shipping_cost_sar?: number | null;
+  final_landed_price?: number | null;
+  final_landed_currency?: string | null;
+  final_landed_price_sar?: number | null;
+  is_local_stock?: boolean | null;
+  is_imported?: boolean | null;
+  serves_saudi?: boolean | null;
+  vendor_region_type: VendorRegionType;
+  vat_included?: boolean | null;
+  vat_status: VatStatus;
+  shipping_status: ShippingStatus;
+  warranty_status: WarrantyStatus;
+  local_stock_status: LocalStockStatus;
+  estimated_vat?: number | null;
+  warranty_type?: string | null;
+  region_rank_score?: number | null;
+  recommended_candidate: boolean;
+  recommended_saudi_price_candidate: boolean;
+  final_landed_price_confidence?: number | null;
+  price_completeness_score?: number | null;
+  trust_tier: TrustTier;
+  local_stock_confidence?: number | null;
+  warranty_confidence?: number | null;
+  delivery_confidence?: number | null;
   availability: PriceSnapshotView["availability"];
+  listing_condition: ListingCondition;
+  seller_type: SellerType;
+  marketplace_risk_score: number;
   accepted: boolean;
   rejected_reasons: string[];
   flags: string[];
@@ -1130,12 +1468,124 @@ export type SourceHealth = {
 
 export type SourceConfigStatus = {
   source_name: string;
+  region: string;
   configured: boolean;
   health: "configured" | "not_configured" | "degraded" | "healthy" | "quota_limited" | "failed";
   last_success?: string | null;
   last_failure?: string | null;
   last_error_sanitized?: string | null;
   quota_status: "ok" | "near_limit" | "limited" | "unknown" | "not_configured";
+  source_kind: string;
+  discovery_enabled: boolean;
+  direct_access_enabled: boolean;
+  preferred_discovery_path?: string | null;
+  source_policy?: string | null;
+};
+
+export type KnownUrlRefreshSupport = "true" | "false" | "policy_gated";
+export type SourcePolicyStatus = "allowed" | "policy_gated" | "blocked" | "unsupported";
+
+export type SourceMatrixEntry = {
+  source_name: string;
+  region: string;
+  manual_url_supported: boolean;
+  known_url_refresh_supported: KnownUrlRefreshSupport;
+  broad_scraping_allowed: boolean;
+  access_method: string;
+  enabled: boolean;
+  policy_status: SourcePolicyStatus;
+  health: "healthy" | "configured" | "not_configured" | "degraded" | "failed" | "policy_gated";
+  last_success?: string | null;
+  last_failure?: string | null;
+  source_policy: string;
+};
+
+export type ProductUrlPreviewRequest = {
+  url: string;
+  region: string;
+  category: ProductCategory | string;
+  dry_run?: boolean;
+};
+
+export type ProductUrlPreviewResponse = {
+  raw_title?: string | null;
+  normalized_name?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  image_url?: string | null;
+  availability: "in_stock" | "out_of_stock" | "preorder" | "backorder" | "unknown";
+  vendor_name?: string | null;
+  product_url: string;
+  normalized_url: string;
+  category: string;
+  product_type: string;
+  product_type_confidence: number;
+  canonical_key?: string | null;
+  region: string;
+  source_name?: string | null;
+  source_policy_status: SourcePolicyStatus;
+  listing_condition: "new" | "used" | "refurbished" | "open_box" | "unknown";
+  seller_type: "retailer" | "manufacturer" | "marketplace" | "third_party" | "unknown";
+  vendor_region_type: string;
+  marketplace_risk_score: number;
+  vat_status: "vat_included" | "vat_excluded" | "vat_unknown";
+  shipping_status: "free_shipping" | "paid_shipping" | "unknown_shipping" | "pickup_only";
+  warranty_status: "local_warranty" | "seller_warranty" | "manufacturer_warranty" | "unknown_warranty";
+  item_price_sar?: number | null;
+  final_landed_price_sar?: number | null;
+  price_confidence?: number | null;
+  recommendation_level: PriceSnapshotView["buy_recommendation_level"];
+  accepted: boolean;
+  rejected_reasons: string[];
+  flags: string[];
+  extracted_at: string;
+};
+
+export type ProductUrlIngestResponse = {
+  status: "ingested" | "rejected";
+  product_id?: string | null;
+  vendor_id?: string | null;
+  price_snapshot_id?: string | null;
+  product_url: string;
+  normalized_url: string;
+  audit_event_id?: string | null;
+  preview: ProductUrlPreviewResponse;
+  trace_id: string;
+};
+
+export type KnownProductUrlView = {
+  url: string;
+  normalized_url: string;
+  source_name: string;
+  vendor_name: string;
+  region: string;
+  category: string;
+  approved: boolean;
+  refresh_allowed: boolean;
+  last_checked_at?: string | null;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  last_error_sanitized?: string | null;
+  source_policy_status: SourcePolicyStatus;
+  last_price?: number | null;
+  last_currency?: string | null;
+};
+
+export type ProductUrlRefreshResponse = {
+  status: "completed";
+  region: string;
+  refreshed_count: number;
+  failed_count: number;
+  skipped_count: number;
+  items: {
+    normalized_url: string;
+    vendor_name: string;
+    category: string;
+    status: "refreshed" | "skipped" | "failed";
+    price_snapshot_id?: string | null;
+    error?: string | null;
+  }[];
+  trace_id: string;
 };
 
 export type WorkerHealth = {
@@ -1248,6 +1698,22 @@ export type DataOpsSummary = {
   telemetry_snapshots_ingested: number;
   telemetry_gaps_detected: number;
   enrichment_jobs_completed: number;
+  saudi_listings_ingested: number;
+  saudi_listings_with_recommended_option: number;
+  saudi_risky_only_products: number;
+  saudi_local_listing_count: number;
+  saudi_imported_listing_count: number;
+  saudi_suspicious_price_count: number;
+  saudi_products_needing_review: number;
+  saudi_unknown_vat_vendors: string[];
+  saudi_unknown_shipping_vendors: string[];
+  saudi_build_readiness_score: number;
+  saudi_build_ready_categories: string[];
+  saudi_build_missing_categories: string[];
+  saudi_build_request_count: number;
+  failed_build_generations: number;
+  common_missing_build_components: string[];
+  recommended_build_discovery_jobs: Record<string, unknown>[];
 };
 
 export type CognitionOpsSummary = {
@@ -1270,6 +1736,8 @@ export type SourceHealthSummary = {
 export type DailyFounderReport = {
   id: string;
   generated_at: string;
+  region: string;
+  region_currency?: string | null;
   system_health: "healthy" | "watch" | "degraded" | "critical";
   neo4j_health: GraphHealth;
   workers: WorkerHealth[];

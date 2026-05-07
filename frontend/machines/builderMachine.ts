@@ -39,7 +39,7 @@ type BuilderEvent =
 const defaultPreferences: BuildPreferences = {
   purpose: "gaming",
   resolution: "1440p",
-  region: "US",
+  region: "SA",
   brand_bias: [],
   noise_preference: "balanced",
   upgrade_path_priority: 5

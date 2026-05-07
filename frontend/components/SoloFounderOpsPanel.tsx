@@ -8,15 +8,21 @@ import {
   cancelAutonomyJob,
   deferRequest,
   getAutonomyQueue,
+  getCpuDuplicateCandidates,
   getFounderDailyReport,
   getPendingApprovals,
   markApprovalReviewed,
+  previewCanonicalMerge,
   rejectRequest
 } from "@/lib/api";
-import type { ApprovalItem, AutonomyQueue as AutonomyQueueData, DailyFounderReport } from "@/types/builder";
+import type { ApprovalItem, AutonomyQueue as AutonomyQueueData, CanonicalMergePreviewResponse, CpuDuplicateReport, DailyFounderReport } from "@/types/builder";
 import { ApprovalCenter } from "@/components/ApprovalCenter";
 import { AutonomyQueue } from "@/components/AutonomyQueue";
 import { FounderDailyBrief } from "@/components/FounderDailyBrief";
+import { GraphIntegrityPanel } from "@/components/GraphIntegrityPanel";
+import { KnownUrlRefreshPanel } from "@/components/KnownUrlRefreshPanel";
+import { ProductUrlImportPanel } from "@/components/ProductUrlImportPanel";
+import { useRegion } from "@/components/RegionProvider";
 
 type LoadState<T> = {
   data: T | null;
@@ -29,13 +35,17 @@ function initialState<T>(): LoadState<T> {
 }
 
 export function SoloFounderOpsPanel() {
+  const { region, regionOption } = useRegion();
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [brief, setBrief] = useState<LoadState<DailyFounderReport>>(initialState);
   const [queue, setQueue] = useState<LoadState<AutonomyQueueData>>(initialState);
   const [approvals, setApprovals] = useState<LoadState<ApprovalItem[]>>(initialState);
+  const [cpuDuplicates, setCpuDuplicates] = useState<LoadState<CpuDuplicateReport>>(initialState);
+  const [mergePreview, setMergePreview] = useState<CanonicalMergePreviewResponse | null>(null);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
   const [actingJobId, setActingJobId] = useState<string | null>(null);
+  const [previewingCpuKey, setPreviewingCpuKey] = useState<string | null>(null);
 
   const pendingApprovals = useMemo(() => {
     const direct = approvals.data ?? [];
@@ -49,11 +59,13 @@ export function SoloFounderOpsPanel() {
     setBrief((current) => ({ ...current, loading: true, error: null }));
     setQueue((current) => ({ ...current, loading: true, error: null }));
     setApprovals((current) => ({ ...current, loading: true, error: null }));
+    setCpuDuplicates((current) => ({ ...current, loading: true, error: null }));
 
-    const [briefResult, queueResult, approvalsResult] = await Promise.allSettled([
-      getFounderDailyReport(apiKey),
+    const [briefResult, queueResult, approvalsResult, duplicateResult] = await Promise.allSettled([
+      getFounderDailyReport(apiKey, region),
       getAutonomyQueue(apiKey),
-      getPendingApprovals(apiKey)
+      getPendingApprovals(apiKey),
+      getCpuDuplicateCandidates(apiKey, region)
     ]);
 
     setBrief((current) =>
@@ -71,10 +83,15 @@ export function SoloFounderOpsPanel() {
         ? { data: approvalsResult.value, loading: false, error: null }
         : { data: current.data, loading: false, error: errorMessage(approvalsResult.reason, "Unable to load approvals.") }
     );
+    setCpuDuplicates((current) =>
+      duplicateResult.status === "fulfilled"
+        ? { data: duplicateResult.value, loading: false, error: null }
+        : { data: current.data, loading: false, error: errorMessage(duplicateResult.reason, "Unable to load CPU duplicate candidates.") }
+    );
   }
 
   async function refreshApprovalsAndBrief() {
-    const [pending, daily] = await Promise.allSettled([getPendingApprovals(apiKey), getFounderDailyReport(apiKey)]);
+    const [pending, daily] = await Promise.allSettled([getPendingApprovals(apiKey), getFounderDailyReport(apiKey, region)]);
     if (pending.status === "fulfilled") setApprovals({ data: pending.value, loading: false, error: null });
     if (daily.status === "fulfilled") setBrief({ data: daily.value, loading: false, error: null });
   }
@@ -122,6 +139,40 @@ export function SoloFounderOpsPanel() {
     }
   }
 
+  async function loadCpuDuplicates() {
+    if (!apiKey) return;
+    setCpuDuplicates((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const report = await getCpuDuplicateCandidates(apiKey, region);
+      setCpuDuplicates({ data: report, loading: false, error: null });
+      await refreshApprovalsAndBrief();
+    } catch (error) {
+      setCpuDuplicates((current) => ({
+        ...current,
+        loading: false,
+        error: errorMessage(error, "Unable to load CPU duplicate candidates.")
+      }));
+    }
+  }
+
+  async function previewMerge(productIds: string[]) {
+    setPreviewingCpuKey(productIds.join("|"));
+    setCpuDuplicates((current) => ({ ...current, error: null }));
+    try {
+      const preview = await previewCanonicalMerge(apiKey, { product_ids: productIds, region });
+      setMergePreview(preview);
+      await refreshApprovalsAndBrief();
+      setMessage("Canonical merge preview created. No product merge was executed.");
+    } catch (error) {
+      setCpuDuplicates((current) => ({
+        ...current,
+        error: errorMessage(error, "Unable to preview canonical merge.")
+      }));
+    } finally {
+      setPreviewingCpuKey(null);
+    }
+  }
+
   return (
     <section className="rounded-lg border border-slate-800 bg-slate-950 p-3 shadow-tight">
       <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -132,7 +183,7 @@ export function SoloFounderOpsPanel() {
           </div>
           <h2 className="text-xl font-semibold text-white">Autonomy supervision cockpit</h2>
           <p className="mt-1 max-w-2xl text-sm text-slate-400">
-            Shows what needs judgment now, what the system handled, and what is safely queued.
+            Shows what needs judgment now, what the system handled, and what is safely queued for {regionOption.countryName}.
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_auto]">
@@ -193,6 +244,21 @@ export function SoloFounderOpsPanel() {
               onRetry={loadAll}
               onCancel={cancelJob}
             />
+          </div>
+
+          <GraphIntegrityPanel
+            report={cpuDuplicates.data}
+            preview={mergePreview}
+            loading={cpuDuplicates.loading}
+            previewingId={previewingCpuKey}
+            error={cpuDuplicates.error}
+            onLoad={loadCpuDuplicates}
+            onPreview={previewMerge}
+          />
+
+          <div className="grid gap-3">
+            <ProductUrlImportPanel apiKey={apiKey} region={region} onIngested={loadAll} />
+            <KnownUrlRefreshPanel apiKey={apiKey} region={region} />
           </div>
 
           <OperationsFooter report={brief.data} />

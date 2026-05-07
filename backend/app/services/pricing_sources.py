@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from app.models.pricing import SourceMetadata, SourceProductRecord, SourceTier, SourceType
 from app.services.pricing_quality import freshness_score
+from app.services.region_config import get_region_config, normalize_region
 
 
 class SourceUnavailable(RuntimeError):
@@ -108,6 +109,21 @@ def _money(value: Any) -> float | None:
     return float(match.group(1).replace(",", ""))
 
 
+def _currency_from_price(value: Any, default_currency: str) -> str:
+    text = str(value or "").upper()
+    if "SAR" in text or "ر.س" in text or "ريال" in text:
+        return "SAR"
+    if "AED" in text or "د.إ" in text:
+        return "AED"
+    if "GBP" in text or "£" in text:
+        return "GBP"
+    if "EUR" in text or "€" in text:
+        return "EUR"
+    if "USD" in text or "$" in text:
+        return "USD"
+    return default_currency
+
+
 class BestBuyProductsSource:
     name = "BestBuy"
     tier = SourceTier.RETAILER_API
@@ -129,6 +145,7 @@ class BestBuyProductsSource:
     ) -> list[SourceProductRecord]:
         if not self.configured():
             raise SourceUnavailable("BESTBUY_API_KEY is not configured")
+        region_code = normalize_region(region)
         search = quote(query)
         params = urlencode(
             {
@@ -158,9 +175,12 @@ class BestBuyProductsSource:
                     currency="USD",
                     availability="in_stock" if product.get("onlineAvailability") else "out_of_stock",
                     vendor_name="BestBuy",
-                    vendor_region=region,
+                    vendor_region=region_code,
+                    region=region_code,
+                    country_code=region_code,
                     product_url=product.get("url"),
                     image_url=product.get("image"),
+                    condition="new",
                     rating=_money(product.get("customerReviewAverage")),
                     source=_metadata(
                         source="BestBuy Products API",
@@ -195,6 +215,7 @@ class EbayBrowseSource:
     ) -> list[SourceProductRecord]:
         if not self.configured():
             raise SourceUnavailable("EBAY_BROWSE_TOKEN is not configured")
+        region_code = normalize_region(region)
         params = urlencode({"q": query, "limit": max(1, min(limit, 50))})
         url = f"https://api.ebay.com/buy/browse/v1/item_summary/search?{params}"
         body = _request_json(
@@ -202,7 +223,7 @@ class EbayBrowseSource:
             headers={
                 "Accept": "application/json",
                 "Authorization": f"Bearer {self.token}",
-                "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" if region.upper() == "US" else "EBAY_GB",
+                "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" if region_code == "US" else "EBAY_GB",
             },
         )
         records: list[SourceProductRecord] = []
@@ -224,7 +245,9 @@ class EbayBrowseSource:
                     currency=str(price_data.get("currency") or "USD"),
                     availability=availability,
                     vendor_name="eBay",
-                    vendor_region=region,
+                    vendor_region=region_code,
+                    region=region_code,
+                    country_code=region_code,
                     product_url=item.get("itemWebUrl"),
                     image_url=(item.get("image") or {}).get("imageUrl"),
                     seller=(item.get("seller") or {}).get("username"),
@@ -262,36 +285,49 @@ class SerpApiShoppingSource:
     ) -> list[SourceProductRecord]:
         if not self.configured():
             raise SourceUnavailable("SERPAPI_KEY is not configured")
+        region_code = normalize_region(region)
+        region_config = get_region_config(region_code)
         params = urlencode(
             {
                 "engine": "google_shopping",
                 "q": query,
                 "api_key": self.api_key,
-                "gl": region.lower() if len(region) == 2 else "us",
-                "hl": "en",
+                "gl": region_config.gl,
+                "hl": region_config.hl,
+                "google_domain": region_config.google_domain,
+                "location": region_config.location,
             }
         )
         url = f"https://serpapi.com/search.json?{params}"
         body = _request_json(url, headers={"Accept": "application/json"})
         records: list[SourceProductRecord] = []
         for result in (body.get("shopping_results") or [])[:limit]:
-            price = _money(result.get("extracted_price") or result.get("price"))
+            raw_price = result.get("price")
+            price = _money(result.get("extracted_price") or raw_price)
             if price is None:
                 continue
+            currency = str(result.get("currency") or _currency_from_price(raw_price, region_config.currency))
             records.append(
                 SourceProductRecord(
                     source_product_id=str(result.get("product_id") or result.get("position")),
                     title=str(result.get("title") or query),
                     category=category,
                     price=price,
-                    currency="USD",
+                    currency=currency,
                     availability="in_stock" if result.get("source") else "unknown",
                     vendor_name=str(result.get("source") or "Google Shopping"),
-                    vendor_region=region,
+                    vendor_region=region_code,
+                    region=region_code,
+                    city=region_config.default_city,
+                    country_code=region_code,
                     product_url=result.get("link"),
                     image_url=result.get("thumbnail"),
                     shipping_cost=_money(result.get("delivery")) or 0,
                     rating=_money(result.get("rating")),
+                    specs={
+                        "delivery_text": result.get("delivery"),
+                        "raw_price_text": result.get("price"),
+                    },
                     source=_metadata(
                         source="SerpAPI Google Shopping",
                         source_type=self.source_type,
@@ -329,6 +365,7 @@ class AmazonProductAdvertisingSource:
     ) -> list[SourceProductRecord]:
         if not self.configured():
             raise SourceUnavailable("Amazon PA-API credentials are not configured")
+        region_code = normalize_region(region)
         path = "/paapi5/searchitems"
         url = f"https://{self.host}{path}"
         payload = {
@@ -376,7 +413,9 @@ class AmazonProductAdvertisingSource:
                     if "stock" in str((listing.get("Availability") or {}).get("Message", "")).lower()
                     else "unknown",
                     vendor_name="Amazon",
-                    vendor_region=region,
+                    vendor_region=region_code,
+                    region=region_code,
+                    country_code=region_code,
                     product_url=item.get("DetailPageURL"),
                     image_url=(((item.get("Images") or {}).get("Primary") or {}).get("Medium") or {}).get("URL"),
                     condition=(listing.get("Condition") or {}).get("Value"),

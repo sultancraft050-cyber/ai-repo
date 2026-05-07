@@ -97,7 +97,11 @@ export function FounderDailyBrief({ report, loading, error, onRetry }: FounderDa
         <SummaryBlock title="Data" items={[
           `${report.data_summary.new_products_discovered} new products`,
           `${report.data_summary.price_snapshots_updated} pricing refreshes`,
-          `${report.data_summary.telemetry_gaps_detected} telemetry gaps`
+          `${report.data_summary.telemetry_gaps_detected} telemetry gaps`,
+          `${report.data_summary.saudi_listings_with_recommended_option} Saudi products with buy options`,
+          `${report.data_summary.saudi_risky_only_products} Saudi products risky-only`,
+          `${Math.round(report.data_summary.saudi_build_readiness_score * 100)}% Saudi build readiness`,
+          `${report.data_summary.saudi_build_missing_categories.length} build categories missing`
         ]} />
         <SummaryBlock title="Cognition" items={[
           `${report.cognition_summary.governance_risks} governance risks`,

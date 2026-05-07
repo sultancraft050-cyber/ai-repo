@@ -51,8 +51,11 @@ import {
   type TelemetrySeverity,
   type TelemetrySummary
 } from "@/types/builder";
+import { useRegion } from "@/components/RegionProvider";
 
-export function PricingIntelligencePanel({ region }: { region: string }) {
+export function PricingIntelligencePanel({ region: regionOverride }: { region?: string }) {
+  const { region: selectedRegion, regionOption } = useRegion();
+  const region = regionOverride ?? selectedRegion;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ProductCategory | "">("GPU");
   const [products, setProducts] = useState<ProductSearchResult[]>([]);
@@ -214,6 +217,14 @@ export function PricingIntelligencePanel({ region }: { region: string }) {
     () => products.find((product) => product.id === selectedId) ?? products[0],
     [products, selectedId]
   );
+  const productGroupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const product of products) {
+      const key = cpuGroupKey(product);
+      if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [products]);
 
   async function handleRefresh() {
     if (!selectedProduct) return;
@@ -298,6 +309,9 @@ export function PricingIntelligencePanel({ region }: { region: string }) {
             Price Intelligence
           </div>
           <h2 className="text-lg font-semibold text-ink">Market graph</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            For your selected market: {regionOption.countryName} ({regionOption.currency})
+          </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-[1fr_170px_auto_auto_auto]">
           <label className="relative block">
@@ -376,37 +390,26 @@ export function PricingIntelligencePanel({ region }: { region: string }) {
               ))}
             </div>
           ) : products.length === 0 ? (
-            <div className="rounded bg-white px-3 py-8 text-sm text-slate-600">No products matched this query.</div>
+            <div className="rounded bg-white px-3 py-8 text-sm text-slate-600">
+              No live prices yet for this region. Try discovery or switch region.
+            </div>
           ) : (
             <div className="grid gap-2">
               {products.map((product) => (
-                <button
+                <ProductResultButton
                   key={product.id}
-                  type="button"
-                  onClick={() => setSelectedId(product.id)}
-                  className={`rounded-md border px-3 py-2 text-left ${
-                    selectedProduct?.id === product.id ? "border-signal bg-white" : "border-line bg-white/70"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-ink">{product.name}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-                        <span>{product.brand ?? "Unknown"}</span>
-                        <span>{product.category}</span>
-                        {product.stale ? <span className="text-caution">stale</span> : null}
-                      </div>
-                    </div>
-                    <PriceBadge product={product} />
-                  </div>
-                </button>
+                  product={product}
+                  selected={selectedProduct?.id === product.id}
+                  groupCount={productGroupCounts.get(cpuGroupKey(product) ?? "") ?? 0}
+                  onSelect={() => setSelectedId(product.id)}
+                />
               ))}
             </div>
           )}
         </div>
 
         <div className="grid gap-3">
-          <MarketSummary product={selectedProduct} prices={prices} loading={loadingMarket} />
+          <MarketSummary product={selectedProduct} prices={prices} loading={loadingMarket} regionLabel={regionOption.countryName} />
           <HardwareIntelligenceCard
             intelligence={intelligence}
             reasoning={reasoning}
@@ -418,7 +421,7 @@ export function PricingIntelligencePanel({ region }: { region: string }) {
           <EvolutionCard evolution={evolution} loading={loadingEvolution || enriching} product={selectedProduct} />
           <AlignmentCard alignment={alignment} loading={loadingAlignment || enriching} product={selectedProduct} />
           <AutonomyCard autonomy={autonomy} loading={loadingAutonomy || enriching} product={selectedProduct} />
-          <VendorComparison prices={prices} loading={loadingMarket} />
+          <VendorComparison prices={prices} loading={loadingMarket} regionLabel={regionOption.countryName} />
           <HistoryChart history={history} loading={loadingMarket} />
         </div>
       </div>
@@ -426,13 +429,76 @@ export function PricingIntelligencePanel({ region }: { region: string }) {
   );
 }
 
+function ProductResultButton({
+  product,
+  selected,
+  groupCount,
+  onSelect
+}: {
+  product: ProductSearchResult;
+  selected: boolean;
+  groupCount: number;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`rounded-md border px-3 py-2 text-left ${
+        product.data_origin === "seed" && product.price_status === "unavailable" ? "opacity-70" : ""
+      } ${selected ? "border-signal bg-white" : "border-line bg-white/70"}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-ink">{product.name}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+            <span>{product.brand ?? "Unknown"}</span>
+            <span>{product.category}</span>
+            <span className="capitalize">{product.price_status.replaceAll("_", " ")}</span>
+            {groupCount > 1 ? <span className="text-signal">CPU group x{groupCount}</span> : null}
+            {product.data_origin === "seed" ? <span className="text-caution">seed</span> : null}
+            {product.flags.includes("price_requires_review") ? (
+              <span className="text-caution">price review</span>
+            ) : null}
+          </div>
+        </div>
+        <PriceBadge product={product} />
+      </div>
+    </button>
+  );
+}
+
+function cpuGroupKey(product: ProductSearchResult) {
+  if (product.category !== "CPU") return null;
+  const compact = `${product.canonical_key ?? ""} ${product.model ?? ""} ${product.name}`.toUpperCase().replace(/[^A-Z0-9]+/g, "");
+  if (compact.includes("7800X3D")) return "CPU|AMD|RYZEN_7_7800X3D";
+  const ryzen = compact.match(/RYZEN([3579])(\d{4})(X3D|XT|X)?/);
+  if (ryzen) return `CPU|AMD|RYZEN_${ryzen[1]}_${ryzen[2]}${ryzen[3] ?? ""}`;
+  const r7 = compact.match(/R7(\d{4})(X3D|XT|X)?/);
+  if (r7) return `CPU|AMD|RYZEN_7_${r7[1]}${r7[2] ?? ""}`;
+  const intel = compact.match(/(?:CORE)?I([3579])(\d{4,5}[A-Z]*)/);
+  if (intel) return `CPU|INTEL|CORE_I${intel[1]}_${intel[2]}`;
+  return null;
+}
+
 function PriceBadge({ product }: { product: ProductSearchResult }) {
-  if (typeof product.current_best_price !== "number") {
-    return <span className="shrink-0 rounded bg-panel px-2 py-1 text-xs font-medium text-slate-500">No price</span>;
+  if (typeof product.current_recommended_price === "number") {
+    return (
+      <span className="shrink-0 rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-signal">
+        Rec {money(product.current_recommended_currency, product.current_recommended_price)}
+      </span>
+    );
+  }
+  if (typeof product.lowest_market_price === "number") {
+    return (
+      <span className="shrink-0 rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-caution">
+        Low {money(product.lowest_market_currency, product.lowest_market_price)}
+      </span>
+    );
   }
   return (
-    <span className="shrink-0 rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-signal">
-      {product.current_best_currency ?? "USD"} {product.current_best_price.toFixed(0)}
+    <span className="shrink-0 rounded bg-panel px-2 py-1 text-xs font-medium text-slate-500">
+      {product.data_origin === "seed" ? "Seed only" : "No price"}
     </span>
   );
 }
@@ -440,24 +506,39 @@ function PriceBadge({ product }: { product: ProductSearchResult }) {
 function MarketSummary({
   product,
   prices,
-  loading
+  loading,
+  regionLabel
 }: {
   product?: ProductSearchResult;
   prices: PriceSnapshotView[];
   loading: boolean;
+  regionLabel: string;
 }) {
   if (loading) return <div className="h-28 animate-pulse rounded-md border border-line bg-panel" />;
   if (!product) {
     return <div className="rounded-md border border-line bg-panel px-3 py-8 text-sm text-slate-600">No market data.</div>;
   }
-  const best = prices[0];
+  const reviewNeeded =
+    Boolean(product.lowest_price_warning) ||
+    product.flags.includes("price_requires_review") ||
+    product.lowest_market_seller_type === "marketplace";
+  const noRegionalPrices = prices.length === 0 && product.price_status === "unavailable";
+  const hasRecommendation = typeof product.current_recommended_price === "number";
   return (
     <div className="rounded-md border border-line bg-panel p-3">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-base font-semibold text-ink">{product.name}</h3>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>{product.current_best_vendor ?? "No vendor"}</span>
+            <span>{regionLabel}</span>
+            <span>{product.current_recommended_vendor ?? product.lowest_market_vendor ?? "No vendor"}</span>
+            <span className="capitalize">{product.price_status.replaceAll("_", " ")}</span>
+            {product.recommended_level ? (
+              <span className={recommendationTextClass(product.recommended_level)}>
+                {product.recommended_level.replaceAll("_", " ")}
+              </span>
+            ) : null}
+            {product.data_origin === "seed" ? <span className="text-caution">seed data</span> : null}
             {product.price_drop_percent ? (
               <span className="inline-flex items-center gap-1 text-signal">
                 <TrendingDown size={13} aria-hidden />
@@ -466,28 +547,97 @@ function MarketSummary({
             ) : null}
           </div>
         </div>
-        {best ? (
+        {typeof product.current_recommended_price === "number" ? (
           <div className="text-right">
             <div className="text-xl font-semibold text-ink">
-              {best.currency} {(best.price + best.shipping_cost).toFixed(0)}
+              {money(product.current_recommended_currency, product.current_recommended_price)}
             </div>
-            <div className="text-xs capitalize text-slate-500">{best.availability.replaceAll("_", " ")}</div>
+            <div className="text-xs capitalize text-slate-500">recommended</div>
+          </div>
+        ) : typeof product.lowest_market_price === "number" ? (
+          <div className="text-right">
+            <div className="text-xl font-semibold text-caution">{money(product.lowest_market_currency, product.lowest_market_price)}</div>
+            <div className="text-xs text-slate-500">lowest, review</div>
           </div>
         ) : null}
       </div>
+      <div className="mb-3 rounded border border-line bg-white px-3 py-2">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase text-slate-500">
+            {hasRecommendation ? "Recommended Saudi option" : "Saudi recommendation"}
+          </span>
+          {product.recommended_level ? (
+            <span className={`rounded px-2 py-1 text-[11px] font-semibold ${recommendationBadgeClass(product.recommended_level)}`}>
+              {product.recommended_level.replaceAll("_", " ")}
+            </span>
+          ) : null}
+        </div>
+        {hasRecommendation ? (
+          <div className="grid gap-1">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-lg font-semibold text-ink">
+                {money(product.current_recommended_currency, product.current_recommended_price as number)}
+              </span>
+              <span className="text-sm text-slate-600">{product.current_recommended_vendor}</span>
+            </div>
+            {product.recommended_reason ? (
+              <p className="text-xs text-slate-600">{product.recommended_reason}</p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Not enough information to recommend yet. Cheapest listings are still shown, but the platform needs stronger VAT,
+            shipping, warranty, condition, or vendor evidence before calling one the safer buy.
+          </p>
+        )}
+      </div>
+      {reviewNeeded ? (
+        <div className="mb-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-800">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+          <span>{product.lowest_price_warning ?? "Lowest price is marketplace or unknown-condition data. It is shown separately and not treated as trusted automatically."}</span>
+        </div>
+      ) : null}
+      {noRegionalPrices ? (
+        <div className="mb-3 flex items-start gap-2 rounded border border-line bg-white px-2 py-2 text-xs text-slate-600">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-caution" aria-hidden />
+          <span>No live prices yet for this selected market. The product can exist globally without a regional price snapshot.</span>
+        </div>
+      ) : null}
       <div className="grid gap-2 sm:grid-cols-3">
         <SmallMetric icon={<ShieldCheck size={14} />} label="Trust" value={scoreText(product.current_price_trust_score)} />
         <SmallMetric icon={<Clock3 size={14} />} label="Freshness" value={scoreText(product.current_price_freshness_score)} />
         <SmallMetric icon={<Store size={14} />} label="Vendors" value={String(prices.length)} />
       </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        <SmallMetric icon={<BadgeDollarSign size={14} />} label="Lowest" value={priceText(product.lowest_market_currency, product.lowest_market_price)} />
+        <SmallMetric icon={<ShieldCheck size={14} />} label="Trusted" value={priceText(product.best_trusted_currency, product.best_trusted_price)} />
+        <SmallMetric icon={<Store size={14} />} label="Local" value={priceText(product.best_local_currency, product.best_local_price)} />
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        <SmallMetric icon={<BadgeDollarSign size={14} />} label="New" value={priceText(product.best_new_currency, product.best_new_price)} />
+        <SmallMetric icon={<ShieldCheck size={14} />} label="Confidence" value={scoreText(product.price_confidence)} />
+        <SmallMetric icon={<Store size={14} />} label="Lowest vendor" value={product.lowest_market_vendor ?? "N/A"} />
+      </div>
     </div>
   );
 }
 
-function VendorComparison({ prices, loading }: { prices: PriceSnapshotView[]; loading: boolean }) {
+function VendorComparison({
+  prices,
+  loading,
+  regionLabel
+}: {
+  prices: PriceSnapshotView[];
+  loading: boolean;
+  regionLabel: string;
+}) {
   if (loading) return <div className="h-32 animate-pulse rounded-md border border-line bg-panel" />;
   if (prices.length === 0) {
-    return <div className="rounded-md border border-line bg-panel px-3 py-8 text-sm text-slate-600">No vendor snapshots yet.</div>;
+    return (
+      <div className="rounded-md border border-line bg-panel px-3 py-8 text-sm text-slate-600">
+        No vendor snapshots yet for {regionLabel}.
+      </div>
+    );
   }
   return (
     <div className="rounded-md border border-line bg-panel p-3">
@@ -502,18 +652,86 @@ function VendorComparison({ prices, loading }: { prices: PriceSnapshotView[]; lo
               <div className="truncate text-sm font-semibold text-ink">{price.vendor_name}</div>
               <div className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-500">
                 <span className="capitalize">{price.availability.replaceAll("_", " ")}</span>
+                <span className="capitalize">{price.listing_condition.replaceAll("_", " ")}</span>
+                <span className="capitalize">{price.seller_type.replaceAll("_", " ")}</span>
+                <span className={price.marketplace_risk_score >= 0.65 ? "text-caution" : ""}>
+                  risk {Math.round(price.marketplace_risk_score * 100)}%
+                </span>
                 <span>{price.source}</span>
-                {price.flags.length ? <span className="text-caution">{price.flags[0].replaceAll("_", " ")}</span> : null}
+                <span>{formatStatus(price.vendor_region_type)}</span>
+                <span>{formatStatus(price.local_stock_status)}</span>
+                <span>{price.is_local_stock ? "local stock" : price.is_imported ? "imported" : "regional unknown"}</span>
+                <span className={recommendationTextClass(price.buy_recommendation_level)}>
+                  {price.buy_recommendation_level.replaceAll("_", " ")}
+                </span>
+                <span>{price.trust_tier} trust</span>
+                {price.serves_saudi ? <span>serves Saudi</span> : null}
+                <span className={price.vat_status === "vat_unknown" ? "text-caution" : ""}>
+                  {formatStatus(price.vat_status)}
+                </span>
+                <span className={price.shipping_status === "unknown_shipping" ? "text-caution" : ""}>
+                  {formatStatus(price.shipping_status)}
+                </span>
+                <span className={price.warranty_status === "unknown_warranty" ? "text-caution" : ""}>
+                  {formatStatus(price.warranty_status)}
+                </span>
+                {price.recommended_saudi_price_candidate ? <span className="text-signal">SA candidate</span> : null}
+                {price.warnings.slice(0, 3).map((warning) => (
+                  <span key={warning} className="text-caution">
+                    {warning}
+                  </span>
+                ))}
+                {price.flags.length && price.warnings.length === 0 ? <span className="text-caution">{price.flags[0].replaceAll("_", " ")}</span> : null}
               </div>
+              {price.recommendation_reason ? (
+                <div className="mt-1 text-xs text-slate-600">{price.recommendation_reason}</div>
+              ) : null}
             </div>
             <div className="text-right text-sm font-semibold text-ink">
-              {price.currency} {(price.price + price.shipping_cost).toFixed(0)}
+              {money(
+                price.final_landed_currency ?? price.currency,
+                price.final_landed_price_sar ?? price.final_landed_price ?? price.price + price.shipping_cost
+              )}
+              {price.final_landed_price_sar ? (
+                <div className="text-[11px] font-medium text-slate-500">final landed</div>
+              ) : null}
+              <div className="text-[11px] font-medium text-slate-500">
+                confidence {scoreText(price.confidence_score ?? price.final_landed_price_confidence ?? undefined)}
+              </div>
             </div>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+function money(currency: string | undefined, value: number) {
+  return `${currency ?? "USD"} ${value.toFixed(0)}`;
+}
+
+function priceText(currency: string | undefined, value: number | undefined) {
+  return typeof value === "number" ? money(currency, value) : "N/A";
+}
+
+function formatStatus(value: string | null | undefined) {
+  return (value ?? "unknown").replaceAll("_", " ");
+}
+
+function recommendationBadgeClass(level: PriceSnapshotView["buy_recommendation_level"]) {
+  if (level === "recommended") return "bg-emerald-50 text-signal";
+  if (level === "good_if_price_matters") return "bg-blue-50 text-blue-700";
+  if (level === "acceptable_with_risk") return "bg-amber-50 text-caution";
+  if (level === "not_recommended") return "bg-red-50 text-danger";
+  return "bg-slate-100 text-slate-600";
+}
+
+function recommendationTextClass(level: PriceSnapshotView["buy_recommendation_level"] | ProductSearchResult["recommended_level"]) {
+  if (level === "recommended") return "text-signal";
+  if (level === "good_if_price_matters") return "text-blue-700";
+  if (level === "acceptable_with_risk") return "text-caution";
+  if (level === "not_recommended") return "text-danger";
+  return "text-slate-500";
 }
 
 function HardwareIntelligenceCard({
