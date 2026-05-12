@@ -27,15 +27,15 @@ Required backend env:
 
 Recommended Railway settings:
 
-- Root directory: repository root when using committed `railway.json`
-- Build: Dockerfile via `backend/Dockerfile.railway`
+- Root directory: `backend`
+- Build: Dockerfile or Python project auto-detect
 - Start command if not using Dockerfile:
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-The committed Railway Dockerfile respects Railway's `PORT` env var. If you manually set Railway's root directory to `backend`, use `backend/Dockerfile` instead.
+The backend Dockerfile also respects Railway's `PORT` env var.
 
 Required backend env:
 
