@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from app.models.api import BuildGenerateRequest, ConstraintCheck
 from app.models.domain import BuildPreferences, ComponentKind, ComponentNode, ComponentOption, SelectedComponents
 from app.services.build_solver import MAX_VALID_SOLVER_BUILDS, BuildSolver
@@ -110,6 +112,27 @@ def test_solver_stops_after_valid_result_cap() -> None:
 
     assert response.compatibility_status == "valid"
     assert service.explored_configurations == MAX_VALID_SOLVER_BUILDS
+    assert response.solver_metrics.valid_build_count == MAX_VALID_SOLVER_BUILDS
+    assert response.solver_metrics.max_depth_reached == 8
+
+
+def test_solver_prunes_impossible_budget_branches_before_full_depth() -> None:
+    service = BuildSolver(FakeComponentRepository(count_per_kind=2))  # type: ignore[arg-type]
+
+    response = service.generate(
+        BuildGenerateRequest(
+            budget_usd=10,
+            purpose="gaming",
+            resolution="1440p",
+            preferences=BuildPreferences(display_refresh_hz=144),
+            max_candidates_per_type=2,
+        )
+    )
+
+    assert response.compatibility_status == "no_solution"
+    assert response.explored_configurations == 0
+    assert response.pruned_configurations > 0
+    assert response.solver_metrics.max_depth_reached < 8
 
 
 def test_solver_threads_display_refresh_rate_into_generated_performance() -> None:
@@ -128,6 +151,73 @@ def test_solver_threads_display_refresh_rate_into_generated_performance() -> Non
     assert response.builds
     assert response.builds[0].performance.expected_fps <= 60
     assert response.builds[0].performance.bottleneck.display_percent > 0
+    assert response.builds[0].performance.model_inputs["baseline_version"]
+    assert response.builds[0].longevity_notes
+
+
+def test_solver_parallel_catalog_loading_is_deterministic() -> None:
+    request = BuildGenerateRequest(
+        budget_usd=2000,
+        purpose="gaming",
+        resolution="1440p",
+        preferences=BuildPreferences(display_refresh_hz=144),
+        max_candidates_per_type=2,
+    )
+    first = BuildSolver(FakeComponentRepository(count_per_kind=2)).generate(request)  # type: ignore[arg-type]
+    second = BuildSolver(FakeComponentRepository(count_per_kind=2)).generate(request)  # type: ignore[arg-type]
+
+    assert first.builds
+    assert second.builds
+    assert first.builds[0].selection == second.builds[0].selection
+
+
+def test_build_solver_logs_sanitized_summary(caplog) -> None:
+    service = BuildSolver(FakeComponentRepository(count_per_kind=1))  # type: ignore[arg-type]
+    caplog.set_level(logging.INFO, logger="pc_builder.build_solver")
+
+    service.generate(
+        BuildGenerateRequest(
+            budget_usd=2000,
+            purpose="gaming",
+            resolution="1440p",
+            preferences=BuildPreferences(display_refresh_hz=144),
+            max_candidates_per_type=1,
+        ),
+        trace_id="trace-test",
+    )
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "build_solver.start" in log_text
+    assert "build_solver.finish" in log_text
+    assert "trace-test" in log_text
+    assert "api_key" not in log_text.lower()
+
+
+def test_quiet_preference_requires_more_cooling_headroom() -> None:
+    repo = FakeComponentRepository(count_per_kind=1)
+    repo.nodes[ComponentKind.COOLER][0].specs["cooling_capacity_w"] = 140
+
+    quiet = BuildSolver(repo).generate(  # type: ignore[arg-type]
+        BuildGenerateRequest(
+            budget_usd=2000,
+            purpose="gaming",
+            resolution="1440p",
+            preferences=BuildPreferences(noise_preference="quiet"),
+            max_candidates_per_type=1,
+        )
+    )
+    performance = BuildSolver(repo).generate(  # type: ignore[arg-type]
+        BuildGenerateRequest(
+            budget_usd=2000,
+            purpose="gaming",
+            resolution="1440p",
+            preferences=BuildPreferences(noise_preference="performance"),
+            max_candidates_per_type=1,
+        )
+    )
+
+    assert quiet.compatibility_status == "no_solution"
+    assert performance.compatibility_status == "valid"
 
 
 def test_power_check_treats_zero_psu_wattage_as_known_failure() -> None:

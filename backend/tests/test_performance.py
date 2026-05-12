@@ -1,5 +1,5 @@
 from app.models.domain import BuildPreferences, ComponentNode, ComponentKind
-from app.services.performance import PerformanceEngine
+from app.services.performance import BASELINE_PROFILE, BASELINE_VERSION, PerformanceEngine
 
 
 def test_performance_engine_produces_deterministic_metrics():
@@ -37,6 +37,8 @@ def test_performance_engine_produces_deterministic_metrics():
     assert result.frame_time_ms > 0
     assert result.bottleneck.cpu_percent >= 0
     assert result.bottleneck.gpu_percent >= 0
+    assert result.model_inputs["baseline_version"] == BASELINE_VERSION
+    assert result.model_inputs["baseline_profile"] == BASELINE_PROFILE
 
 
 def test_cpu_bottleneck_increases_when_cpu_is_weaker_than_gpu():
@@ -64,3 +66,40 @@ def test_cpu_bottleneck_increases_when_cpu_is_weaker_than_gpu():
 
     assert result.bottleneck.cpu_percent > result.bottleneck.gpu_percent
 
+
+def test_saudi_region_applies_high_power_thermal_adjustment():
+    cpu = ComponentNode(
+        id="cpu:hot",
+        kind=ComponentKind.CPU,
+        name="Hot CPU",
+        specs={"single_thread_score": 4200, "multi_thread_score": 70000},
+        bandwidth={"memory_gbps": 100},
+        power={"tdp_w": 170},
+    )
+    gpu = ComponentNode(
+        id="gpu:hot",
+        kind=ComponentKind.GPU,
+        name="Hot GPU",
+        specs={"raster_score": 65000, "compute_score": 1000, "vram_gb": 16},
+        power={"board_power_w": 320},
+    )
+    engine = PerformanceEngine()
+
+    us_result = engine.calculate(
+        cpu=cpu,
+        gpu=gpu,
+        ram=None,
+        preferences=BuildPreferences(purpose="gaming", resolution="1440p", region="US"),
+        display_refresh_hz=240,
+    )
+    sa_result = engine.calculate(
+        cpu=cpu,
+        gpu=gpu,
+        ram=None,
+        preferences=BuildPreferences(purpose="gaming", resolution="1440p", region="SA"),
+        display_refresh_hz=240,
+    )
+
+    assert sa_result.expected_fps < us_result.expected_fps
+    assert sa_result.model_inputs["thermal_derate_factor"] < 1
+    assert any("Saudi region thermal adjustment" in reason for reason in sa_result.reasoning)

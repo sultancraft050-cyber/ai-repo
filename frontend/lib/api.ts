@@ -1,17 +1,23 @@
 import type {
   BuildPreferences,
   BuildGenerateResponse,
+  BuildComparisonResponse,
+  AnalyticsEventResponse,
+  CategoryCoverage,
   AlignmentInspectionReport,
   AutonomousCognitionReport,
   AutonomyQueue,
   ApprovalItem,
   CompatibilityResponse,
+  CatalogGrowthWorkflowSummary,
+  CatalogCompletenessResponse,
   ComponentKind,
   ComponentOption,
   CanonicalMergePreviewRequest,
   CanonicalMergePreviewResponse,
   CpuDuplicateReport,
   DailyFounderReport,
+  DeploymentChecklist,
   EvolutionOrchestrationReport,
   PerformanceResponse,
   PriceHistoryPoint,
@@ -24,6 +30,10 @@ import type {
   PricingRefreshResponse,
   ProductCategoryResponse,
   ProductDiscoveryResponse,
+  PublicDealSubmissionResponse,
+  FeedbackSubmissionResponse,
+  FeedbackType,
+  MvpHealthDashboard,
   ProductCategory,
   HardwareCognitionReport,
   HardwareIntelligence,
@@ -34,12 +44,16 @@ import type {
   SaudiBuildResponse,
   SaudiBuildValidationRequest,
   SaudiBuildValidationResponse,
+  SavedBuild,
+  SavedBuildCreateRequest,
   SourceConfigStatus,
   SourceMatrixEntry,
   SelectedComponents,
   TelemetryReasoningReport,
   TelemetrySummary,
-  ValidationBundle
+  UserAccount,
+  ValidationBundle,
+  WatchlistItem
 } from "@/types/builder";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -54,6 +68,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...publicSessionHeaders(),
       ...(init?.headers ?? {})
     },
     cache: "no-store"
@@ -76,6 +91,38 @@ function asArray<T>(value: T[] | undefined | null): T[] {
 
 function authHeaders(apiKey: string): Record<string, string> {
   return apiKey ? { "X-API-Key": apiKey } : {};
+}
+
+function publicSessionHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const existing = window.localStorage.getItem("pc_builder_guest_id");
+  return existing ? { "X-Session-ID": existing } : {};
+}
+
+function normalizeCoverage(coverage: Partial<CategoryCoverage>): CategoryCoverage {
+  return {
+    ...coverage,
+    category: coverage.category ?? "Unknown",
+    priced_product_count: coverage.priced_product_count ?? 0,
+    trusted_local_listing_count: coverage.trusted_local_listing_count ?? 0,
+    risky_listing_count: coverage.risky_listing_count ?? 0,
+    usable_with_warnings_count: coverage.usable_with_warnings_count ?? 0,
+    unknown_vat_count: coverage.unknown_vat_count ?? 0,
+    unknown_shipping_count: coverage.unknown_shipping_count ?? 0,
+    unknown_warranty_count: coverage.unknown_warranty_count ?? 0,
+    suspicious_price_count: coverage.suspicious_price_count ?? 0,
+    recommended_option_count: coverage.recommended_option_count ?? 0,
+    stale_listing_count: coverage.stale_listing_count ?? 0,
+    ready: Boolean(coverage.ready),
+    readiness_level: coverage.readiness_level ?? "not_ready",
+    blocker_reasons: asArray(coverage.blocker_reasons),
+    warning_reasons: asArray(coverage.warning_reasons),
+    notes: asArray(coverage.notes),
+    next_action_type: coverage.next_action_type ?? "no_action",
+    price_freshness_status: coverage.price_freshness_status ?? "missing",
+    identity_confidence: coverage.identity_confidence ?? 0,
+    next_action: coverage.next_action ?? "No action needed."
+  };
 }
 
 export async function fetchComponentOptions(
@@ -192,6 +239,27 @@ export async function getSourceConfig(apiKey: string, region?: string): Promise<
 export async function getSourceMatrix(apiKey: string, region = "SA"): Promise<SourceMatrixEntry[]> {
   const params = new URLSearchParams({ region });
   return requestJson<SourceMatrixEntry[]>(`/ops/source-matrix?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getMvpHealthDashboard(apiKey: string, region = "SA"): Promise<MvpHealthDashboard> {
+  const params = new URLSearchParams({ region });
+  return requestJson<MvpHealthDashboard>(`/ops/mvp-health-dashboard?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getDeploymentChecklist(apiKey: string, region = "SA"): Promise<DeploymentChecklist> {
+  const params = new URLSearchParams({ region });
+  return requestJson<DeploymentChecklist>(`/ops/deployment-checklist?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getCatalogGrowthWorkflow(apiKey: string, region = "SA"): Promise<CatalogGrowthWorkflowSummary> {
+  const params = new URLSearchParams({ region });
+  return requestJson<CatalogGrowthWorkflowSummary>(`/ops/catalog-growth-workflow?${params.toString()}`, {
     headers: authHeaders(apiKey)
   });
 }
@@ -437,7 +505,7 @@ export async function validateAndMeasure(
 }
 
 export async function generateBuild(preferences: BuildPreferences): Promise<BuildGenerateResponse> {
-  return requestJson<BuildGenerateResponse>("/build/generate", {
+  const payload = await requestJson<BuildGenerateResponse>("/build/generate", {
     method: "POST",
     body: JSON.stringify({
       budget_usd: preferences.budget_usd ?? 1500,
@@ -447,6 +515,26 @@ export async function generateBuild(preferences: BuildPreferences): Promise<Buil
       max_candidates_per_type: 120
     })
   });
+  return {
+    ...payload,
+    builds: asArray(payload.builds).map((build) => ({
+      ...build,
+      reasoning_summary: asArray(build.reasoning_summary),
+      longevity_notes: asArray(build.longevity_notes)
+    })),
+    solver_metrics: payload.solver_metrics ?? {
+      explored_nodes_count: payload.explored_configurations ?? 0,
+      pruned_nodes_count: payload.pruned_configurations ?? 0,
+      valid_build_count: payload.builds?.length ?? 0,
+      average_build_time_ms: 0,
+      max_depth_reached: 0,
+      graph_fetch_time_ms: 0,
+      normalization_time_ms: 0,
+      compatibility_time_ms: 0,
+      scoring_time_ms: 0,
+      serialization_time_ms: 0
+    }
+  };
 }
 
 export async function getSaudiBuildDataCompleteness(
@@ -460,12 +548,25 @@ export async function getSaudiBuildDataCompleteness(
     required_categories: asArray(payload.required_categories),
     ready_categories: asArray(payload.ready_categories),
     missing_categories: asArray(payload.missing_categories),
-    category_coverage: asArray(payload.category_coverage).map((coverage) => ({
-      ...coverage,
-      notes: asArray(coverage.notes),
-      next_action: coverage.next_action ?? "No action needed."
-    })),
+    category_coverage: asArray(payload.category_coverage).map(normalizeCoverage),
     recommended_discovery_jobs: asArray(payload.recommended_discovery_jobs)
+  };
+}
+
+export async function getCatalogCompleteness(region = "SA", city = "Riyadh"): Promise<CatalogCompletenessResponse> {
+  const params = new URLSearchParams({ region, city });
+  const payload = await requestJson<CatalogCompletenessResponse>(`/catalog/completeness?${params.toString()}`);
+  return {
+    ...payload,
+    build_critical_categories: asArray(payload.build_critical_categories).map(normalizeCoverage),
+    non_critical_categories: asArray(payload.non_critical_categories).map(normalizeCoverage),
+    ready_categories: asArray(payload.ready_categories),
+    usable_with_warnings_categories: asArray(payload.usable_with_warnings_categories),
+    not_ready_categories: asArray(payload.not_ready_categories),
+    stale_categories: asArray(payload.stale_categories),
+    weak_categories: asArray(payload.weak_categories),
+    duplicate_risk_categories: asArray(payload.duplicate_risk_categories),
+    next_actions: asArray(payload.next_actions)
   };
 }
 
@@ -514,4 +615,164 @@ export async function validateSaudiLocalBuild(
     method: "POST",
     body: JSON.stringify(request)
   });
+}
+
+export async function createUserAccount(request: {
+  email: string;
+  display_name?: string | null;
+  region?: string;
+}): Promise<UserAccount> {
+  return requestJson<UserAccount>("/users", {
+    method: "POST",
+    body: JSON.stringify({ region: "SA", ...request })
+  });
+}
+
+export async function saveBuild(request: SavedBuildCreateRequest): Promise<SavedBuild> {
+  return normalizeSavedBuild(
+    await requestJson<SavedBuild>("/builds/saved", {
+      method: "POST",
+      body: JSON.stringify(request)
+    })
+  );
+}
+
+export async function listSavedBuilds(identity: { user_id?: string | null; guest_id?: string | null }): Promise<SavedBuild[]> {
+  const path = identity.user_id ? `/users/${identity.user_id}/builds` : `/guests/${identity.guest_id}/builds`;
+  const payload = await requestJson<{ builds: SavedBuild[] }>(path);
+  return asArray(payload.builds).map(normalizeSavedBuild);
+}
+
+export async function getSharedBuild(shareSlug: string): Promise<SavedBuild> {
+  return normalizeSavedBuild(await requestJson<SavedBuild>(`/build/share/${shareSlug}`));
+}
+
+export async function updateSavedBuild(
+  buildId: string,
+  request: { title?: string; public_visibility?: boolean; favorite?: boolean }
+): Promise<SavedBuild> {
+  return normalizeSavedBuild(
+    await requestJson<SavedBuild>(`/builds/saved/${buildId}`, {
+      method: "PATCH",
+      body: JSON.stringify(request)
+    })
+  );
+}
+
+export async function duplicateSavedBuild(
+  buildId: string,
+  identity: { user_id?: string | null; guest_id?: string | null }
+): Promise<SavedBuild> {
+  const params = new URLSearchParams();
+  if (identity.user_id) params.set("user_id", identity.user_id);
+  if (identity.guest_id) params.set("guest_id", identity.guest_id);
+  return normalizeSavedBuild(
+    await requestJson<SavedBuild>(`/builds/saved/${buildId}/duplicate?${params.toString()}`, {
+      method: "POST"
+    })
+  );
+}
+
+export async function deleteSavedBuild(buildId: string): Promise<boolean> {
+  const payload = await requestJson<{ deleted: boolean }>(`/builds/saved/${buildId}`, {
+    method: "DELETE"
+  });
+  return payload.deleted;
+}
+
+export async function compareSavedBuilds(
+  buildIds: string[],
+  identity: { user_id?: string | null; guest_id?: string | null }
+): Promise<BuildComparisonResponse> {
+  return requestJson<BuildComparisonResponse>("/builds/compare", {
+    method: "POST",
+    body: JSON.stringify({ build_ids: buildIds, ...identity })
+  });
+}
+
+export async function listWatchlist(identity: { user_id?: string | null; guest_id?: string | null }, region = "SA"): Promise<WatchlistItem[]> {
+  const params = new URLSearchParams({ region });
+  const path = identity.user_id ? `/users/${identity.user_id}/watchlist` : `/guests/${identity.guest_id}/watchlist`;
+  const payload = await requestJson<{ items: WatchlistItem[] }>(`${path}?${params.toString()}`);
+  return asArray(payload.items);
+}
+
+export async function addWatchlistItem(
+  identity: { user_id?: string | null; guest_id?: string | null },
+  request: { product_id: string; target_price_sar?: number | null; region?: string }
+): Promise<WatchlistItem[]> {
+  const path = identity.user_id ? `/users/${identity.user_id}/watchlist` : `/guests/${identity.guest_id}/watchlist`;
+  const payload = await requestJson<{ items: WatchlistItem[] }>(path, {
+    method: "POST",
+    body: JSON.stringify({ region: "SA", ...request })
+  });
+  return asArray(payload.items);
+}
+
+export async function removeWatchlistItem(
+  identity: { user_id?: string | null; guest_id?: string | null },
+  itemId: string
+): Promise<boolean> {
+  const path = identity.user_id
+    ? `/users/${identity.user_id}/watchlist/${itemId}`
+    : `/guests/${identity.guest_id}/watchlist/${itemId}`;
+  const payload = await requestJson<{ deleted: boolean }>(path, { method: "DELETE" });
+  return payload.deleted;
+}
+
+export async function submitPublicDeal(request: {
+  url: string;
+  region?: string;
+  category: ProductCategory | string;
+  email?: string | null;
+  note?: string | null;
+}): Promise<PublicDealSubmissionResponse> {
+  return requestJson<PublicDealSubmissionResponse>("/sources/deal-submissions", {
+    method: "POST",
+    body: JSON.stringify({ region: "SA", ...request })
+  });
+}
+
+export async function recordAnalyticsEvent(request: {
+  event_type: string;
+  region?: string;
+  anonymous_session_id?: string | null;
+  user_id?: string | null;
+  category?: string | null;
+  build_status?: string | null;
+  budget_sar?: number | null;
+  metadata?: Record<string, unknown>;
+}): Promise<AnalyticsEventResponse> {
+  return requestJson<AnalyticsEventResponse>("/analytics/events", {
+    method: "POST",
+    body: JSON.stringify({ region: "SA", ...request })
+  });
+}
+
+export async function submitFeedback(request: {
+  type: FeedbackType;
+  region?: string;
+  product_id?: string | null;
+  build_id?: string | null;
+  share_slug?: string | null;
+  notes: string;
+  anonymous_session_id?: string | null;
+}): Promise<FeedbackSubmissionResponse> {
+  return requestJson<FeedbackSubmissionResponse>("/feedback", {
+    method: "POST",
+    body: JSON.stringify({ region: "SA", ...request })
+  });
+}
+
+function normalizeSavedBuild(build: SavedBuild): SavedBuild {
+  return {
+    ...build,
+    warning_summary: asArray(build.warning_summary),
+    component_ids: asArray(build.component_ids),
+    price_snapshot_ids: asArray(build.price_snapshot_ids),
+    build_summary: build.build_summary ?? {},
+    build_payload: build.build_payload ?? {},
+    favorite: Boolean(build.favorite),
+    public_visibility: Boolean(build.public_visibility)
+  };
 }

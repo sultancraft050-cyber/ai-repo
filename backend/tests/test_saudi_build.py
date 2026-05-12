@@ -73,6 +73,9 @@ class FakePricingRepository:
         self.requested_regions.append(region)
         return list(self.products_by_category.get(category or "", []))[:limit]
 
+    def product_categories(self):
+        return sorted(self.products_by_category)
+
     def product_detail(self, product_id: str, region: str = "SA"):
         for products in self.products_by_category.values():
             for product in products:
@@ -96,6 +99,72 @@ def test_data_completeness_reports_missing_categories_and_dry_run_suggestions() 
     assert "CPU" in completeness.missing_categories
     assert completeness.enough_data_for_full_build is False
     assert any(job.category == "CPU" and job.dry_run for job in completeness.recommended_discovery_jobs)
+
+
+def test_completeness_reports_blockers_warnings_and_next_action_types() -> None:
+    repository = FakePricingRepository(
+        {
+            "GPU": [_product("GPU", flags=["unknown_vat"], confidence=0.72)],
+            "CPU": [],
+            "Storage": [
+                _ready_product(
+                    "Storage",
+                    recommended=False,
+                    lowest=450,
+                    risk=0.4,
+                    confidence=0.45,
+                    flags=["unknown_shipping", "unknown_warranty"],
+                )
+            ],
+        }
+    )
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    completeness = service.data_completeness(region="SA", city="Riyadh")
+    coverage = {item.category: item for item in completeness.category_coverage}
+
+    assert coverage["CPU"].readiness_level == "not_ready"
+    assert coverage["CPU"].next_action_type == "controlled_dry_run"
+    assert coverage["CPU"].blocker_reasons == ["No Saudi price snapshots found."]
+    assert coverage["GPU"].warning_reasons == ["VAT evidence is incomplete."]
+    assert coverage["Storage"].readiness_level == "usable_with_warnings"
+    assert coverage["Storage"].next_action_type == "manual_product_url"
+
+
+def test_stale_valid_category_is_usable_but_not_silent() -> None:
+    stale_gpu = _product("GPU", flags=[], confidence=0.8)
+    stale_gpu.price_status = "stale"
+    stale_gpu.stale = True
+    repository = FakePricingRepository({"GPU": [stale_gpu]})
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    completeness = service.data_completeness(region="SA", city="Riyadh")
+    gpu = next(item for item in completeness.category_coverage if item.category == "GPU")
+
+    assert gpu.readiness_level == "ready"
+    assert gpu.price_freshness_status == "stale"
+    assert gpu.next_action_type == "refresh_known_url"
+    assert "One or more Saudi price snapshots are stale." in gpu.warning_reasons
+
+
+def test_catalog_completeness_includes_non_critical_and_duplicate_risk() -> None:
+    repository = FakePricingRepository(
+        {
+            "GPU": [
+                _product("GPU", product_id="gpu-1", canonical_key="GPU|NVIDIA|RTX_4070_SUPER"),
+                _product("GPU", product_id="gpu-2", canonical_key="GPU|NVIDIA|RTX_4070_SUPER"),
+            ],
+            "Monitor": [_product("Monitor", canonical_key="MONITOR|1440P|144HZ")],
+        }
+    )
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    catalog = service.catalog_completeness(region="SA", city="Riyadh")
+
+    assert any(item.category == "GPU" for item in catalog.build_critical_categories)
+    assert any(item.category == "Monitor" for item in catalog.non_critical_categories)
+    assert "GPU" in catalog.duplicate_risk_categories
+    assert catalog.next_actions
 
 
 def test_generate_local_refuses_to_fabricate_missing_saudi_prices() -> None:

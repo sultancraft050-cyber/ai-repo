@@ -84,6 +84,15 @@ export function AutoBuildGenerator({
             <span className="rounded bg-panel px-2 py-1 text-slate-600">
               pruned {response.pruned_configurations.toLocaleString()}
             </span>
+            <span className="rounded bg-panel px-2 py-1 text-slate-600">
+              max depth {response.solver_metrics.max_depth_reached}
+            </span>
+            <span className="rounded bg-panel px-2 py-1 text-slate-600">
+              fetch {response.solver_metrics.graph_fetch_time_ms.toFixed(1)}ms
+            </span>
+            <span className="rounded bg-panel px-2 py-1 text-slate-600">
+              score {response.solver_metrics.scoring_time_ms.toFixed(1)}ms
+            </span>
           </div>
 
           {response.fallback_explanation ? (
@@ -133,6 +142,12 @@ function BuildCard({
         <Metric label="GPU bottleneck" value={`${build.bottleneck_breakdown.gpu_percent.toFixed(1)}%`} />
       </div>
 
+      <div className="mb-3 grid gap-1 rounded border border-line bg-white px-2 py-2 text-[11px] text-slate-600">
+        <div>Baseline: {String(build.performance.model_inputs.baseline_version ?? "unknown")}</div>
+        <div>Thermal factor: {String(build.performance.model_inputs.thermal_derate_factor ?? "1")}</div>
+        <div>Noise mode: {String(build.performance.model_inputs.noise_preference ?? "balanced")}</div>
+      </div>
+
       <div className="grid flex-1 gap-2">
         {build.parts.map((part) => (
           <div key={part.id} className="rounded border border-line bg-white px-2 py-2">
@@ -160,6 +175,12 @@ function BuildCard({
       <ul className="mt-3 grid gap-1 text-xs leading-5 text-slate-600">
         {build.reasoning_summary.slice(0, 3).map((reason) => (
           <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+
+      <ul className="mt-3 grid gap-1 text-xs leading-5 text-slate-600">
+        {build.longevity_notes.slice(0, 2).map((note) => (
+          <li key={note}>{note}</li>
         ))}
       </ul>
 

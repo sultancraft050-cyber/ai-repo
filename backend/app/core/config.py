@@ -32,7 +32,12 @@ class Settings:
     cors_origins: tuple[str, ...]
     frontend_url: str
     backend_url: str
+    environment: str
+    market_data_mode: str
     log_level: str
+    public_analytics_enabled: bool
+    public_rate_limit_window_seconds: int
+    public_rate_limit_max_requests: int
     pricing_scheduler_enabled: bool
     pricing_top_refresh_seconds: int
     pricing_standard_refresh_seconds: int
@@ -62,7 +67,12 @@ class Settings:
             cors_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
             frontend_url=os.getenv("FRONTEND_URL", "http://127.0.0.1:3000"),
             backend_url=os.getenv("BACKEND_URL", "http://127.0.0.1:8000"),
+            environment=os.getenv("ENVIRONMENT", "development"),
+            market_data_mode=os.getenv("MARKET_DATA_MODE", "free"),
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            public_analytics_enabled=os.getenv("PUBLIC_ANALYTICS_ENABLED", "true").lower() in {"1", "true", "yes"},
+            public_rate_limit_window_seconds=int(os.getenv("PUBLIC_RATE_LIMIT_WINDOW_SECONDS", "60")),
+            public_rate_limit_max_requests=int(os.getenv("PUBLIC_RATE_LIMIT_MAX_REQUESTS", "120")),
             pricing_scheduler_enabled=os.getenv("PRICING_SCHEDULER_ENABLED", "true").lower()
             in {"1", "true", "yes"},
             pricing_top_refresh_seconds=int(os.getenv("PRICING_TOP_REFRESH_SECONDS", "3600")),

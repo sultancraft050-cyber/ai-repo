@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+import json
+import logging
 from math import inf
+from time import perf_counter
 
 from app.graph.repository import Neo4jComponentRepository
 from app.models.api import (
     BuildGenerateRequest,
     BuildGenerateResponse,
+    BuildSolverMetrics,
     CompatibilityRequest,
     GeneratedBuild,
     GeneratedPart,
@@ -14,6 +19,7 @@ from app.models.api import (
 from app.models.domain import BuildPreferences, ComponentKind, ComponentNode, SelectedComponents
 from app.services.compatibility import CompatibilityEngine
 from app.services.performance import PerformanceEngine
+from app.services.performance_observer import performance_observer
 
 
 SOLVER_ORDER = [
@@ -28,6 +34,7 @@ SOLVER_ORDER = [
 ]
 
 MAX_VALID_SOLVER_BUILDS = 120
+CATALOG_LOAD_WORKERS = 4
 POWER_DRAW_FIELDS = (
     ("power", "board_power_w"),
     ("power", "tdp_w"),
@@ -38,6 +45,7 @@ PSU_WATTAGE_FIELDS = (
     ("specs", "continuous_wattage"),
     ("power", "12v_w"),
 )
+logger = logging.getLogger("pc_builder.build_solver")
 
 
 @dataclass
@@ -59,18 +67,46 @@ class BuildSolver:
         self.performance = PerformanceEngine()
         self.explored_configurations = 0
         self.pruned_configurations = 0
+        self.max_depth_reached = 0
+        self._graph_fetch_time_ms = 0.0
+        self._normalization_time_ms = 0.0
+        self._compatibility_time_ms = 0.0
+        self._scoring_time_ms = 0.0
+        self._serialization_time_ms = 0.0
         self._option_cache: dict[tuple[str, str], set[str]] = {}
         self._compatibility_cache = {}
 
-    def generate(self, request: BuildGenerateRequest) -> BuildGenerateResponse:
+    def generate(self, request: BuildGenerateRequest, *, trace_id: str | None = None) -> BuildGenerateResponse:
+        started = perf_counter()
+        normalize_started = perf_counter()
         preferences = self._normalized_preferences(request)
+        self._normalization_time_ms = self._elapsed_ms(normalize_started)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "build_solver.start",
+                    "trace_id": trace_id,
+                    "region": preferences.region,
+                    "purpose": preferences.purpose,
+                    "resolution": preferences.resolution,
+                    "max_candidates_per_type": request.max_candidates_per_type,
+                }
+            )
+        )
+        fetch_started = perf_counter()
         catalog = self._load_catalog(request.max_candidates_per_type, preferences)
+        self._graph_fetch_time_ms = self._elapsed_ms(fetch_started)
         valid: list[CandidateBuild] = []
         closest: list[CandidateBuild] = []
         self.explored_configurations = 0
         self.pruned_configurations = 0
+        self.max_depth_reached = 0
+        self._compatibility_time_ms = 0.0
+        self._scoring_time_ms = 0.0
+        self._serialization_time_ms = 0.0
         self._option_cache = {}
         self._compatibility_cache = {}
+        cost_floor_by_depth = self._remaining_cost_floor(SOLVER_ORDER, catalog)
 
         self._search(
             order=SOLVER_ORDER,
@@ -81,49 +117,78 @@ class BuildSolver:
             budget=request.budget_usd,
             valid=valid,
             closest=closest,
+            cost_floor_by_depth=cost_floor_by_depth,
         )
 
+        response: BuildGenerateResponse
         if valid:
+            serialization_started = perf_counter()
             builds = self._select_multi_solution(valid, preferences)
+            self._serialization_time_ms += self._elapsed_ms(serialization_started)
             if not builds:
-                return BuildGenerateResponse(
+                response = BuildGenerateResponse(
                     builds=[],
                     compatibility_status="no_solution",
                     explored_configurations=self.explored_configurations,
                     pruned_configurations=self.pruned_configurations,
+                    solver_metrics=self._metrics(valid_build_count=len(valid), started=started),
                     fallback_explanation=(
                         "Local pruning found candidates, but the final graph engine rejected each sampled build."
                     ),
                 )
-            return BuildGenerateResponse(
-                builds=builds,
-                compatibility_status="valid",
-                explored_configurations=self.explored_configurations,
-                pruned_configurations=self.pruned_configurations,
+            else:
+                response = BuildGenerateResponse(
+                    builds=builds,
+                    compatibility_status="valid",
+                    explored_configurations=self.explored_configurations,
+                    pruned_configurations=self.pruned_configurations,
+                    solver_metrics=self._metrics(valid_build_count=len(valid), started=started),
+                )
+        else:
+            closest_valid = self._first_graph_valid(
+                sorted(closest, key=lambda item: (item.compatibility_failures, item.total_cost))
             )
+            if closest_valid:
+                serialization_started = perf_counter()
+                build = self._to_generated_build("closest_valid", closest_valid, preferences)
+                self._serialization_time_ms += self._elapsed_ms(serialization_started)
+                response = BuildGenerateResponse(
+                    builds=[build],
+                    compatibility_status="closest_valid",
+                    explored_configurations=self.explored_configurations,
+                    pruned_configurations=self.pruned_configurations,
+                    solver_metrics=self._metrics(valid_build_count=len(valid), started=started),
+                    fallback_explanation=(
+                        "No configuration satisfied every constraint inside budget. "
+                        "The returned configuration is the nearest graph-evaluated candidate by failure count and cost."
+                    ),
+                )
+            else:
+                response = BuildGenerateResponse(
+                    builds=[],
+                    compatibility_status="no_solution",
+                    explored_configurations=self.explored_configurations,
+                    pruned_configurations=self.pruned_configurations,
+                    solver_metrics=self._metrics(valid_build_count=len(valid), started=started),
+                    fallback_explanation="Neo4j did not return enough component candidates to build a complete configuration.",
+                )
 
-        closest_valid = self._first_graph_valid(
-            sorted(closest, key=lambda item: (item.compatibility_failures, item.total_cost))
-        )
-        if closest_valid:
-            return BuildGenerateResponse(
-                builds=[self._to_generated_build("closest_valid", closest_valid, preferences)],
-                compatibility_status="closest_valid",
-                explored_configurations=self.explored_configurations,
-                pruned_configurations=self.pruned_configurations,
-                fallback_explanation=(
-                    "No configuration satisfied every constraint inside budget. "
-                    "The returned configuration is the nearest graph-evaluated candidate by failure count and cost."
-                ),
+        performance_observer.record_endpoint("/build/generate", self._elapsed_ms(started))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "build_solver.finish",
+                    "trace_id": trace_id,
+                    "region": preferences.region,
+                    "status": response.compatibility_status,
+                    "latency_ms": round(self._elapsed_ms(started), 2),
+                    "explored": response.explored_configurations,
+                    "pruned": response.pruned_configurations,
+                    "valid_build_count": response.solver_metrics.valid_build_count,
+                }
             )
-
-        return BuildGenerateResponse(
-            builds=[],
-            compatibility_status="no_solution",
-            explored_configurations=self.explored_configurations,
-            pruned_configurations=self.pruned_configurations,
-            fallback_explanation="Neo4j did not return enough component candidates to build a complete configuration.",
         )
+        return response
 
     def _normalized_preferences(self, request: BuildGenerateRequest) -> BuildPreferences:
         data = request.preferences.model_dump()
@@ -137,7 +202,12 @@ class BuildSolver:
         limit: int,
         preferences: BuildPreferences,
     ) -> dict[ComponentKind, list[ComponentNode]]:
-        catalog = {kind: self.repository.components_by_kind(kind, limit=limit) for kind in SOLVER_ORDER}
+        catalog: dict[ComponentKind, list[ComponentNode]] = {}
+        with ThreadPoolExecutor(max_workers=min(CATALOG_LOAD_WORKERS, len(SOLVER_ORDER))) as executor:
+            futures = {executor.submit(self._load_catalog_kind, kind, limit): kind for kind in SOLVER_ORDER}
+            for future in as_completed(futures):
+                kind = futures[future]
+                catalog[kind] = future.result()
         for kind, nodes in catalog.items():
             catalog[kind] = sorted(
                 nodes,
@@ -145,6 +215,13 @@ class BuildSolver:
                 reverse=True,
             )
         return catalog
+
+    def _load_catalog_kind(self, kind: ComponentKind, limit: int) -> list[ComponentNode]:
+        query_started = perf_counter()
+        try:
+            return self.repository.components_by_kind(kind, limit=limit)
+        finally:
+            performance_observer.record_query(f"components_by_kind:{kind.value}", self._elapsed_ms(query_started))
 
     def _candidate_priority(
         self,
@@ -164,8 +241,15 @@ class BuildSolver:
             raw = (node.number("bandwidth", "memory_gbps", 0) or 0) * 20
         elif kind == ComponentKind.PSU:
             raw = node.number("specs", "continuous_wattage", 0) or 0
-        elif kind == ComponentKind.CASE and preferences.size:
-            raw = 1000 if preferences.size in str(node.specs.get("supported_form_factors", "")) else -1000
+            raw += self._psu_efficiency_bonus(node)
+        elif kind == ComponentKind.COOLER:
+            raw = (node.number("specs", "cooling_capacity_w", 0) or 0) * 2
+            raw -= self._noise_penalty(node, preferences) * 40
+        elif kind == ComponentKind.CASE:
+            raw = 500
+            if preferences.size:
+                raw += 1000 if preferences.size in str(node.specs.get("supported_form_factors", "")) else -1000
+            raw -= self._noise_penalty(node, preferences) * 35
         else:
             raw = 500
         intelligence_bonus = (node.number("raw", "intelligence_value_score", 0) or 0) / 1000
@@ -182,9 +266,11 @@ class BuildSolver:
         budget: float,
         valid: list[CandidateBuild],
         closest: list[CandidateBuild],
+        cost_floor_by_depth: list[float],
     ) -> None:
         if len(valid) >= MAX_VALID_SOLVER_BUILDS:
             return
+        self.max_depth_reached = max(self.max_depth_reached, depth)
         if depth == len(order):
             self.explored_configurations += 1
             candidate = self._evaluate(partial, preferences, budget)
@@ -203,7 +289,8 @@ class BuildSolver:
                 self.pruned_configurations += 1
                 continue
             partial_cost = self._cost(next_partial)
-            if partial_cost > budget * 1.45:
+            minimum_possible_cost = partial_cost + cost_floor_by_depth[depth + 1]
+            if minimum_possible_cost > budget * 1.45:
                 self.pruned_configurations += 1
                 continue
             self._search(
@@ -215,6 +302,7 @@ class BuildSolver:
                 budget=budget,
                 valid=valid,
                 closest=closest,
+                cost_floor_by_depth=cost_floor_by_depth,
             )
 
     def _filtered_candidates(
@@ -231,12 +319,14 @@ class BuildSolver:
             if cache_key in self._option_cache:
                 allowed = self._option_cache[cache_key]
                 return [candidate for candidate in candidates if candidate.id in allowed]
+            query_started = perf_counter()
             options = self.repository.component_options(
                 ComponentKind.MOTHERBOARD,
                 SelectedComponents(cpu_id=cpu_id),
                 limit=120,
                 form_factor=preferences.size,
             )
+            performance_observer.record_query("component_options:motherboards_for_cpu", self._elapsed_ms(query_started))
             allowed = {option.id for option in options}
             self._option_cache[cache_key] = allowed
             return [candidate for candidate in candidates if candidate.id in allowed]
@@ -246,12 +336,14 @@ class BuildSolver:
             if cache_key in self._option_cache:
                 allowed = self._option_cache[cache_key]
                 return [candidate for candidate in candidates if candidate.id in allowed]
+            query_started = perf_counter()
             options = self.repository.component_options(
                 ComponentKind.RAM,
                 SelectedComponents(motherboard_id=board_id),
                 limit=120,
                 qvl_required=True,
             )
+            performance_observer.record_query("component_options:ram_for_board", self._elapsed_ms(query_started))
             allowed = {option.id for option in options}
             self._option_cache[cache_key] = allowed
             return [candidate for candidate in candidates if candidate.id in allowed]
@@ -266,7 +358,9 @@ class BuildSolver:
                 motherboard_id=board.id if board else None,
                 gpu_id=gpu.id if gpu else None,
             )
+            query_started = perf_counter()
             options = self.repository.component_options(ComponentKind.CASE, selection, limit=120)
+            performance_observer.record_query("component_options:cases_for_board_gpu", self._elapsed_ms(query_started))
             allowed = {option.id for option in options}
             candidates = [candidate for candidate in candidates if candidate.id in allowed]
             if preferences.size:
@@ -284,7 +378,6 @@ class BuildSolver:
         partial: dict[ComponentKind, ComponentNode],
         preferences: BuildPreferences,
     ) -> bool:
-        del preferences
         cpu = partial.get(ComponentKind.CPU)
         board = partial.get(ComponentKind.MOTHERBOARD)
         ram = partial.get(ComponentKind.RAM)
@@ -313,7 +406,8 @@ class BuildSolver:
         if cooler and cpu:
             cooling_capacity = cooler.number("specs", "cooling_capacity_w")
             cpu_tdp = cpu.number("power", "tdp_w")
-            if cooling_capacity is not None and cpu_tdp is not None and cooling_capacity < cpu_tdp * 1.15:
+            headroom = self._required_cooling_headroom(preferences)
+            if cooling_capacity is not None and cpu_tdp is not None and cooling_capacity < cpu_tdp * headroom:
                 return False
         if board and case and not self._usb_possible(board, case):
             return False
@@ -329,6 +423,7 @@ class BuildSolver:
         preferences: BuildPreferences,
         budget: float,
     ) -> CandidateBuild:
+        scoring_started = perf_counter()
         selection = self._selection(parts)
         performance = self.performance.calculate(
             cpu=parts[ComponentKind.CPU],
@@ -346,11 +441,13 @@ class BuildSolver:
             + performance.bottleneck.gpu_percent
             + performance.bottleneck.memory_percent * 0.6
         ) * 2.8
+        noise_penalty = self._build_noise_penalty(parts, preferences)
+        longevity_bonus = self._build_longevity_score(parts, preferences) * 0.9
         cost_penalty = (over_budget / max(budget, 1)) * 900 + (total_cost / max(budget, 1)) * 24
-        score = perf_score - cost_penalty - bottleneck_penalty
+        score = perf_score - cost_penalty - bottleneck_penalty - noise_penalty + longevity_bonus
         value_score = perf_score / max(total_cost, 1) * 1000
         balanced_score = score + under_budget_fraction * 50 - bottleneck_penalty * 1.5
-        return CandidateBuild(
+        candidate = CandidateBuild(
             selection=selection,
             parts=parts,
             total_cost=total_cost,
@@ -360,6 +457,8 @@ class BuildSolver:
             balanced_score=balanced_score,
             compatibility_failures=0,
         )
+        self._scoring_time_ms += self._elapsed_ms(scoring_started)
+        return candidate
 
     def _select_multi_solution(
         self,
@@ -404,9 +503,11 @@ class BuildSolver:
     def _graph_valid(self, selection: SelectedComponents) -> bool:
         signature = self._signature(selection)
         if signature not in self._compatibility_cache:
+            compatibility_started = perf_counter()
             self._compatibility_cache[signature] = self.compatibility.check(
                 CompatibilityRequest(selection=selection, qvl_required=True)
             )
+            self._compatibility_time_ms += self._elapsed_ms(compatibility_started)
         return bool(self._compatibility_cache[signature].valid)
 
     def _to_generated_build(
@@ -418,9 +519,11 @@ class BuildSolver:
         signature = self._signature(candidate.selection)
         compatibility = self._compatibility_cache.get(signature)
         if compatibility is None:
+            compatibility_started = perf_counter()
             compatibility = self.compatibility.check(
                 CompatibilityRequest(selection=candidate.selection, preferences=preferences, qvl_required=True)
             )
+            self._compatibility_time_ms += self._elapsed_ms(compatibility_started)
             self._compatibility_cache[signature] = compatibility
         performance = self.performance.calculate(
             cpu=candidate.parts[ComponentKind.CPU],
@@ -454,6 +557,7 @@ class BuildSolver:
             compatibility=compatibility,
             bottleneck_breakdown=performance.bottleneck,
             reasoning_summary=self._build_reasoning(candidate, performance, preferences),
+            longevity_notes=self._longevity_notes(candidate, preferences),
         )
 
     def _part_reasoning(
@@ -488,7 +592,10 @@ class BuildSolver:
         if kind == ComponentKind.CASE:
             return "Case clears motherboard form factor, GPU length, cooler height, and USB topology."
         if kind == ComponentKind.PSU:
-            return "Continuous wattage exceeds modeled system draw with safety headroom."
+            efficiency = node.specs.get("efficiency_rating")
+            if efficiency:
+                return f"Continuous wattage exceeds modeled system draw; {efficiency} efficiency improves power confidence."
+            return "Continuous wattage exceeds modeled system draw, but PSU efficiency data is unknown."
         return "Selected by graph-backed compatibility constraints."
 
     def _build_reasoning(
@@ -505,6 +612,30 @@ class BuildSolver:
             f"CPU/GPU bottleneck balance is {performance.bottleneck.cpu_percent:.1f}% CPU and {performance.bottleneck.gpu_percent:.1f}% GPU.",
             "All returned constraints are validated by the Neo4j-backed compatibility engine.",
         ]
+
+    def _longevity_notes(
+        self,
+        candidate: CandidateBuild,
+        preferences: BuildPreferences,
+    ) -> list[str]:
+        parts = candidate.parts
+        notes: list[str] = []
+        board = parts.get(ComponentKind.MOTHERBOARD)
+        psu = parts.get(ComponentKind.PSU)
+        ram = parts.get(ComponentKind.RAM)
+        if board and str(board.specs.get("socket", "")).upper() == "AM5":
+            notes.append("AM5 platform gives a practical future CPU upgrade path, subject to BIOS support.")
+        if psu:
+            wattage = self._first_known_number(psu, PSU_WATTAGE_FIELDS)
+            if wattage and wattage >= 750:
+                notes.append("750W+ PSU capacity leaves reasonable GPU upgrade headroom if connectors are verified.")
+            if not psu.specs.get("efficiency_rating"):
+                notes.append("PSU efficiency rating is unknown, so long-term power confidence is lower.")
+        if ram and (ram.number("specs", "speed_mt_s", 0) or 0) >= 5600:
+            notes.append("DDR5 memory speed is a healthy baseline for current gaming and creator workloads.")
+        if preferences.upgrade_path_priority >= 7 and not notes:
+            notes.append("Upgrade-path confidence is limited until motherboard, PSU, and RAM metadata improves.")
+        return notes or ["Longevity guidance is limited by currently available component metadata."]
 
     def _selection(self, parts: dict[ComponentKind, ComponentNode]) -> SelectedComponents:
         return SelectedComponents(
@@ -531,7 +662,23 @@ class BuildSolver:
         )
 
     def _cost(self, parts: dict[ComponentKind, ComponentNode]) -> float:
-        return sum(float(node.price_usd or 0) for node in parts.values())
+        return sum(self._node_price(node) for node in parts.values())
+
+    def _node_price(self, node: ComponentNode) -> float:
+        return float(node.price_usd) if node.price_usd is not None else 0.0
+
+    def _remaining_cost_floor(
+        self,
+        order: list[ComponentKind],
+        catalog: dict[ComponentKind, list[ComponentNode]],
+    ) -> list[float]:
+        floors = [0.0 for _ in range(len(order) + 1)]
+        running = 0.0
+        for index in range(len(order) - 1, -1, -1):
+            prices = [self._node_price(node) for node in catalog.get(order[index], [])]
+            running += min(prices) if prices else 0.0
+            floors[index] = running
+        return floors
 
     def _split_spec(self, node: ComponentNode, key: str) -> list[str]:
         raw = node.specs.get(key, "")
@@ -572,6 +719,66 @@ class BuildSolver:
         required = sum(component.number("bandwidth", "pcie_lanes_required", 0) for component in (gpu, storage) if component)
         return required <= cpu_lanes + chipset_lanes
 
+    def _required_cooling_headroom(self, preferences: BuildPreferences) -> float:
+        if preferences.noise_preference == "quiet":
+            return 1.3
+        if preferences.noise_preference == "performance":
+            return 1.1
+        return 1.15
+
+    def _noise_penalty(self, node: ComponentNode, preferences: BuildPreferences) -> float:
+        noise = node.number("specs", "noise_level_db") or node.number("raw", "noise_level_db")
+        if preferences.noise_preference == "performance":
+            return 0.0
+        if noise is None:
+            return 0.35 if preferences.noise_preference == "quiet" else 0.08
+        if preferences.noise_preference == "quiet":
+            return max(0.0, (noise - 28.0) / 12.0)
+        return max(0.0, (noise - 36.0) / 18.0)
+
+    def _build_noise_penalty(
+        self,
+        parts: dict[ComponentKind, ComponentNode],
+        preferences: BuildPreferences,
+    ) -> float:
+        if preferences.noise_preference == "performance":
+            return 0.0
+        cooler = parts.get(ComponentKind.COOLER)
+        case = parts.get(ComponentKind.CASE)
+        penalty = sum(self._noise_penalty(node, preferences) for node in (cooler, case) if node)
+        return penalty * (28.0 if preferences.noise_preference == "quiet" else 8.0)
+
+    def _psu_efficiency_bonus(self, node: ComponentNode) -> float:
+        efficiency = str(node.specs.get("efficiency_rating") or "").upper()
+        if "TITANIUM" in efficiency:
+            return 180
+        if "PLATINUM" in efficiency:
+            return 140
+        if "GOLD" in efficiency:
+            return 100
+        if "BRONZE" in efficiency:
+            return 35
+        return -45
+
+    def _build_longevity_score(
+        self,
+        parts: dict[ComponentKind, ComponentNode],
+        preferences: BuildPreferences,
+    ) -> float:
+        if preferences.upgrade_path_priority <= 0:
+            return 0.0
+        score = 0.0
+        board = parts.get(ComponentKind.MOTHERBOARD)
+        psu = parts.get(ComponentKind.PSU)
+        ram = parts.get(ComponentKind.RAM)
+        if board and str(board.specs.get("socket", "")).upper() == "AM5":
+            score += 14.0
+        if psu and (self._first_known_number(psu, PSU_WATTAGE_FIELDS) or 0) >= 750:
+            score += 10.0
+        if ram and (ram.number("specs", "speed_mt_s", 0) or 0) >= 5600:
+            score += 6.0
+        return score * (preferences.upgrade_path_priority / 10.0)
+
     def _first_known_number(
         self,
         component: ComponentNode,
@@ -597,3 +804,22 @@ class BuildSolver:
         for component in partial.values():
             total_draw += self._first_known_number(component, POWER_DRAW_FIELDS, default=0.0) or 0.0
         return wattage >= (total_draw + 60.0) * 1.35
+
+    def _metrics(self, *, valid_build_count: int, started: float) -> BuildSolverMetrics:
+        total_ms = self._elapsed_ms(started)
+        sample_count = max(valid_build_count, 1)
+        return BuildSolverMetrics(
+            explored_nodes_count=self.explored_configurations,
+            pruned_nodes_count=self.pruned_configurations,
+            valid_build_count=valid_build_count,
+            average_build_time_ms=round(total_ms / sample_count, 2),
+            max_depth_reached=self.max_depth_reached,
+            graph_fetch_time_ms=round(self._graph_fetch_time_ms, 2),
+            normalization_time_ms=round(self._normalization_time_ms, 2),
+            compatibility_time_ms=round(self._compatibility_time_ms, 2),
+            scoring_time_ms=round(self._scoring_time_ms, 2),
+            serialization_time_ms=round(self._serialization_time_ms, 2),
+        )
+
+    def _elapsed_ms(self, started: float) -> float:
+        return (perf_counter() - started) * 1000

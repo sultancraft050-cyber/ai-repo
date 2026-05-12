@@ -1,0 +1,453 @@
+{
+  "name": "Saudi Product URL Import - Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "b4edcf4a-7b1f-40e6-b1de-f7e302ee5cf9",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -880,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "__CONFIGURE_IN_N8N__",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst env = typeof $env !== 'undefined' ? $env : {};\nconst founderChatId = String(env.FOUNDER_TELEGRAM_CHAT_ID || '').trim();\nconst updateMessage = input.message || input.edited_message || input;\nconst chatId = String((updateMessage.chat && updateMessage.chat.id) || input.chat_id || '').trim();\nconst text = String(updateMessage.text || updateMessage.caption || '').trim();\n\nfunction reply(status, message, extra = {}) {\n  return [{ json: { status, chatId, reply: message, ...extra } }];\n}\n\nif (!founderChatId) {\n  return reply('not_configured', 'Telegram import is not configured. Set FOUNDER_TELEGRAM_CHAT_ID in n8n.');\n}\n\nif (chatId !== founderChatId) {\n  return reply('unauthorized', 'Not authorized.');\n}\n\nconst supportedCategories = new Map([\n  ['motherboard', 'Motherboard'],\n  ['gpu', 'GPU'],\n  ['cpu', 'CPU'],\n  ['ram', 'RAM'],\n  ['storage', 'Storage'],\n  ['psu', 'PSU'],\n  ['case', 'Case'],\n  ['cooler', 'Cooler']\n]);\n\nconst categoryCommand = text.match(/^(Motherboard|GPU|CPU|RAM|Storage|PSU|Case|Cooler)\\s+(https?:\\/\\/\\S+)/i);\nconst explicitCategory = categoryCommand ? supportedCategories.get(categoryCommand[1].toLowerCase()) : null;\nconst urlMatch = text.match(/https?:\\/\\/[^\\s<>\"']+/i);\n\nif (!urlMatch) {\n  return reply('url_required', 'Send one product URL, or use: Motherboard https://store.example/product');\n}\n\nfunction sanitizeUrl(rawUrl) {\n  const parsed = new URL(rawUrl);\n  parsed.hash = '';\n  const removable = new Set(['fbclid', 'gclid', 'msclkid', '_hsenc', '_hsmi', 'ref', 'tag', 'spm', 'scm']);\n  for (const key of [...parsed.searchParams.keys()]) {\n    if (key.toLowerCase().startsWith('utm_') || removable.has(key.toLowerCase())) {\n      parsed.searchParams.delete(key);\n    }\n  }\n  return parsed.toString();\n}\n\nfunction inferSource(hostname) {\n  const host = hostname.toLowerCase().replace(/^www\\./, '');\n  if (host === 'pczonesa.com' || host.endsWith('.pczonesa.com')) return 'PCZone Saudi';\n  if (host === 'microless.com' || host.endsWith('.microless.com')) return 'Microless Saudi';\n  if (host === 'mtc.com.sa' || host.endsWith('.mtc.com.sa') || host === 'mtcsaudi.com') return 'MTC KSA';\n  if (host === 'noon.com' || host.endsWith('.noon.com')) return 'Noon Saudi';\n  if (host === 'amazon.sa' || host.endsWith('.amazon.sa')) return 'Amazon.sa';\n  return null;\n}\n\nfunction inferCategory(url) {\n  const slug = `${url.hostname} ${url.pathname}`.toLowerCase();\n  const checks = [\n    ['Motherboard', /motherboard|\\bb650\\b|\\bb760\\b|\\bx670\\b|\\ba620\\b/],\n    ['GPU', /\\bgpu\\b|graphics|\\bvga\\b|\\brtx\\b|radeon|\\brx-/],\n    ['CPU', /\\bcpu\\b|processor|ryzen|intel-core/],\n    ['RAM', /\\bram\\b|memory|\\bddr5\\b|\\bddr4\\b/],\n    ['Storage', /\\bssd\\b|\\bnvme\\b|\\bm2\\b|storage/],\n    ['PSU', /\\bpsu\\b|power-supply|\\b850w\\b|\\b750w\\b/],\n    ['Case', /\\bcase\\b|chassis|tower/],\n    ['Cooler', /cooler|\\baio\\b|heatsink|thermalright|kraken/]\n  ];\n  return (checks.find(([, pattern]) => pattern.test(slug)) || [null])[0];\n}\n\nfunction stableHash(value) {\n  let hash = 5381;\n  for (let index = 0; index < value.length; index += 1) {\n    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);\n  }\n  return (hash >>> 0).toString(16);\n}\n\nlet parsed;\nlet normalizedUrl;\ntry {\n  normalizedUrl = sanitizeUrl(urlMatch[0]);\n  parsed = new URL(normalizedUrl);\n} catch (error) {\n  return reply('invalid_url', 'That does not look like a valid product URL.');\n}\n\nconst sourceName = inferSource(parsed.hostname);\nif (!sourceName) {\n  return reply('unsupported_domain', `Unsupported source domain: ${parsed.hostname}. Use PCZone, Microless, MTC KSA, Noon Saudi, or Amazon.sa product URLs only.`, { url: normalizedUrl });\n}\n\nconst category = explicitCategory || inferCategory(parsed);\nif (!category) {\n  return reply('category_required', `I could not infer the category. Reply with a category command, for example: Motherboard ${normalizedUrl}`, { url: normalizedUrl, sourceName });\n}\n\nreturn [{\n  json: {\n    status: 'ready',\n    chatId,\n    url: normalizedUrl,\n    category,\n    sourceName,\n    normalizedUrlHash: stableHash(normalizedUrl),\n    reply: null\n  }\n}];"
+      },
+      "id": "6f7a5b2f-a12c-478e-b1fc-24ae3959f4ef",
+      "name": "Validate Founder And URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "364e2706-35f4-4818-b17e-82337381353e",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "unauthorized",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2cf2d5c5-2898-4776-b8bf-0cbd24f6791f",
+      "name": "Is Unauthorized",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.reply}}",
+        "additionalFields": {}
+      },
+      "id": "63ac97cb-2bf7-481b-8677-67617ed2638d",
+      "name": "Reply Unauthorized",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -160,
+        -180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "__CONFIGURE_IN_N8N__",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cf58cc81-34d8-492f-b50e-d30a35c5dc9c",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c75f09af-56ff-4eda-96f1-e4a953a0fd0c",
+      "name": "Ready For Preview",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.reply}}",
+        "additionalFields": {}
+      },
+      "id": "71ce8db5-fd13-4185-a3cd-74e6b00f014b",
+      "name": "Reply Validation Problem",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        220
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "__CONFIGURE_IN_N8N__",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL.replace(/\\/$/, '') + '/sources/product-url/preview'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{$env.ADMIN_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { url: $json.url, region: 'SA', category: $json.category, dry_run: true } }}",
+        "options": {}
+      },
+      "id": "64681874-d8bb-4e30-8a71-14c49b085fc6",
+      "name": "Preview Product URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const preview = $input.first().json;\nconst base = $node['Validate Founder And URL'].json;\nconst sourcePolicy = String(preview.source_policy_status || '').toLowerCase();\nconst price = preview.item_price_sar ?? preview.price ?? null;\nconst hasPrice = price !== null && price !== undefined && String(price).trim() !== '';\nconst policyAllowed = !['blocked', 'unsupported'].includes(sourcePolicy);\nconst accepted = preview.accepted === true;\nconst reasons = Array.isArray(preview.rejected_reasons) ? preview.rejected_reasons : [];\nconst warnings = [preview.vat_status, preview.shipping_status, preview.warranty_status]\n  .filter((value) => value && String(value).toLowerCase().includes('unknown'));\n\nif (accepted && hasPrice && policyAllowed) {\n  return [{\n    json: {\n      ...base,\n      status: 'ingest_ready',\n      preview,\n      price,\n      title: preview.normalized_name || preview.raw_title || 'Unknown product',\n      vendor: preview.vendor_name || preview.source_name || base.sourceName,\n      canonicalKey: preview.canonical_key || 'unknown',\n      warnings\n    }\n  }];\n}\n\nconst failed = [];\nif (!accepted) failed.push('preview was not accepted');\nif (!hasPrice) failed.push('price is missing');\nif (!policyAllowed) failed.push(`source policy is ${sourcePolicy || 'unknown'}`);\nif (reasons.length) failed.push(`reasons: ${reasons.join('; ')}`);\n\nreturn [{\n  json: {\n    ...base,\n    status: 'preview_rejected',\n    preview,\n    reply: [\n      'Product URL was not ingested.',\n      `Reason: ${failed.join(' | ') || 'unknown'}`,\n      `Source policy: ${preview.source_policy_status || 'unknown'}`,\n      `Category: ${base.category}`,\n      `URL: ${base.url}`\n    ].join('\\n')\n  }\n}];"
+      },
+      "id": "c2f34aca-7dd1-432b-a325-f177bff5c9e8",
+      "name": "Evaluate Preview",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        340,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "fd368e88-9548-4fdd-b69d-bce30ed9c507",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "ingest_ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b5c02d38-d87a-4eb1-8a12-f491453c155d",
+      "name": "Ready For Ingest",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        580,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.reply}}",
+        "additionalFields": {}
+      },
+      "id": "10b7f37a-5175-47be-9fcd-61d59eb6af2f",
+      "name": "Reply Preview Rejection",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        820,
+        120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "__CONFIGURE_IN_N8N__",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL.replace(/\\/$/, '') + '/sources/product-url/ingest'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{$env.ADMIN_API_KEY}}"
+            },
+            {
+              "name": "X-Idempotency-Key",
+              "value": "=product-url-ingest-{{$json.category}}-{{$json.normalizedUrlHash}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { url: $json.url, region: 'SA', category: $json.category, approved: true } }}",
+        "options": {}
+      },
+      "id": "6623f120-5f31-4099-aa05-9eb4a78ec368",
+      "name": "Ingest Approved Product URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ingest = $input.first().json;\nconst base = $node['Evaluate Preview'].json;\nconst preview = base.preview || {};\nconst warnings = [\n  preview.vat_status ? `VAT: ${preview.vat_status}` : null,\n  preview.shipping_status ? `Shipping: ${preview.shipping_status}` : null,\n  preview.warranty_status ? `Warranty: ${preview.warranty_status}` : null\n].filter(Boolean);\nconst price = preview.item_price_sar ?? preview.price ?? base.price ?? 'unknown';\nconst currency = preview.currency || 'SAR';\nconst ingestStatus = ingest.status || ingest.ingest_status || 'ingested';\n\nreturn [{\n  json: {\n    chatId: base.chatId,\n    reply: [\n      'Product URL ingested.',\n      `Title: ${base.title}`,\n      `Vendor: ${base.vendor}`,\n      `Category: ${base.category}`,\n      `Price: ${price} ${currency}`,\n      `Canonical key: ${base.canonicalKey}`,\n      `Ingest status: ${ingestStatus}`,\n      warnings.length ? `Warnings: ${warnings.join(' | ')}` : 'Warnings: none reported',\n      `URL: ${base.url}`\n    ].join('\\n')\n  }\n}];"
+      },
+      "id": "ff2a3e97-8da8-41be-b8d0-92337b54c986",
+      "name": "Format Success Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.reply}}",
+        "additionalFields": {}
+      },
+      "id": "45990ccd-28f3-4088-89a6-8712c5832990",
+      "name": "Reply Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1300,
+        -120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "__CONFIGURE_IN_N8N__",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Founder And URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Founder And URL": {
+      "main": [
+        [
+          {
+            "node": "Is Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Unauthorized": {
+      "main": [
+        [
+          {
+            "node": "Reply Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ready For Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready For Preview": {
+      "main": [
+        [
+          {
+            "node": "Preview Product URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply Validation Problem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview Product URL": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Preview": {
+      "main": [
+        [
+          {
+            "node": "Ready For Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ready For Ingest": {
+      "main": [
+        [
+          {
+            "node": "Ingest Approved Product URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply Preview Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingest Approved Product URL": {
+      "main": [
+        [
+          {
+            "node": "Format Success Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Reply": {
+      "main": [
+        [
+          {
+            "node": "Reply Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Riyadh",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "saudi-market"
+    },
+    {
+      "name": "product-url-ingestion"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-12T00:00:00.000Z",
+  "versionId": "saudi-product-url-import-v1"
+}

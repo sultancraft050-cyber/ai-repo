@@ -53,7 +53,7 @@ class SourceMatrixEntry(BaseModel):
 
 
 class ProductUrlPreviewRequest(BaseModel):
-    url: str
+    url: str = Field(min_length=8, max_length=2048)
     region: str = "SA"
     category: str
     dry_run: bool = True
@@ -70,7 +70,7 @@ class ProductUrlPreviewRequest(BaseModel):
 
 
 class ProductUrlIngestRequest(BaseModel):
-    url: str
+    url: str = Field(min_length=8, max_length=2048)
     region: str = "SA"
     category: str
     approved: bool = False
@@ -165,6 +165,10 @@ class KnownProductUrlView(BaseModel):
     source_policy_status: SourcePolicyStatus = "allowed"
     last_price: float | None = None
     last_currency: str | None = None
+    next_refresh_at: datetime | None = None
+    refresh_priority: int = Field(default=50, ge=0, le=100)
+    refresh_failure_count: int = Field(default=0, ge=0)
+    last_price_hash: str | None = None
 
 
 class ProductUrlRefreshItem(BaseModel):
@@ -184,3 +188,30 @@ class ProductUrlRefreshResponse(BaseModel):
     skipped_count: int = 0
     items: list[ProductUrlRefreshItem] = Field(default_factory=list)
     trace_id: str
+
+
+class PublicDealSubmissionRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+    region: str = "SA"
+    category: str
+    email: str | None = Field(default=None, max_length=254)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("region")
+    @classmethod
+    def valid_region(cls, value: str) -> str:
+        return normalize_region(value)
+
+    @field_validator("category")
+    @classmethod
+    def valid_category(cls, value: str) -> str:
+        return normalize_category(value)
+
+
+class PublicDealSubmissionResponse(BaseModel):
+    status: Literal["accepted", "rejected"]
+    normalized_url: str | None = None
+    source_name: str | None = None
+    region: str = "SA"
+    category: str
+    message: str

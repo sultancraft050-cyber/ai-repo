@@ -1,6 +1,13 @@
 import { BuilderShell } from "@/components/BuilderShell";
+import { PublicLandingPage } from "@/components/PublicLandingPage";
 
 export default function Home() {
-  return <BuilderShell />;
+  return (
+    <>
+      <PublicLandingPage />
+      <div id="builder">
+        <BuilderShell />
+      </div>
+    </>
+  );
 }
-

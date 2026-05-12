@@ -306,6 +306,7 @@ class ProductUrlIngestionService:
             category=request.category,
             vendor=request.vendor,
             limit=request.limit,
+            due_only=True,
         )
         items: list[ProductUrlRefreshItem] = []
         refreshed = failed = skipped = 0
@@ -338,6 +339,23 @@ class ProductUrlIngestionService:
                     continue
                 record = self._record_from_preview(preview)
                 offer = _apply_region_context(self.normalizer.normalize_record(record), region=view.region)
+                price_hash = _price_hash(offer.price, offer.currency)
+                if price_hash == view.last_price_hash:
+                    skipped += 1
+                    self.repository.update_product_url_refresh_status(
+                        normalized_url=view.normalized_url,
+                        success=True,
+                    )
+                    items.append(
+                        ProductUrlRefreshItem(
+                            normalized_url=view.normalized_url,
+                            vendor_name=view.vendor_name,
+                            category=view.category,
+                            status="skipped",
+                            error="price_unchanged",
+                        )
+                    )
+                    continue
                 product_id = self.repository.upsert_offer(offer, accepted=True)
                 self.repository.upsert_product_url(
                     normalized_url=view.normalized_url,
@@ -748,6 +766,11 @@ def _sanitize_error(error: Exception) -> str:
         text,
         flags=re.IGNORECASE,
     )[:180]
+
+
+def _price_hash(price: float | None, currency: str | None) -> str:
+    normalized_price = f"{float(price):.2f}" if price is not None else "missing"
+    return f"{currency or 'unknown'}:{normalized_price}"
 
 
 def _visible_text_window(values: list[str], limit: int = 300) -> str:

@@ -12,6 +12,11 @@ RESOLUTION_PIXELS = {
     "4K": 3840 * 2160,
 }
 
+BASELINE_VERSION = "2026.05-baseline-v1"
+BASELINE_PROFILE = "official_benchmark_anchor"
+SA_THERMAL_DERATE_THRESHOLD_W = 420.0
+SA_THERMAL_DERATE_FACTOR = 0.96
+
 PURPOSE_WEIGHTS = {
     "gaming": np.array([0.42, 0.13, 0.45], dtype=float),
     "simulation": np.array([0.35, 0.45, 0.20], dtype=float),
@@ -47,6 +52,9 @@ class PerformanceEngine:
         resolution_factor = RESOLUTION_PIXELS[preferences.resolution] / RESOLUTION_PIXELS["1080p"]
         balanced_capacity = min(cpu_capacity, gpu_capacity)
         expected_fps = float(np.clip((62.0 + balanced_capacity * 138.0) / resolution_factor, 18.0, 420.0))
+        total_power_w = self._total_power_w(cpu, gpu)
+        thermal_derate_factor = self._thermal_derate_factor(preferences.region, total_power_w)
+        expected_fps *= thermal_derate_factor
 
         display_limit_percent = max(0.0, (expected_fps - display_refresh_hz) / max(expected_fps, 1.0) * 100.0)
         expected_fps = min(expected_fps, float(display_refresh_hz))
@@ -69,6 +77,10 @@ class PerformanceEngine:
         ]
         if display_limit_percent > 0:
             reasoning.append("Display refresh rate caps the rendered FPS estimate.")
+        if thermal_derate_factor < 1:
+            reasoning.append(
+                "Saudi region thermal adjustment applies a small deterministic derate for higher-power builds."
+            )
 
         return PerformanceResponse(
             expected_fps=round(expected_fps, 1),
@@ -83,10 +95,16 @@ class PerformanceEngine:
             ),
             confidence=confidence,
             model_inputs={
+                "baseline_version": BASELINE_VERSION,
+                "baseline_profile": BASELINE_PROFILE,
                 "cpu_capacity": round(cpu_capacity, 4),
                 "gpu_capacity": round(gpu_capacity, 4),
                 "memory_capacity": round(memory_capacity, 4),
                 "resolution_factor": round(resolution_factor, 4),
+                "region": preferences.region,
+                "estimated_total_power_w": round(total_power_w, 2),
+                "thermal_derate_factor": round(thermal_derate_factor, 4),
+                "noise_preference": preferences.noise_preference,
             },
             reasoning=reasoning,
         )
@@ -137,3 +155,14 @@ class PerformanceEngine:
             return "medium"
         return "low"
 
+    def _total_power_w(self, cpu: ComponentNode, gpu: ComponentNode) -> float:
+        cpu_power = cpu.number("power", "tdp_w", 0.0) or 0.0
+        gpu_power = gpu.number("power", "board_power_w")
+        if gpu_power is None:
+            gpu_power = gpu.number("power", "tdp_w", 0.0)
+        return float(cpu_power + (gpu_power or 0.0))
+
+    def _thermal_derate_factor(self, region: str, total_power_w: float) -> float:
+        if region.upper() == "SA" and total_power_w >= SA_THERMAL_DERATE_THRESHOLD_W:
+            return SA_THERMAL_DERATE_FACTOR
+        return 1.0

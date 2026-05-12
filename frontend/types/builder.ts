@@ -87,7 +87,7 @@ export type PerformanceResponse = {
     display_percent: number;
   };
   confidence: "high" | "medium" | "low";
-  model_inputs: Record<string, number>;
+  model_inputs: Record<string, number | string | boolean>;
   reasoning: string[];
 };
 
@@ -120,6 +120,7 @@ export type GeneratedBuild = {
   compatibility: CompatibilityResponse;
   bottleneck_breakdown: PerformanceResponse["bottleneck"];
   reasoning_summary: string[];
+  longevity_notes: string[];
 };
 
 export type BuildGenerateResponse = {
@@ -127,6 +128,18 @@ export type BuildGenerateResponse = {
   compatibility_status: "valid" | "closest_valid" | "no_solution";
   explored_configurations: number;
   pruned_configurations: number;
+  solver_metrics: {
+    explored_nodes_count: number;
+    pruned_nodes_count: number;
+    valid_build_count: number;
+    average_build_time_ms: number;
+    max_depth_reached: number;
+    graph_fetch_time_ms: number;
+    normalization_time_ms: number;
+    compatibility_time_ms: number;
+    scoring_time_ms: number;
+    serialization_time_ms: number;
+  };
   fallback_explanation?: string;
 };
 
@@ -188,8 +201,32 @@ export type CategoryCoverage = {
   stale_listing_count: number;
   ready: boolean;
   readiness_level: "ready" | "usable_with_warnings" | "not_ready";
+  identity_confidence: number;
+  price_freshness_status: "fresh" | "stale" | "mixed" | "missing";
+  blocker_reasons: string[];
+  warning_reasons: string[];
+  next_action_type:
+    | "manual_product_url"
+    | "controlled_dry_run"
+    | "refresh_known_url"
+    | "review_suspicious_listing"
+    | "no_action";
   notes: string[];
   next_action: string;
+};
+export type CatalogCompletenessResponse = {
+  region: string;
+  readiness_score: number;
+  build_critical_categories: CategoryCoverage[];
+  non_critical_categories: CategoryCoverage[];
+  ready_categories: string[];
+  usable_with_warnings_categories: string[];
+  not_ready_categories: string[];
+  stale_categories: string[];
+  weak_categories: string[];
+  duplicate_risk_categories: string[];
+  next_actions: RecommendedDiscoveryJob[];
+  message: string;
 };
 export type SaudiBuildDataCompleteness = {
   region: "SA";
@@ -339,6 +376,254 @@ export type SaudiBuildResponse = {
   strict_budget_failure?: SaudiNoBudgetFitGuidance | null;
   build_comparison: SaudiBuildComparisonItem[];
   audit_trace_id?: string | null;
+};
+
+export type UserAccount = {
+  user_id: string;
+  email: string;
+  display_name?: string | null;
+  region: string;
+  created_at?: string | null;
+  last_active_at?: string | null;
+};
+
+export type SavedBuild = {
+  build_id: string;
+  user_id?: string | null;
+  guest_id?: string | null;
+  title: string;
+  region: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  build_mode: string;
+  total_price_sar?: number | null;
+  confidence_level: string;
+  warning_summary: string[];
+  component_ids: string[];
+  price_snapshot_ids: string[];
+  build_summary: Record<string, unknown>;
+  build_payload: Partial<SaudiBuildOption> & Record<string, unknown>;
+  share_slug: string;
+  public_visibility: boolean;
+  favorite: boolean;
+};
+
+export type SavedBuildCreateRequest = {
+  user_id?: string | null;
+  guest_id?: string | null;
+  title?: string | null;
+  region: string;
+  build_mode: string;
+  total_price_sar?: number | null;
+  confidence_level: string;
+  warning_summary: string[];
+  component_ids: string[];
+  price_snapshot_ids: string[];
+  build_summary: Record<string, unknown>;
+  build_payload: Record<string, unknown>;
+  public_visibility: boolean;
+  favorite: boolean;
+};
+
+export type BuildComparisonMetric = {
+  build_id: string;
+  title: string;
+  total_price_sar?: number | null;
+  confidence_level: string;
+  warning_count: number;
+  budget_status?: string | null;
+  risk_summary: string[];
+  upgrade_path: string[];
+  cheapest: boolean;
+  safest: boolean;
+  strongest: boolean;
+  more_upgradeable: boolean;
+};
+
+export type BuildComparisonResponse = {
+  comparison_id: string;
+  compared_builds: BuildComparisonMetric[];
+  highlights: string[];
+};
+
+export type WatchlistItem = {
+  item_id: string;
+  user_id?: string | null;
+  guest_id?: string | null;
+  product_id: string;
+  product_name?: string | null;
+  region: string;
+  vendor?: string | null;
+  target_price_sar?: number | null;
+  last_seen_price?: number | null;
+  current_price_sar?: number | null;
+  last_price_change?: number | null;
+  status: "tracking" | "target_met" | "price_unavailable";
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+export type PublicDealSubmissionResponse = {
+  status: "accepted" | "rejected";
+  normalized_url?: string | null;
+  source_name?: string | null;
+  region: string;
+  category: string;
+  message: string;
+};
+export type AnalyticsEventType =
+  | "landing_page_visit"
+  | "region_selection"
+  | "build_generation"
+  | "build_save"
+  | "build_share"
+  | "watchlist_add"
+  | "deal_submission"
+  | "failed_build_generation"
+  | "incomplete_build_generation"
+  | "over_budget_build"
+  | "build_comparison_usage";
+export type FeedbackType =
+  | "wrong_price"
+  | "expired_listing"
+  | "wrong_compatibility"
+  | "suspicious_recommendation"
+  | "bad_vendor_listing"
+  | "broken_product_url"
+  | "missing_store"
+  | "missing_product"
+  | "confusing_warning";
+export type AnalyticsEventResponse = {
+  status: "recorded";
+  event_id: string;
+};
+export type FeedbackSubmissionResponse = {
+  status: "accepted";
+  feedback_id: string;
+  message: string;
+};
+export type CountRow = {
+  name: string;
+  count: number;
+};
+export type FounderInsightsSummary = {
+  region: string;
+  recommended_next_category?: string | null;
+  weak_vendor_coverage: string[];
+  most_requested_categories: CountRow[];
+  common_budget_ranges: CountRow[];
+  most_common_failure_modes: CountRow[];
+  action_items: string[];
+};
+export type MvpHealthDashboard = {
+  region: string;
+  active_users_today: number;
+  builds_generated: number;
+  builds_failing: number;
+  top_categories_searched: CountRow[];
+  top_missing_categories: CountRow[];
+  stale_pricing_count: number;
+  saudi_coverage_percent: number;
+  source_health: Record<string, unknown>[];
+  watchlist_activity: number;
+  deal_submissions_pending: number;
+  feedback_pending: number;
+  founder_insights: FounderInsightsSummary;
+};
+export type DeploymentEnvCheck = {
+  name: string;
+  required: boolean;
+  configured: boolean;
+  public: boolean;
+  status: "ok" | "missing" | "optional" | "warning";
+  message: string;
+};
+export type DeploymentChecklist = {
+  environment: string;
+  market_data_mode: string;
+  version_info: Record<string, string | null>;
+  env_completeness: DeploymentEnvCheck[];
+  neo4j_connectivity: Record<string, unknown>;
+  source_configuration_status: Record<string, unknown>[];
+  build_readiness_status: Record<string, unknown>;
+  runtime_health: {
+    status: "healthy" | "watch" | "degraded";
+    build_generation_latency_ms: number;
+    slow_endpoints: Record<string, unknown>[];
+    graph_query_latency_ms: number;
+    frontend_payload_size_bytes: Record<string, number>;
+    refresh_success_failure: Record<string, number>;
+    notes: string[];
+  };
+  deployment_blockers: string[];
+  launch_ready: boolean;
+};
+export type CategoryPriorityScore = {
+  category: string;
+  score: number;
+  readiness_level: "ready" | "usable_with_warnings" | "not_ready";
+  build_dependency_weight: number;
+  user_search_demand: number;
+  build_failure_frequency: number;
+  trusted_saudi_listing_count: number;
+  stale_listing_count: number;
+  duplicate_risk: boolean;
+  uncertainty_level: "low" | "medium" | "high";
+  blocker_reasons: string[];
+  recommended_next_action: string;
+};
+export type FounderActionQueueItem = {
+  category: string;
+  recommended_products_to_add: string[];
+  reason: string;
+  expected_impact: string;
+  suggested_store_targets: string[];
+  estimated_improvement: string;
+};
+export type ProductFamilyCoverage = {
+  category: string;
+  family: string;
+  saudi_coverage_percent: number;
+  trusted_listing_count: number;
+  cheapest_trusted_listing_sar?: number | null;
+  uncertainty_level: "low" | "medium" | "high";
+  last_updated?: string | null;
+};
+export type StoreCoverageQuality = {
+  store_name: string;
+  score: number;
+  trusted_listing_count: number;
+  uncertainty_count: number;
+  stale_url_count: number;
+  duplicate_issue_count: number;
+  strengths: string[];
+  weaknesses: string[];
+};
+export type MarketCoverageTrendPoint = {
+  label: string;
+  build_success_rate: number;
+  readiness_score: number;
+  warning_frequency: number;
+  trusted_listing_growth: number;
+  stale_listing_reduction: number;
+};
+export type CatalogGrowthWorkflowSummary = {
+  region: string;
+  category_priorities: CategoryPriorityScore[];
+  founder_action_queue: FounderActionQueueItem[];
+  product_family_coverage: ProductFamilyCoverage[];
+  store_quality_scores: StoreCoverageQuality[];
+  build_blocker_summary: {
+    region: string;
+    top_missing_categories: CountRow[];
+    top_over_budget_causes: CountRow[];
+    most_common_substitution_suggestions: CountRow[];
+    categories_with_weak_saudi_coverage: string[];
+    categories_with_highest_uncertainty: string[];
+  };
+  readiness_trends: MarketCoverageTrendPoint[];
+  top_blockers: string[];
+  most_needed_urls: string[];
+  message: string;
 };
 export type SaudiBuildValidationRequest = {
   region: "SA";
@@ -1654,6 +1939,10 @@ export type KnownProductUrlView = {
   source_policy_status: SourcePolicyStatus;
   last_price?: number | null;
   last_currency?: string | null;
+  next_refresh_at?: string | null;
+  refresh_priority: number;
+  refresh_failure_count: number;
+  last_price_hash?: string | null;
 };
 
 export type ProductUrlRefreshResponse = {

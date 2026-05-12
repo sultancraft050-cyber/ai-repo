@@ -13,18 +13,21 @@ from app.api import (
     approvals,
     autonomy,
     build,
+    catalog,
     cognition,
     compatibility,
     components,
     evolution,
     governance,
     intelligence,
+    launch,
     ops,
     performance,
     pricing,
     products,
     sources,
     telemetry,
+    user_builds,
 )
 from app.core.config import settings
 from app.core.security import RateLimiter, authenticate_api_key, endpoint_rule, has_role, payload_hash, trace_id
@@ -37,11 +40,13 @@ from app.graph.governance_repository import Neo4jGovernanceRepository
 from app.graph.ops_repository import Neo4jOpsRepository
 from app.graph.pricing_repository import Neo4jPricingRepository
 from app.graph.telemetry_repository import Neo4jTelemetryRepository
+from app.graph.user_build_repository import Neo4jUserBuildRepository
 from app.models.ops import AuditEvent
 from app.services.autonomy import default_agents
 from app.services.autonomy_worker import AutonomousAgentWorker
 from app.services.cognition_worker import CognitionWorker
 from app.services.ops import OpsService
+from app.services.launch_analytics import LaunchAnalyticsStore
 from app.services.pricing_scheduler import PricingScheduler
 from app.services.pricing_worker import PricingWorker
 
@@ -66,6 +71,7 @@ async def lifespan(app: FastAPI):
         Neo4jEvolutionRepository(manager.driver).apply_schema()
         Neo4jAlignmentRepository(manager.driver).apply_schema()
         Neo4jOpsRepository(manager.driver).apply_schema()
+        Neo4jUserBuildRepository(manager.driver).apply_schema()
         autonomy_repository = Neo4jAutonomyRepository(manager.driver)
         autonomy_repository.apply_schema()
         autonomy_repository.upsert_agents(default_agents())
@@ -114,7 +120,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.state.rate_limiter = RateLimiter()
+app.state.rate_limiter = RateLimiter(
+    window_seconds=settings.public_rate_limit_window_seconds,
+    max_requests=settings.public_rate_limit_max_requests,
+)
+app.state.launch_analytics = LaunchAnalyticsStore()
 
 
 @app.middleware("http")
@@ -280,10 +290,12 @@ app.include_router(compatibility.router)
 app.include_router(performance.router)
 app.include_router(components.router)
 app.include_router(build.router)
+app.include_router(catalog.router)
 app.include_router(products.router)
 app.include_router(pricing.router)
 app.include_router(sources.router)
 app.include_router(intelligence.router)
+app.include_router(launch.router)
 app.include_router(telemetry.router)
 app.include_router(cognition.router)
 app.include_router(governance.router)
@@ -292,6 +304,7 @@ app.include_router(alignment.router)
 app.include_router(autonomy.router)
 app.include_router(ops.router)
 app.include_router(approvals.router)
+app.include_router(user_builds.router)
 
 
 @app.get("/health")
@@ -302,6 +315,9 @@ def health() -> dict[str, str | bool | None]:
         "ok": manager.unavailable_reason is None,
         "neo4j": "connected" if manager.unavailable_reason is None else "unavailable",
         "detail": manager.unavailable_reason,
+        "environment": settings.environment,
+        "market_data_mode": settings.market_data_mode,
+        "backend_version": "0.1.0",
     }
 
 

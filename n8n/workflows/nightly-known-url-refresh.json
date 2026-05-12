@@ -1,0 +1,145 @@
+{
+  "name": "Saudi Known Product URL Refresh - Nightly",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 3,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "99ec4abb-67c3-471a-8330-6425d44b40c2",
+      "name": "Daily 3 AM Riyadh",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.BACKEND_BASE_URL.replace(/\\/$/, '') + '/sources/product-url/refresh'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{$env.ADMIN_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { region: 'SA', limit: 50 } }}",
+        "options": {}
+      },
+      "id": "378efb6a-53f9-43bc-ae0b-09577d6a71f1",
+      "name": "Refresh Known Product URLs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst refreshed = data.refreshed_count ?? data.refreshed ?? data.updated_count ?? 0;\nconst failed = data.failed_count ?? data.failed ?? 0;\nconst skipped = data.skipped_count ?? data.skipped ?? 0;\nconst failures = data.failures || data.failed_urls || data.errors || [];\n\nfunction cleanUrl(value) {\n  try {\n    const parsed = new URL(String(value));\n    parsed.hash = '';\n    parsed.search = '';\n    return parsed.toString();\n  } catch (error) {\n    return String(value || 'unknown-url').slice(0, 120);\n  }\n}\n\nfunction cleanError(value) {\n  return String(value || 'unknown error')\n    .replace(/(api[_-]?key|token|secret|password)=([^\\s&]+)/gi, '$1=REDACTED')\n    .slice(0, 140);\n}\n\nconst topFailures = Array.isArray(failures)\n  ? failures.slice(0, 5).map((failure) => {\n      if (typeof failure === 'string') return `- ${cleanError(failure)}`;\n      return `- ${cleanUrl(failure.url || failure.product_url)}: ${cleanError(failure.error || failure.reason || failure.message)}`;\n    })\n  : [];\n\nreturn [{\n  json: {\n    chatId: String($env.FOUNDER_TELEGRAM_CHAT_ID || ''),\n    reply: [\n      'Nightly Saudi known URL refresh complete.',\n      `Refreshed: ${refreshed}`,\n      `Failed: ${failed}`,\n      `Skipped: ${skipped}`,\n      topFailures.length ? `Top failures:\\n${topFailures.join('\\n')}` : 'Top failures: none reported',\n      'Reminder: Noon Saudi and Amazon.sa refresh may be policy-gated.'\n    ].join('\\n')\n  }\n}];"
+      },
+      "id": "8d7e95a4-7994-4b45-b82f-3904bc8c9d7c",
+      "name": "Format Refresh Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.reply}}",
+        "additionalFields": {}
+      },
+      "id": "760d36fc-176e-4097-a57c-f78fdf49d8f1",
+      "name": "Send Founder Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        320,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "__CONFIGURE_IN_N8N__",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 3 AM Riyadh": {
+      "main": [
+        [
+          {
+            "node": "Refresh Known Product URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Known Product URLs": {
+      "main": [
+        [
+          {
+            "node": "Format Refresh Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Refresh Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Founder Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Riyadh",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "saudi-market"
+    },
+    {
+      "name": "known-url-refresh"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-12T00:00:00.000Z",
+  "versionId": "saudi-known-url-refresh-v1"
+}

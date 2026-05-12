@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 from app.graph.pricing_repository import Neo4jPricingRepository
 from app.models.api import (
+    CatalogCompletenessResponse,
     CategoryCoverage,
     RecommendedDiscoveryJob,
     SaudiBuildComponent,
@@ -24,6 +26,7 @@ from app.models.api import (
     SaudiBuildValidationResponse,
 )
 from app.models.pricing import ProductSearchResult
+from app.services.performance_observer import performance_observer
 
 
 REQUIRED_BUILD_CATEGORIES = ["CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"]
@@ -100,10 +103,18 @@ class ComponentPool:
 class SaudiLocalBuildService:
     def __init__(self, pricing_repository: Neo4jPricingRepository) -> None:
         self.pricing_repository = pricing_repository
+        self._category_product_cache: dict[tuple[str, str, int], list[ProductSearchResult]] = {}
+        self._data_completeness_cache: dict[tuple[str, str], SaudiBuildDataCompleteness] = {}
 
     def data_completeness(self, *, region: str = "SA", city: str = "Riyadh") -> SaudiBuildDataCompleteness:
         if region != "SA":
             raise ValueError("Saudi local build generation currently supports region=SA only.")
+        cache_key = (region, city)
+        cached = self._data_completeness_cache.get(cache_key)
+        if cached is not None:
+            performance_observer.record_cache(hit=True)
+            return cached
+        performance_observer.record_cache(hit=False)
         coverages: list[CategoryCoverage] = []
         ready_categories: list[str] = []
         missing_categories: list[str] = []
@@ -121,7 +132,7 @@ class SaudiLocalBuildService:
         )
         readiness = round(readiness_points / len(REQUIRED_BUILD_CATEGORIES), 2)
         jobs = self._discovery_jobs(missing_categories, city=city)
-        return SaudiBuildDataCompleteness(
+        completeness = SaudiBuildDataCompleteness(
             region="SA",
             city=city,
             readiness_score=readiness,
@@ -137,12 +148,70 @@ class SaudiLocalBuildService:
                 else "Data needed before reliable Saudi build generation."
             ),
         )
+        self._data_completeness_cache[cache_key] = completeness
+        return completeness
+
+    def catalog_completeness(self, *, region: str = "SA", city: str = "Riyadh") -> CatalogCompletenessResponse:
+        if region != "SA":
+            raise ValueError("Catalog completeness currently supports region=SA only.")
+        build_critical = []
+        for category in REQUIRED_BUILD_CATEGORIES:
+            build_critical.append(self._coverage_for_category(category, self._category_products(category, region=region, limit=80)))
+
+        known_categories = sorted(
+            category
+            for category in self.pricing_repository.product_categories()
+            if category and category not in REQUIRED_BUILD_CATEGORIES
+        )
+        non_critical = [
+            self._coverage_for_category(category, self._category_products(category, region=region, limit=40))
+            for category in known_categories[:24]
+        ]
+        all_coverages = build_critical + non_critical
+        readiness_points = sum(
+            1.0 if coverage.readiness_level == "ready" else 0.75 if coverage.readiness_level == "usable_with_warnings" else 0
+            for coverage in all_coverages
+        )
+        readiness_score = round(readiness_points / len(all_coverages), 2) if all_coverages else 0
+        not_ready = [coverage.category for coverage in all_coverages if coverage.readiness_level == "not_ready"]
+        weak = [
+            coverage.category
+            for coverage in all_coverages
+            if coverage.readiness_level != "ready" or coverage.warning_reasons or coverage.stale_listing_count
+        ]
+        stale = [
+            coverage.category
+            for coverage in all_coverages
+            if coverage.price_freshness_status in {"stale", "mixed"} or coverage.stale_listing_count
+        ]
+        duplicate_risk = self._duplicate_risk_categories(all_coverages, region=region)
+        return CatalogCompletenessResponse(
+            region=region,
+            readiness_score=readiness_score,
+            build_critical_categories=build_critical,
+            non_critical_categories=non_critical,
+            ready_categories=[coverage.category for coverage in all_coverages if coverage.readiness_level == "ready"],
+            usable_with_warnings_categories=[
+                coverage.category for coverage in all_coverages if coverage.readiness_level == "usable_with_warnings"
+            ],
+            not_ready_categories=not_ready,
+            stale_categories=stale,
+            weak_categories=weak,
+            duplicate_risk_categories=duplicate_risk,
+            next_actions=self._discovery_jobs(not_ready[:8], city=city),
+            message=(
+                "Catalog has enough Saudi build-critical data; weak categories still need quality work."
+                if not any(coverage.readiness_level == "not_ready" for coverage in build_critical)
+                else "Catalog still has Saudi build-critical blockers."
+            ),
+        )
 
     def generate_local(self, request: SaudiBuildRequest, *, trace_id: str | None = None) -> SaudiBuildResponse:
+        started = perf_counter()
         completeness = self.data_completeness(region=request.region, city=request.city)
         missing_data_warnings = self._missing_warnings(completeness)
         if not completeness.enough_data_for_full_build:
-            return SaudiBuildResponse(
+            response = SaudiBuildResponse(
                 region="SA",
                 city=request.city,
                 build_status="incomplete_data",
@@ -152,6 +221,8 @@ class SaudiLocalBuildService:
                 missing_data_warnings=missing_data_warnings,
                 audit_trace_id=trace_id,
             )
+            performance_observer.record_endpoint("/build/generate-local", self._elapsed_ms(started))
+            return response
 
         pools = {
             category: ComponentPool(category, self._category_products(category, region="SA", limit=80))
@@ -189,7 +260,7 @@ class SaudiLocalBuildService:
             else:
                 warnings = ["No valid Saudi build fits the selected strict budget with currently ingested prices."]
 
-        return SaudiBuildResponse(
+        response = SaudiBuildResponse(
             region="SA",
             city=request.city,
             build_status=status,
@@ -201,6 +272,8 @@ class SaudiLocalBuildService:
             build_comparison=self._build_comparison(builds),
             audit_trace_id=trace_id,
         )
+        performance_observer.record_endpoint("/build/generate-local", self._elapsed_ms(started))
+        return response
 
     def validate_local_build(self, request: SaudiBuildValidationRequest) -> SaudiBuildValidationResponse:
         categories = set(REQUIRED_BUILD_CATEGORIES)
@@ -247,7 +320,16 @@ class SaudiLocalBuildService:
         )
 
     def _category_products(self, category: str, *, region: str, limit: int) -> list[ProductSearchResult]:
-        return self.pricing_repository.search_products(q="", category=category, region=region, limit=limit)
+        cache_key = (category, region, limit)
+        if cache_key in self._category_product_cache:
+            performance_observer.record_cache(hit=True)
+            return self._category_product_cache[cache_key]
+        performance_observer.record_cache(hit=False)
+        query_started = perf_counter()
+        products = self.pricing_repository.search_products(q="", category=category, region=region, limit=limit)
+        performance_observer.record_query(f"pricing_search:{region}:{category}", self._elapsed_ms(query_started))
+        self._category_product_cache[cache_key] = products
+        return products
 
     def _coverage_for_category(self, category: str, products: list[ProductSearchResult]) -> CategoryCoverage:
         priced = [product for product in products if product.region == "SA" and product.price_status in {"active", "stale"} and self._has_valid_saudi_price(product)]
@@ -281,7 +363,9 @@ class SaudiLocalBuildService:
         unknown_warranty = [
             product for product in valid_identity if "unknown_warranty" in product.flags or "warranty_unknown" in product.flags
         ]
-        notes = []
+        notes: list[str] = []
+        blocker_reasons: list[str] = []
+        warning_reasons: list[str] = []
         readiness_level = "ready" if trusted else "not_ready"
         if category == "RAM" and len(valid_identity) >= 2 and (trusted or usable):
             readiness_level = "usable_with_warnings" if not trusted else "ready"
@@ -293,15 +377,25 @@ class SaudiLocalBuildService:
             readiness_level = "not_ready"
 
         if not priced:
-            notes.append("No Saudi price snapshots found.")
+            blocker_reasons.append("No Saudi price snapshots found.")
         if priced and not valid_identity:
-            notes.append("Saudi listings exist, but product identity does not match the build target.")
+            blocker_reasons.append("Saudi listings exist, but product identity does not match the build target.")
         if severe:
-            notes.append("Severe suspicious price or category mismatch blocks readiness.")
+            blocker_reasons.append("Severe suspicious price or category mismatch blocks readiness.")
         if valid_identity and not trusted and not usable:
-            notes.append("Only risky or incomplete Saudi listings are available.")
+            blocker_reasons.append("Only risky or incomplete Saudi listings are available.")
         if readiness_level == "usable_with_warnings":
-            notes.append("Usable with warnings: product identity and SAR price are valid, but VAT/shipping/warranty remain incomplete.")
+            warning_reasons.append("Product identity and SAR price are valid, but VAT/shipping/warranty remain incomplete.")
+        if stale:
+            warning_reasons.append("One or more Saudi price snapshots are stale.")
+        if unknown_vat:
+            warning_reasons.append("VAT evidence is incomplete.")
+        if unknown_shipping:
+            warning_reasons.append("Shipping evidence is incomplete.")
+        if unknown_warranty:
+            warning_reasons.append("Warranty evidence is incomplete.")
+        notes.extend(blocker_reasons)
+        notes.extend(warning_reasons)
         next_action = self._coverage_next_action(
             category=category,
             readiness_level=readiness_level,
@@ -311,6 +405,16 @@ class SaudiLocalBuildService:
             trusted_count=len(trusted),
             usable_count=len(usable),
         )
+        next_action_type = self._coverage_next_action_type(
+            readiness_level=readiness_level,
+            priced_count=len(priced),
+            severe_count=len(severe),
+            trusted_count=len(trusted),
+            usable_count=len(usable),
+            stale_count=len(stale),
+        )
+        freshness_status = self._price_freshness_status(priced, stale)
+        identity_confidence = round(len(valid_identity) / len(priced), 2) if priced else 0.0
         return CategoryCoverage(
             category=category,
             priced_product_count=len(priced),
@@ -325,6 +429,11 @@ class SaudiLocalBuildService:
             stale_listing_count=len(stale),
             ready=readiness_level == "ready",
             readiness_level=readiness_level,  # type: ignore[arg-type]
+            identity_confidence=identity_confidence,
+            price_freshness_status=freshness_status,  # type: ignore[arg-type]
+            blocker_reasons=list(dict.fromkeys(blocker_reasons)),
+            warning_reasons=list(dict.fromkeys(warning_reasons)),
+            next_action_type=next_action_type,  # type: ignore[arg-type]
             notes=notes,
             next_action=next_action,
         )
@@ -352,6 +461,50 @@ class SaudiLocalBuildService:
         if valid_identity_count and not trusted_count and not usable_count:
             return "Add a trusted local/GCC listing or approved product URL; current listings are too risky."
         return "Run a narrow identity-quality dry-run and review canonicalization before build use."
+
+    def _coverage_next_action_type(
+        self,
+        *,
+        readiness_level: str,
+        priced_count: int,
+        severe_count: int,
+        trusted_count: int,
+        usable_count: int,
+        stale_count: int,
+    ) -> str:
+        if readiness_level == "ready" and not stale_count:
+            return "no_action"
+        if stale_count and (trusted_count or usable_count):
+            return "refresh_known_url"
+        if readiness_level == "usable_with_warnings":
+            return "manual_product_url"
+        if severe_count:
+            return "review_suspicious_listing"
+        if not priced_count:
+            return "controlled_dry_run"
+        return "manual_product_url"
+
+    def _price_freshness_status(self, priced: list[ProductSearchResult], stale: list[ProductSearchResult]) -> str:
+        if not priced:
+            return "missing"
+        if len(stale) == len(priced):
+            return "stale"
+        if stale:
+            return "mixed"
+        return "fresh"
+
+    def _duplicate_risk_categories(self, coverages: list[CategoryCoverage], *, region: str) -> list[str]:
+        risky: list[str] = []
+        for coverage in coverages:
+            products = self._category_products(coverage.category, region=region, limit=80)
+            keys: dict[str, set[str]] = {}
+            for product in products:
+                if not product.canonical_key:
+                    continue
+                keys.setdefault(product.canonical_key, set()).add(product.id)
+            if any(len(product_ids) > 1 for product_ids in keys.values()):
+                risky.append(coverage.category)
+        return risky
 
     def _has_valid_category_identity(self, category: str, product: ProductSearchResult) -> bool:
         text = f"{product.canonical_key or ''} {product.name} {product.model or ''}".upper()
@@ -551,6 +704,8 @@ class SaudiLocalBuildService:
         risk = product.current_recommended_marketplace_risk_score
         if risk is not None and risk > 0.72:
             warnings.append(f"{category} has elevated marketplace risk ({risk:.2f}).")
+        if category == "PSU" and not self._psu_efficiency_from_text(product):
+            warnings.append("PSU efficiency rating is unclear; verify 80+ rating before buying.")
         if product.lowest_price_warning:
             warnings.append(product.lowest_price_warning)
         stock_badge = "imported" if product.current_recommended_seller_type == "marketplace" else "local" if product.current_recommended_price is not None else "unknown"
@@ -619,12 +774,26 @@ class SaudiLocalBuildService:
         return vat_status, shipping_status, warranty_status
 
     def _component_reason(self, product: ProductSearchResult, category: str, request: SaudiBuildRequest) -> str:
+        if category == "PSU":
+            efficiency = self._psu_efficiency_from_text(product)
+            if efficiency:
+                return (
+                    f"PSU selected from Saudi market data with {efficiency} efficiency evidence and enough "
+                    f"power-safety relevance for {request.use_case}."
+                )
         if product.current_recommended_price is not None:
             return (
                 f"{category} selected from Saudi market data with {product.recommended_level or 'usable'} "
                 f"recommendation confidence for {request.use_case} at {request.target_resolution}."
             )
         return f"{category} has Saudi market visibility, but current listing risk prevents a safe recommendation."
+
+    def _psu_efficiency_from_text(self, product: ProductSearchResult) -> str | None:
+        text = f"{product.name} {product.canonical_key or ''} {product.model or ''}".upper()
+        for label in ("TITANIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE"):
+            if label in text:
+                return label
+        return None
 
     def _build_option(
         self,
@@ -1333,3 +1502,6 @@ class SaudiLocalBuildService:
         else:
             categories = ["GPU", "CPU", "Storage", "PSU", "Case", "Cooler", "RAM", "Motherboard"]
         return [category for category in categories if BUDGET_DISCOVERY_QUERIES.get(category)]
+
+    def _elapsed_ms(self, started: float) -> float:
+        return (perf_counter() - started) * 1000

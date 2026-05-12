@@ -1,13 +1,14 @@
 "use client";
 
-import { AlertTriangle, Store } from "lucide-react";
+import { AlertTriangle, Heart, Store } from "lucide-react";
 import type { SaudiBuildComponent } from "@/types/builder";
 
 type BuildComponentRowProps = {
   component: SaudiBuildComponent;
+  onWatch?: (component: SaudiBuildComponent) => void;
 };
 
-export function BuildComponentRow({ component }: BuildComponentRowProps) {
+export function BuildComponentRow({ component, onWatch }: BuildComponentRowProps) {
   return (
     <div className="grid gap-3 rounded-md border border-line bg-panel px-3 py-3 md:grid-cols-[1.1fr_0.9fr]">
       <div className="min-w-0">
@@ -47,6 +48,16 @@ export function BuildComponentRow({ component }: BuildComponentRowProps) {
           <MetaBadge value={component.shipping_status} />
           <MetaBadge value={component.warranty_status} />
         </div>
+        {onWatch ? (
+          <button
+            type="button"
+            onClick={() => onWatch(component)}
+            className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-line bg-white px-2 text-xs font-semibold text-ink"
+          >
+            <Heart size={13} aria-hidden />
+            Watch price
+          </button>
+        ) : null}
       </div>
     </div>
   );

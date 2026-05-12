@@ -4,8 +4,11 @@ import {
   AlertTriangle,
   Download,
   Gauge,
+  Heart,
   PiggyBank,
+  Save,
   ShieldCheck,
+  Share2,
   ShoppingCart,
   TrendingDown,
   TrendingUp,
@@ -13,13 +16,17 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { BuildComponentRow } from "@/components/BuildComponentRow";
-import type { SaudiBuildOption } from "@/types/builder";
+import type { SaudiBuildComponent, SaudiBuildOption } from "@/types/builder";
 
 type BuildRecommendationCardProps = {
   build: SaudiBuildOption;
+  onSave?: (build: SaudiBuildOption) => void;
+  onShare?: (build: SaudiBuildOption) => void;
+  onWatchProduct?: (component: SaudiBuildComponent) => void;
+  saving?: boolean;
 };
 
-export function BuildRecommendationCard({ build }: BuildRecommendationCardProps) {
+export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct, saving }: BuildRecommendationCardProps) {
   const overBudget =
     build.summary.budget_remaining_or_overage !== null &&
     build.summary.budget_remaining_or_overage !== undefined &&
@@ -47,6 +54,9 @@ export function BuildRecommendationCard({ build }: BuildRecommendationCardProps)
     }
   }
   const riskWarnings = Array.from(new Set(buildWarnings)).slice(0, 10);
+  const priorityWarnings = prioritizeWarnings([...build.summary.warning_summary, ...riskWarnings]);
+  const trustedLocalCount = build.components.filter((component) => component.stock_badge === "local" || component.stock_badge === "gcc").length;
+  const uncertainCount = build.summary.components_with_uncertainty.length;
 
   const confidenceRows = [
     ["Compatibility", build.confidence_breakdown.compatibility_confidence],
@@ -84,6 +94,33 @@ export function BuildRecommendationCard({ build }: BuildRecommendationCardProps)
           <h3 className="text-lg font-semibold text-ink">{build.title}</h3>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">{build.explanation.summary}</p>
           {overBudget ? <p className="mt-2 text-sm text-caution">This build is {overageAmount} SAR over your budget.</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {onSave ? (
+              <button
+                type="button"
+                onClick={() => onSave(build)}
+                disabled={saving}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save size={15} aria-hidden />
+                {saving ? "Saving" : "Save Build"}
+              </button>
+            ) : null}
+            {onShare ? (
+              <button
+                type="button"
+                onClick={() => onShare(build)}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink hover:bg-white"
+              >
+                <Share2 size={15} aria-hidden />
+                Share
+              </button>
+            ) : null}
+            <span className="inline-flex h-9 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-muted">
+              <Heart size={15} aria-hidden />
+              Favorite after save
+            </span>
+          </div>
         </div>
         <div className="grid min-w-[240px] gap-2 rounded-md border border-line bg-panel p-3">
           <Metric
@@ -110,9 +147,46 @@ export function BuildRecommendationCard({ build }: BuildRecommendationCardProps)
         </div>
       </div>
 
+      <section className="mb-4 grid gap-3 rounded-md border border-line bg-panel p-3 lg:grid-cols-[0.95fr_1.05fr]">
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-muted">Launch check</div>
+          <div className="grid gap-2 text-sm leading-6 text-muted">
+            <span>
+              {overBudget
+                ? `Budget needs attention: this option is ${formatSar(overageAmount)} over the user budget.`
+                : "Budget fit is acceptable for this option."}
+            </span>
+            <span>
+              {trustedLocalCount} of {build.components.length} components are local/GCC choices; {uncertainCount} component
+              {uncertainCount === 1 ? "" : "s"} need verification before purchase.
+            </span>
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase text-muted">Verify before buying</div>
+          {priorityWarnings.length ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {priorityWarnings.slice(0, 4).map((warning) => (
+                <div key={warning} className="rounded border border-caution/30 bg-amber-50 px-2 py-1.5 text-xs leading-5 text-caution">
+                  {warning}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded border border-teal-200 bg-teal-50 px-2 py-1.5 text-xs leading-5 text-signal">
+              No high-priority marketplace, warranty, VAT, or shipping warning is visible.
+            </p>
+          )}
+        </div>
+      </section>
+
       <div className="grid gap-3">
         {build.components.map((component) => (
-          <BuildComponentRow key={`${component.category}-${component.product_id}`} component={component} />
+          <BuildComponentRow
+            key={`${component.category}-${component.product_id}`}
+            component={component}
+            onWatch={onWatchProduct}
+          />
         ))}
       </div>
 
@@ -225,6 +299,10 @@ export function BuildRecommendationCard({ build }: BuildRecommendationCardProps)
           </div>
         </div>
       </details>
+      <div className="mt-3 rounded-md border border-caution/30 bg-amber-50 px-3 py-2 text-xs leading-5 text-caution">
+        Prices, stock, VAT, shipping, warranty, and seller terms may change. Verify the store page before buying; future
+        affiliate or store terms may apply.
+      </div>
     </article>
   );
 }
@@ -302,4 +380,14 @@ function formatSar(value?: number | null) {
     currency: "SAR",
     maximumFractionDigits: 0
   }).format(value);
+}
+
+function prioritizeWarnings(warnings: string[]) {
+  const unique = Array.from(new Set(warnings.filter(Boolean)));
+  const priorityTerms = ["warranty", "shipping", "vat", "imported", "marketplace", "condition", "budget", "price"];
+  return unique.sort((left, right) => {
+    const leftPriority = priorityTerms.some((term) => left.toLowerCase().includes(term)) ? 0 : 1;
+    const rightPriority = priorityTerms.some((term) => right.toLowerCase().includes(term)) ? 0 : 1;
+    return leftPriority - rightPriority || left.localeCompare(right);
+  });
 }

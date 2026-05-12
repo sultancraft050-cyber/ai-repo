@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.models.source_url import ProductUrlIngestRequest, ProductUrlPreviewRequest, ProductUrlRefreshRequest
+from app.models.source_url import ProductUrlIngestRequest, ProductUrlPreviewRequest, ProductUrlRefreshRequest, PublicDealSubmissionRequest
 from app.services.product_url_sources import (
     PRODUCT_URL_POLICIES,
     ProductUrlIngestionService,
@@ -116,6 +116,19 @@ def test_policy_allows_pczone_product_slug_under_category_path() -> None:
     policy, normalized = ProductUrlPolicyRegistry().identify(
         "https://www.pczonesa.com/en/category/motherboard/asus-prime-b650m-a-wifi-ii/?utm_source=tracking"
     )
+
+    assert policy.source_name == "PCZone Saudi"
+    assert normalized == "https://www.pczonesa.com/en/category/motherboard/asus-prime-b650m-a-wifi-ii"
+
+
+def test_public_deal_submission_request_reuses_safe_url_validation() -> None:
+    request = PublicDealSubmissionRequest(
+        url="https://www.pczonesa.com/en/category/motherboard/asus-prime-b650m-a-wifi-ii/?utm_source=spam",
+        region="SA",
+        category="Motherboard",
+        email="buyer@example.com",
+    )
+    policy, normalized = ProductUrlPolicyRegistry().identify(request.url)
 
     assert policy.source_name == "PCZone Saudi"
     assert normalized == "https://www.pczonesa.com/en/category/motherboard/asus-prime-b650m-a-wifi-ii"

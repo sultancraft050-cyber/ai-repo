@@ -57,14 +57,26 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
             <div className="grid gap-1 text-xs text-muted">
               <span>{coverage.priced_product_count} priced products</span>
               <span>{coverage.trusted_local_listing_count} trusted listings</span>
+              <span>{Math.round(coverage.identity_confidence * 100)}% identity confidence</span>
+              <span>Freshness: {coverage.price_freshness_status}</span>
               {coverage.usable_with_warnings_count ? <span>{coverage.usable_with_warnings_count} usable with warnings</span> : null}
               <span>{coverage.risky_listing_count} risky listings</span>
             </div>
+            {coverage.blocker_reasons.length ? (
+              <div className="mt-2 grid gap-1 text-[11px] leading-4 text-caution">
+                {coverage.blocker_reasons.slice(0, 2).map((reason) => (
+                  <span key={reason}>{reason}</span>
+                ))}
+              </div>
+            ) : null}
             {coverage.readiness_level === "usable_with_warnings" ? (
               <div className="mt-2 grid gap-1 text-[11px] leading-4 text-caution">
                 {coverage.unknown_vat_count ? <span>{coverage.unknown_vat_count} VAT unclear</span> : null}
                 {coverage.unknown_shipping_count ? <span>{coverage.unknown_shipping_count} shipping unclear</span> : null}
                 {coverage.unknown_warranty_count ? <span>{coverage.unknown_warranty_count} warranty unclear</span> : null}
+                {coverage.warning_reasons.slice(0, 2).map((reason) => (
+                  <span key={reason}>{reason}</span>
+                ))}
               </div>
             ) : null}
             {coverage.notes.length ? (

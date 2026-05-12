@@ -11,6 +11,7 @@ from app.graph.evolution_repository import Neo4jEvolutionRepository
 from app.graph.governance_repository import Neo4jGovernanceRepository
 from app.graph.pricing_repository import Neo4jPricingRepository
 from app.graph.telemetry_repository import Neo4jTelemetryRepository
+from app.graph.user_build_repository import Neo4jUserBuildRepository
 from app.services.region_config import normalize_region
 
 
@@ -111,6 +112,17 @@ def get_ops_repository(request: Request) -> Neo4jOpsRepository:
             detail=f"Neo4j is unavailable: {manager.unavailable_reason}",
         )
     return Neo4jOpsRepository(manager.driver)
+
+
+def get_user_build_repository(request: Request) -> Neo4jUserBuildRepository:
+    manager = request.app.state.neo4j
+    manager.verify()
+    if manager.unavailable_reason:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Neo4j is unavailable: {manager.unavailable_reason}",
+        )
+    return Neo4jUserBuildRepository(manager.driver)
 
 
 def resolve_market_region(region: str | None) -> str:

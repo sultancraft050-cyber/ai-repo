@@ -27,6 +27,11 @@ from app.services.region_config import get_region_config, normalize_region, vend
 
 
 ACTIVE_PRICE_AVAILABILITY = {"in_stock", "preorder", "backorder"}
+ACTIVE_BUILD_CATEGORIES = {"CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"}
+
+
+def _refresh_priority_for_category(category: str) -> int:
+    return 90 if category in ACTIVE_BUILD_CATEGORIES else 50
 
 
 def _legacy_us_region_condition(alias: str = "snapshot") -> str:
@@ -1112,6 +1117,10 @@ class Neo4jPricingRepository:
                 url.source_policy_status = $source_policy_status,
                 url.last_price = $last_price,
                 url.last_currency = $last_currency,
+                url.last_price_hash = $last_price_hash,
+                url.refresh_failure_count = 0,
+                url.refresh_priority = coalesce(url.refresh_priority, $refresh_priority),
+                url.next_refresh_at = datetime() + duration({hours: 12}),
                 url.updated_at = datetime()
             MERGE (url)-[:FOR_PRODUCT]->(product)
             MERGE (url)-[:FROM_VENDOR]->(vendor)
@@ -1129,6 +1138,8 @@ class Neo4jPricingRepository:
             source_policy_status=source_policy_status,
             last_price=last_price,
             last_currency=last_currency,
+            last_price_hash=f"{last_currency}:{float(last_price):.2f}" if last_price is not None else None,
+            refresh_priority=_refresh_priority_for_category(category),
             database_=settings.neo4j_database,
         )
 
@@ -1139,6 +1150,7 @@ class Neo4jPricingRepository:
         category: str | None = None,
         vendor: str | None = None,
         limit: int = 20,
+        due_only: bool = False,
     ) -> list[dict[str, Any]]:
         region = normalize_region(region)
         records, _, _ = self.driver.execute_query(
@@ -1147,6 +1159,10 @@ class Neo4jPricingRepository:
             WHERE url.approved = true
               AND url.refresh_allowed = true
               AND url.region = $region
+              AND (
+                $due_only = false
+                OR coalesce(url.next_refresh_at, datetime("1970-01-01T00:00:00Z")) <= datetime()
+              )
               AND ($category IS NULL OR url.category = $category)
               AND ($vendor IS NULL OR toLower(url.vendor_name) CONTAINS toLower($vendor))
             RETURN url.url AS url,
@@ -1163,14 +1179,20 @@ class Neo4jPricingRepository:
                    url.last_error_sanitized AS last_error_sanitized,
                    coalesce(url.source_policy_status, "allowed") AS source_policy_status,
                    url.last_price AS last_price,
-                   url.last_currency AS last_currency
-            ORDER BY coalesce(url.last_checked_at, datetime("1970-01-01T00:00:00Z")) ASC
+                   url.last_currency AS last_currency,
+                   url.next_refresh_at AS next_refresh_at,
+                   coalesce(url.refresh_priority, 50) AS refresh_priority,
+                   coalesce(url.refresh_failure_count, 0) AS refresh_failure_count,
+                   url.last_price_hash AS last_price_hash
+            ORDER BY coalesce(url.refresh_priority, 50) DESC,
+                     coalesce(url.last_checked_at, datetime("1970-01-01T00:00:00Z")) ASC
             LIMIT $limit
             """,
             region=region,
             category=category,
             vendor=vendor,
             limit=limit,
+            due_only=due_only,
             database_=settings.neo4j_database,
         )
         return [record.data() for record in records]
@@ -1183,6 +1205,17 @@ class Neo4jPricingRepository:
                 url.last_success_at = CASE WHEN $success THEN datetime() ELSE url.last_success_at END,
                 url.last_failure_at = CASE WHEN $success THEN url.last_failure_at ELSE datetime() END,
                 url.last_error_sanitized = CASE WHEN $success THEN null ELSE $error END,
+                url.refresh_failure_count = CASE
+                    WHEN $success THEN 0
+                    ELSE coalesce(url.refresh_failure_count, 0) + 1
+                END,
+                url.next_refresh_at = CASE
+                    WHEN $success THEN datetime() + duration({hours: 12})
+                    WHEN coalesce(url.refresh_failure_count, 0) >= 3 THEN datetime() + duration({hours: 24})
+                    WHEN coalesce(url.refresh_failure_count, 0) = 2 THEN datetime() + duration({hours: 18})
+                    WHEN coalesce(url.refresh_failure_count, 0) = 1 THEN datetime() + duration({hours: 12})
+                    ELSE datetime() + duration({hours: 6})
+                END,
                 url.updated_at = datetime()
             """,
             normalized_url=normalized_url,

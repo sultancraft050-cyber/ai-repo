@@ -7,6 +7,7 @@ from typing import Any
 from neo4j import Driver
 
 from app.core.config import settings
+from app.models.launch import AnalyticsEventView, FeedbackSubmissionView
 from app.models.ops import ApprovalItem, AuditEvent, AutonomyJob, DailyFounderReport, JobMonitorItem
 
 
@@ -52,8 +53,12 @@ class Neo4jOpsRepository:
             "CREATE CONSTRAINT autonomy_job_id IF NOT EXISTS FOR (n:AutonomyJob) REQUIRE n.job_id IS UNIQUE",
             "CREATE CONSTRAINT founder_daily_report_id IF NOT EXISTS FOR (n:FounderDailyReport) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT operational_signal_id IF NOT EXISTS FOR (n:OperationalSignal) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT analytics_event_id IF NOT EXISTS FOR (n:AnalyticsEvent) REQUIRE n.event_id IS UNIQUE",
+            "CREATE CONSTRAINT feedback_submission_id IF NOT EXISTS FOR (n:FeedbackSubmission) REQUIRE n.feedback_id IS UNIQUE",
             "CREATE INDEX audit_event_trace IF NOT EXISTS FOR (n:AuditEvent) ON (n.trace_id)",
             "CREATE INDEX audit_event_endpoint IF NOT EXISTS FOR (n:AuditEvent) ON (n.endpoint, n.timestamp)",
+            "CREATE INDEX analytics_event_region IF NOT EXISTS FOR (n:AnalyticsEvent) ON (n.region, n.timestamp)",
+            "CREATE INDEX feedback_submission_status IF NOT EXISTS FOR (n:FeedbackSubmission) ON (n.status, n.created_at)",
             "CREATE INDEX approval_status IF NOT EXISTS FOR (n:ApprovalItem) ON (n.status, n.risk_level)",
             "CREATE INDEX approval_action_type IF NOT EXISTS FOR (n:ApprovalItem) ON (n.action_type)",
             "CREATE INDEX autonomy_job_status IF NOT EXISTS FOR (n:AutonomyJob) ON (n.status, n.risk_level)",
@@ -85,6 +90,30 @@ class Neo4jOpsRepository:
             database_=settings.neo4j_database,
         )
         return [AuditEvent.model_validate_json(record["payload_json"]) for record in records]
+
+    def create_analytics_event(self, event: AnalyticsEventView) -> AnalyticsEventView:
+        props = _clean_properties({**event.model_dump(mode="json"), "payload_json": event.model_dump_json()})
+        self.driver.execute_query(
+            """
+            MERGE (event:AnalyticsEvent {event_id: $event.event_id})
+            SET event += $event
+            """,
+            event=props,
+            database_=settings.neo4j_database,
+        )
+        return event
+
+    def create_feedback_submission(self, feedback: FeedbackSubmissionView) -> FeedbackSubmissionView:
+        props = _clean_properties({**feedback.model_dump(mode="json"), "payload_json": feedback.model_dump_json()})
+        self.driver.execute_query(
+            """
+            MERGE (feedback:FeedbackSubmission {feedback_id: $feedback.feedback_id})
+            SET feedback += $feedback
+            """,
+            feedback=props,
+            database_=settings.neo4j_database,
+        )
+        return feedback
 
     def idempotency_seen(self, endpoint: str, key: str) -> bool:
         records, _, _ = self.driver.execute_query(

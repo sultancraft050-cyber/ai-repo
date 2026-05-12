@@ -5,11 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.api.dependencies import get_ops_repository, resolve_market_region
 from app.graph.ops_repository import Neo4jOpsRepository
 from app.graph.pricing_repository import Neo4jPricingRepository
+from app.core.config import settings
+from app.models.launch import BuildFailureSummary, CatalogGrowthWorkflowSummary, DeploymentChecklist, FounderInsightsSummary, MarketCoverageSummary, MvpHealthDashboard, RuntimeHealthSummary
 from app.models.ops import AuthPrincipal, AutonomyJob, AutonomyQueue, DailyFounderReport, OpsRunbook, SourceConfigStatus, SourceHealth, WorkerHealth
 from app.models.pricing import CPUDuplicateReport
 from app.models.source_url import SourceMatrixEntry
 from app.services.graph_integrity import GraphIntegrityService
 from app.services.ops import OpsService
+from app.services.launch_analytics import LaunchInsightsService
+from app.services.performance_observer import performance_observer
+from app.services.saudi_build_generator import SaudiLocalBuildService
 
 router = APIRouter(prefix="/ops", tags=["solo-founder-operations"])
 
@@ -45,6 +50,77 @@ def source_config(request: Request, region: str | None = None) -> list[SourceCon
 def source_matrix(request: Request, region: str | None = None) -> list[SourceMatrixEntry]:
     repository = Neo4jOpsRepository(request.app.state.neo4j.driver)
     return OpsService(repository).source_matrix(region=resolve_market_region(region))
+
+
+@router.get("/query-performance")
+def query_performance() -> dict:
+    return performance_observer.query_performance()
+
+
+@router.get("/performance-summary")
+def performance_summary() -> dict:
+    return performance_observer.performance_summary()
+
+
+@router.get("/build-failure-summary", response_model=BuildFailureSummary)
+def build_failure_summary(request: Request, region: str | None = "SA") -> BuildFailureSummary:
+    resolved_region = resolve_market_region(region)
+    return _launch_insights(request).build_failure_summary(region=resolved_region)
+
+
+@router.get("/market-coverage-summary", response_model=MarketCoverageSummary)
+def market_coverage_summary(request: Request, region: str | None = "SA") -> MarketCoverageSummary:
+    resolved_region = resolve_market_region(region)
+    return _launch_insights(request).market_coverage_summary(region=resolved_region)
+
+
+@router.get("/runtime-health", response_model=RuntimeHealthSummary)
+def runtime_health(request: Request) -> RuntimeHealthSummary:
+    return _launch_insights(request).runtime_health()
+
+
+@router.get("/founder-insights", response_model=FounderInsightsSummary)
+def founder_insights(request: Request, region: str | None = "SA") -> FounderInsightsSummary:
+    resolved_region = resolve_market_region(region)
+    return _launch_insights(request).founder_insights(region=resolved_region)
+
+
+@router.get("/mvp-health-dashboard", response_model=MvpHealthDashboard)
+def mvp_health_dashboard(request: Request, region: str | None = "SA") -> MvpHealthDashboard:
+    resolved_region = resolve_market_region(region)
+    return _launch_insights(request).mvp_health_dashboard(region=resolved_region)
+
+
+@router.get("/catalog-growth-workflow", response_model=CatalogGrowthWorkflowSummary)
+def catalog_growth_workflow(request: Request, region: str | None = "SA") -> CatalogGrowthWorkflowSummary:
+    resolved_region = resolve_market_region(region)
+    return _launch_insights(request).catalog_growth_workflow(region=resolved_region)
+
+
+@router.get("/deployment-checklist", response_model=DeploymentChecklist)
+def deployment_checklist(request: Request, region: str | None = "SA") -> DeploymentChecklist:
+    resolved_region = resolve_market_region(region)
+    manager = request.app.state.neo4j
+    connected = manager.verify()
+    ops_repository = Neo4jOpsRepository(manager.driver)
+    ops_service = OpsService(ops_repository)
+    source_status = ops_service.source_config(region=resolved_region)
+    readiness = None
+    if connected:
+        try:
+            readiness = SaudiLocalBuildService(Neo4jPricingRepository(manager.driver)).data_completeness(
+                region=resolved_region,
+            )
+        except Exception:
+            readiness = None
+    return _launch_insights(request).deployment_checklist(
+        settings=settings,
+        neo4j_connected=connected,
+        neo4j_detail=manager.unavailable_reason,
+        source_config=source_status,
+        build_readiness=readiness,
+        region=resolved_region,
+    )
 
 
 @router.get("/graph-integrity/cpu-duplicates", response_model=CPUDuplicateReport)
@@ -108,3 +184,11 @@ def cancel_autonomy_job(
     if job.status != "cancelled":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Autonomy job is not cancellable.")
     return job
+
+
+def _launch_insights(request: Request) -> LaunchInsightsService:
+    return LaunchInsightsService(
+        request.app.state.launch_analytics,
+        pricing_repository=Neo4jPricingRepository(request.app.state.neo4j.driver),
+        ops_service=OpsService(Neo4jOpsRepository(request.app.state.neo4j.driver)),
+    )

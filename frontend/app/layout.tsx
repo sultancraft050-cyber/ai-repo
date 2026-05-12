@@ -6,8 +6,18 @@ import { REGION_COOKIE, normalizeRegion } from "@/lib/region";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PC Compatibility Intelligence",
-  description: "Constraint-driven custom PC builder backed by Neo4j, FastAPI, NumPy, and XState."
+  title: "Saudi PC Build Assistant | Local Prices, Warnings, and Compatibility",
+  description: "Build and compare Saudi PC builds with SAR pricing, compatibility checks, confidence scoring, and visible VAT, shipping, warranty, and marketplace warnings.",
+  openGraph: {
+    title: "Saudi PC Build Assistant",
+    description: "Plan Saudi PC builds with local prices, budget fit, warnings, and compatibility confidence.",
+    type: "website",
+    locale: "en_US"
+  },
+  robots: {
+    index: true,
+    follow: true
+  }
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

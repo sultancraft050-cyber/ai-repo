@@ -5,9 +5,12 @@ import { AlertTriangle, Cpu, Loader2, Scale, SlidersHorizontal, Wand2 } from "lu
 import { BuildRecommendationCard } from "@/components/BuildRecommendationCard";
 import { DataCompletenessPanel } from "@/components/DataCompletenessPanel";
 import { useRegion } from "@/components/RegionProvider";
-import { generateSaudiLocalBuild, getSaudiBuildDataCompleteness } from "@/lib/api";
+import { addWatchlistItem, generateSaudiLocalBuild, getSaudiBuildDataCompleteness, saveBuild } from "@/lib/api";
+import { getIdentity, rememberRecentBuild } from "@/lib/userSession";
 import type {
   SaudiBuildDataCompleteness,
+  SaudiBuildComponent,
+  SaudiBuildOption,
   SaudiBuildPriority,
   SaudiBuildRequest,
   SaudiBuildResolution,
@@ -67,6 +70,8 @@ export function SaudiBuildWizard() {
   const [response, setResponse] = useState<SaudiBuildResponse | null>(null);
   const [loadingCompleteness, setLoadingCompleteness] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [savingBuildLabel, setSavingBuildLabel] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isSaudiRegion = region === "SA";
@@ -120,6 +125,7 @@ export function SaudiBuildWizard() {
       setResponse(result);
       setCompleteness(result.data_completeness);
       setSelectedBuildLabel(result.builds[0]?.label ?? "recommended_saudi_build");
+      result.builds.slice(0, 4).forEach(rememberRecentBuild);
     } catch (generateError) {
       setError(generateError instanceof Error ? generateError.message : "Unable to generate Saudi build.");
     } finally {
@@ -132,6 +138,58 @@ export function SaudiBuildWizard() {
       const next = current.includes(brand) ? current.filter((item) => item !== brand) : [...current.filter((item) => item !== "no_preference"), brand];
       return next.length ? next : ["no_preference"];
     });
+  }
+
+  async function handleSaveBuild(build: SaudiBuildOption) {
+    setSavingBuildLabel(build.label);
+    setError(null);
+    setShareMessage(null);
+    try {
+      const identity = getIdentity();
+      const saved = await saveBuild({
+        user_id: identity.user_id ?? null,
+        guest_id: identity.user_id ? null : identity.guest_id,
+        title: build.title,
+        region: "SA",
+        build_mode: build.label,
+        total_price_sar: build.summary.total_recommended_price_sar ?? null,
+        confidence_level: build.summary.confidence_level,
+        warning_summary: build.summary.warning_summary,
+        component_ids: build.components.map((component) => component.product_id),
+        price_snapshot_ids: [],
+        build_summary: build.summary as unknown as Record<string, unknown>,
+        build_payload: build as unknown as Record<string, unknown>,
+        public_visibility: true,
+        favorite: false
+      });
+      const shareUrl = `${window.location.origin}/build/share/${saved.share_slug}`;
+      setShareMessage(`Saved. Share link: ${shareUrl}`);
+      void navigator.clipboard?.writeText(shareUrl);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save build.");
+    } finally {
+      setSavingBuildLabel(null);
+    }
+  }
+
+  function handleShareBuild(build: SaudiBuildOption) {
+    const shareText = build.export.shareable_build_url || build.export.markdown_summary;
+    void navigator.clipboard?.writeText(shareText);
+    setShareMessage("Build export copied. Save the build to create a public share page.");
+  }
+
+  async function handleWatchProduct(component: SaudiBuildComponent) {
+    setError(null);
+    try {
+      const identity = getIdentity();
+      await addWatchlistItem(
+        { user_id: identity.user_id ?? null, guest_id: identity.user_id ? null : identity.guest_id },
+        { product_id: component.product_id, target_price_sar: component.recommended_price_sar ?? null, region: "SA" }
+      );
+      setShareMessage(`${component.category} added to your Saudi price watchlist.`);
+    } catch (watchError) {
+      setError(watchError instanceof Error ? watchError.message : "Unable to add product to watchlist.");
+    }
   }
 
   return (
@@ -249,7 +307,24 @@ export function SaudiBuildWizard() {
             <span>{error}</span>
           </div>
         ) : null}
+        {shareMessage ? (
+          <div className="mt-4 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-signal">
+            {shareMessage}
+          </div>
+        ) : null}
       </div>
+
+      {generating ? (
+        <div className="rounded-lg border border-line bg-white p-4 text-sm text-muted shadow-tight" aria-live="polite">
+          <div className="mb-2 flex items-center gap-2 font-semibold text-ink">
+            <Loader2 size={16} className="animate-spin" aria-hidden />
+            Checking Saudi-market build options
+          </div>
+          <p className="leading-6">
+            The generator is validating compatibility, budget fit, warnings, and Saudi-only price snapshots. No US price fallback is used.
+          </p>
+        </div>
+      ) : null}
 
       <DataCompletenessPanel completeness={completeness} loading={loadingCompleteness} error={error} onRetry={loadCompleteness} />
 
@@ -358,6 +433,9 @@ export function SaudiBuildWizard() {
 
       {response?.builds.length ? (
         <div className="grid gap-4">
+          <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm leading-6 text-signal">
+            Save a build to revisit it later, share it publicly, and watch component prices as Saudi listings change.
+          </div>
           <div className="flex flex-wrap gap-2">
             {response.builds.map((build) => (
               <button
@@ -375,7 +453,14 @@ export function SaudiBuildWizard() {
           {response.builds
             .filter((build) => build.label === selectedBuildLabel)
             .map((build) => (
-              <BuildRecommendationCard key={build.label} build={build} />
+              <BuildRecommendationCard
+                key={build.label}
+                build={build}
+                onSave={handleSaveBuild}
+                onShare={handleShareBuild}
+                onWatchProduct={handleWatchProduct}
+                saving={savingBuildLabel === build.label}
+              />
             ))}
         </div>
       ) : null}
