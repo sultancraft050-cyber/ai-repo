@@ -70,6 +70,10 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function asArray<T>(value: T[] | undefined | null): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function authHeaders(apiKey: string): Record<string, string> {
   return apiKey ? { "X-API-Key": apiKey } : {};
 }
@@ -418,7 +422,7 @@ export async function calculatePerformance(
 ): Promise<PerformanceResponse> {
   return requestJson<PerformanceResponse>("/api/performance/calculate", {
     method: "POST",
-    body: JSON.stringify({ selection, preferences, display_refresh_hz: 144 })
+    body: JSON.stringify({ selection, preferences, display_refresh_hz: preferences.display_refresh_hz ?? 144 })
   });
 }
 
@@ -439,7 +443,7 @@ export async function generateBuild(preferences: BuildPreferences): Promise<Buil
       budget_usd: preferences.budget_usd ?? 1500,
       purpose: preferences.purpose,
       resolution: preferences.resolution,
-      preferences,
+      preferences: { ...preferences, display_refresh_hz: preferences.display_refresh_hz ?? 144 },
       max_candidates_per_type: 120
     })
   });
@@ -450,14 +454,57 @@ export async function getSaudiBuildDataCompleteness(
   city = "Riyadh"
 ): Promise<SaudiBuildDataCompleteness> {
   const params = new URLSearchParams({ region, city });
-  return requestJson<SaudiBuildDataCompleteness>(`/build/data-completeness?${params.toString()}`);
+  const payload = await requestJson<SaudiBuildDataCompleteness>(`/build/data-completeness?${params.toString()}`);
+  return {
+    ...payload,
+    required_categories: asArray(payload.required_categories),
+    ready_categories: asArray(payload.ready_categories),
+    missing_categories: asArray(payload.missing_categories),
+    category_coverage: asArray(payload.category_coverage).map((coverage) => ({
+      ...coverage,
+      notes: asArray(coverage.notes),
+      next_action: coverage.next_action ?? "No action needed."
+    })),
+    recommended_discovery_jobs: asArray(payload.recommended_discovery_jobs)
+  };
 }
 
 export async function generateSaudiLocalBuild(request: SaudiBuildRequest): Promise<SaudiBuildResponse> {
-  return requestJson<SaudiBuildResponse>("/build/generate-local", {
+  const payload = await requestJson<SaudiBuildResponse>("/build/generate-local", {
     method: "POST",
     body: JSON.stringify(request)
   });
+  return {
+    ...payload,
+    builds: asArray(payload.builds).map((build) => ({
+      ...build,
+      components: asArray(build.components),
+      upgrade_notes: asArray(build.upgrade_notes),
+      savings_suggestions: asArray(build.savings_suggestions),
+      summary: {
+        ...build.summary,
+        most_expensive_components: asArray(build.summary?.most_expensive_components),
+        easiest_savings_opportunities: asArray(build.summary?.easiest_savings_opportunities),
+        risk_summary: asArray(build.summary?.risk_summary),
+        warning_summary: asArray(build.summary?.warning_summary),
+        components_with_uncertainty: asArray(build.summary?.components_with_uncertainty),
+        missing_data_warnings: asArray(build.summary?.missing_data_warnings)
+      },
+      explanation: {
+        ...build.explanation,
+        strengths: asArray(build.explanation?.strengths),
+        weaknesses: asArray(build.explanation?.weaknesses),
+        risks: asArray(build.explanation?.risks),
+        upgrade_path: asArray(build.explanation?.upgrade_path),
+        future_limitations: asArray(build.explanation?.future_limitations),
+        recommended_purchase_order: asArray(build.explanation?.recommended_purchase_order),
+        component_explanations: asArray(build.explanation?.component_explanations)
+      }
+    })),
+    recommended_discovery_jobs: asArray(payload.recommended_discovery_jobs),
+    missing_data_warnings: asArray(payload.missing_data_warnings),
+    build_comparison: asArray(payload.build_comparison)
+  };
 }
 
 export async function validateSaudiLocalBuild(

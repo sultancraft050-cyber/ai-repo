@@ -70,6 +70,9 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
             {coverage.notes.length ? (
               <p className="mt-2 text-xs leading-5 text-caution">{coverage.notes[0]}</p>
             ) : null}
+            <p className="mt-2 rounded border border-line bg-white px-2 py-1 text-[11px] leading-4 text-muted">
+              Next: {coverage.next_action}
+            </p>
           </div>
         ))}
       </div>

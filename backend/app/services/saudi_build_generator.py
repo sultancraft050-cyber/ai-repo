@@ -9,10 +9,17 @@ from app.models.api import (
     RecommendedDiscoveryJob,
     SaudiBuildComponent,
     SaudiBuildDataCompleteness,
+    SaudiBuildComparisonItem,
     SaudiBuildOption,
     SaudiBuildRequest,
     SaudiBuildResponse,
     SaudiBuildSummary,
+    SaudiBuildConfidenceBreakdown,
+    SaudiBuildExplanation,
+    SaudiBuildExport,
+    SaudiComponentExplanation,
+    SaudiNoBudgetFitGuidance,
+    SaudiSavingsSuggestion,
     SaudiBuildValidationRequest,
     SaudiBuildValidationResponse,
 )
@@ -38,20 +45,38 @@ DISCOVERY_QUERIES: dict[str, list[str]] = {
     "Headset": ["gaming headset"],
 }
 
+ALLOWED_BUDGET_SUBSTITUTIONS: dict[str, list[str]] = {
+    "GPU": [
+        "RTX 4070 Super",
+        "RTX 4070",
+        "RX 7800 XT",
+        "RX 7700 XT",
+        "RTX 4060 Ti 16GB",
+    ],
+    "CPU": ["Ryzen 7 7800X3D", "Ryzen 7 7700", "Ryzen 5 7600", "Ryzen 5 7500F"],
+    "Motherboard": ["B650 ATX", "B650 mATX AM5 DDR5", "A620 AM5 DDR5"],
+    "RAM": ["DDR5 32GB 6000", "DDR5 32GB 5600", "DDR5 16GB"],
+    "Storage": ["2TB NVMe SSD", "1TB NVMe SSD", "SSD"],
+    "PSU": ["850W Gold", "750W Gold"],
+    "Case": ["ATX airflow case", "mATX airflow case"],
+    "Cooler": ["240mm AIO", "AM5 air cooler"],
+}
+
 BUDGET_DISCOVERY_QUERIES: dict[str, list[str]] = {
     "GPU": [
+        "RTX 4070 Super graphics card",
         "RTX 4070 graphics card",
         "RX 7800 XT graphics card",
         "RX 7700 XT graphics card",
         "RTX 4060 Ti 16GB graphics card",
     ],
-    "CPU": ["Ryzen 5 7600 processor", "Ryzen 5 7500F processor", "Ryzen 7 7700 processor"],
-    "Motherboard": ["B650 mATX AM5 DDR5 motherboard", "A620 AM5 DDR5 motherboard budget option"],
-    "RAM": ["DDR5 32GB 5600 RAM kit", "DDR5 16GB RAM kit budget option"],
-    "Storage": ["1TB NVMe SSD PCIe 4.0", "budget 1TB NVMe SSD"],
-    "PSU": ["750W Gold PSU", "750W 80 Plus Gold fully modular PSU"],
-    "Case": ["budget ATX airflow case", "mATX airflow PC case"],
-    "Cooler": ["AM5 air cooler", "Thermalright Peerless Assassin CPU Cooler AM5"],
+    "CPU": ["Ryzen 7 7800X3D processor", "Ryzen 7 7700 processor", "Ryzen 5 7600 processor", "Ryzen 5 7500F processor"],
+    "Motherboard": ["B650 ATX motherboard", "B650 mATX AM5 motherboard", "A620 AM5 motherboard"],
+    "RAM": ["DDR5 32GB 6000 RAM kit", "DDR5 32GB 5600 RAM kit", "DDR5 16GB RAM kit"],
+    "Storage": ["2TB NVMe SSD", "1TB NVMe SSD PCIe 4.0", "1TB NVMe SSD"],
+    "PSU": ["850W Gold PSU", "750W Gold PSU"],
+    "Case": ["ATX airflow case", "mATX airflow case"],
+    "Cooler": ["240mm AIO CPU cooler", "AM5 air cooler"],
 }
 
 PERFORMANCE_WEIGHTS = {
@@ -115,7 +140,7 @@ class SaudiLocalBuildService:
 
     def generate_local(self, request: SaudiBuildRequest, *, trace_id: str | None = None) -> SaudiBuildResponse:
         completeness = self.data_completeness(region=request.region, city=request.city)
-        warnings = self._missing_warnings(completeness)
+        missing_data_warnings = self._missing_warnings(completeness)
         if not completeness.enough_data_for_full_build:
             return SaudiBuildResponse(
                 region="SA",
@@ -124,7 +149,7 @@ class SaudiLocalBuildService:
                 builds=[],
                 data_completeness=completeness,
                 recommended_discovery_jobs=completeness.recommended_discovery_jobs,
-                missing_data_warnings=warnings,
+                missing_data_warnings=missing_data_warnings,
                 audit_trace_id=trace_id,
             )
 
@@ -138,23 +163,31 @@ class SaudiLocalBuildService:
             ("best_value_build", "Best Value Build", "value"),
             ("lowest_risk_local_build", "Lowest Risk Local Build", "risk"),
         ]
-        builds: list[SaudiBuildOption] = []
+
+        candidate_builds: list[SaudiBuildOption] = []
         for label, title, mode in build_specs:
             components = self._select_components(pools, request=request, mode=mode)
             if len(components) != len(REQUIRED_BUILD_CATEGORIES):
                 continue
-            builds.append(self._build_option(label, title, components, request, completeness, mode))
+            candidate_builds.append(self._build_option(label, title, components, request, completeness, mode))
+
+        strict_budget_failure = None
+        builds = list(candidate_builds)
         if request.strict_budget:
             builds = [
                 build
                 for build in builds
                 if (build.summary.total_recommended_price_sar is not None and build.summary.total_recommended_price_sar <= request.budget_sar)
             ]
-        suggestions = self._budget_gap_discovery_jobs(builds, pools, request=request)
-        status = "ready" if builds else "incomplete_budget_fit" if request.strict_budget else "no_valid_build"
+            if not builds:
+                strict_budget_failure = self._build_strict_budget_failure(candidate_builds, pools, request=request)
+        status = "ready" if builds else "no_budget_fit" if request.strict_budget else "no_valid_build"
         warnings = [] if builds else ["No complete Saudi build could be assembled from compatible priced data."]
         if request.strict_budget and not builds:
-            warnings = ["No valid Saudi build fits the selected strict budget with currently ingested prices."]
+            if strict_budget_failure is not None:
+                warnings = [strict_budget_failure.reason]
+            else:
+                warnings = ["No valid Saudi build fits the selected strict budget with currently ingested prices."]
 
         return SaudiBuildResponse(
             region="SA",
@@ -162,8 +195,10 @@ class SaudiLocalBuildService:
             build_status=status,
             builds=builds,
             data_completeness=completeness,
-            recommended_discovery_jobs=suggestions,
+            recommended_discovery_jobs=self._budget_gap_discovery_jobs(candidate_builds if candidate_builds else builds, pools, request=request),
             missing_data_warnings=warnings,
+            strict_budget_failure=strict_budget_failure,
+            build_comparison=self._build_comparison(builds),
             audit_trace_id=trace_id,
         )
 
@@ -215,7 +250,7 @@ class SaudiLocalBuildService:
         return self.pricing_repository.search_products(q="", category=category, region=region, limit=limit)
 
     def _coverage_for_category(self, category: str, products: list[ProductSearchResult]) -> CategoryCoverage:
-        priced = [product for product in products if product.region == "SA" and product.price_status in {"active", "stale"}]
+        priced = [product for product in products if product.region == "SA" and product.price_status in {"active", "stale"} and self._has_valid_saudi_price(product)]
         valid_identity = [product for product in priced if self._has_valid_category_identity(category, product)]
         severe = [product for product in valid_identity if self._has_severe_price_or_identity_risk(product)]
         trusted = [
@@ -267,6 +302,15 @@ class SaudiLocalBuildService:
             notes.append("Only risky or incomplete Saudi listings are available.")
         if readiness_level == "usable_with_warnings":
             notes.append("Usable with warnings: product identity and SAR price are valid, but VAT/shipping/warranty remain incomplete.")
+        next_action = self._coverage_next_action(
+            category=category,
+            readiness_level=readiness_level,
+            priced_count=len(priced),
+            valid_identity_count=len(valid_identity),
+            severe_count=len(severe),
+            trusted_count=len(trusted),
+            usable_count=len(usable),
+        )
         return CategoryCoverage(
             category=category,
             priced_product_count=len(priced),
@@ -282,7 +326,32 @@ class SaudiLocalBuildService:
             ready=readiness_level == "ready",
             readiness_level=readiness_level,  # type: ignore[arg-type]
             notes=notes,
+            next_action=next_action,
         )
+
+    def _coverage_next_action(
+        self,
+        *,
+        category: str,
+        readiness_level: str,
+        priced_count: int,
+        valid_identity_count: int,
+        severe_count: int,
+        trusted_count: int,
+        usable_count: int,
+    ) -> str:
+        if readiness_level == "ready":
+            return "No action needed; keep normal price refresh monitoring."
+        if readiness_level == "usable_with_warnings":
+            return "Use in builds with visible warnings; add one trusted manual product URL to improve confidence."
+        if not priced_count:
+            query = DISCOVERY_QUERIES.get(category, [f"{category} Saudi price"])[0]
+            return f"Run controlled dry-run discovery for `{query}` or add one approved manual product URL."
+        if severe_count:
+            return "Review suspicious listings and add a trusted manual product URL before using this category."
+        if valid_identity_count and not trusted_count and not usable_count:
+            return "Add a trusted local/GCC listing or approved product URL; current listings are too risky."
+        return "Run a narrow identity-quality dry-run and review canonicalization before build use."
 
     def _has_valid_category_identity(self, category: str, product: ProductSearchResult) -> bool:
         text = f"{product.canonical_key or ''} {product.name} {product.model or ''}".upper()
@@ -291,9 +360,34 @@ class SaudiLocalBuildService:
         if category == "RAM":
             return "DDR5" in text and "32GB" in text and ("6000" in text or "6000MHZ" in text)
         if category == "Storage":
-            return "STORAGE|" in text and "2TB" in text and "NVME" in text and "M2" in text
+            return "STORAGE|" in text and ("2TB" in text or "1TB" in text) and "NVME" in text and "M2" in text
         if category == "Motherboard":
             return "MOTHERBOARD|" in text and "B650" in text and "AM5" in text and "DDR5" in text
+        return True
+
+    def _sar_currency(self, currency: str | None) -> str | None:
+        if not currency:
+            return None
+        return currency.strip().upper().replace("_", "")
+
+    def _has_valid_saudi_price(self, product: ProductSearchResult) -> bool:
+        has_price = product.current_recommended_price is not None or product.lowest_market_price is not None
+        if not has_price:
+            return False
+        if product.region != "SA":
+            return False
+
+        currencies = [
+            product.current_recommended_currency,
+            product.lowest_market_currency,
+            product.region_currency,
+        ]
+        normalized = [self._sar_currency(currency) for currency in currencies]
+        normalized = [currency for currency in normalized if currency]
+        if not normalized:
+            return False
+        if not all(currency == "SAR" for currency in normalized):
+            return False
         return True
 
     def _has_severe_price_or_identity_risk(self, product: ProductSearchResult) -> bool:
@@ -314,7 +408,7 @@ class SaudiLocalBuildService:
             return False
         if self._has_severe_price_or_identity_risk(product):
             return False
-        if product.region != "SA" or product.lowest_market_currency != "SAR":
+        if product.region != "SA" or not self._has_valid_saudi_price(product):
             return False
         risk = product.current_recommended_marketplace_risk_score
         if risk is None:
@@ -390,7 +484,7 @@ class SaudiLocalBuildService:
         mode: str,
         target_budget: float,
     ) -> ProductSearchResult | None:
-        candidates = [product for product in products if product.region == "SA" and product.lowest_market_price is not None]
+        candidates = [product for product in products if product.region == "SA" and self._has_valid_saudi_price(product)]
         if mode == "risk":
             candidates = [
                 product
@@ -454,9 +548,12 @@ class SaudiLocalBuildService:
             warnings.append("No recommended Saudi price; using lowest market price with risk label.")
         if category in {"RAM", "Storage", "Motherboard"} and self._is_usable_with_warnings_candidate(category, product):
             warnings.append(f"{category} is usable with market-data warnings; verify VAT, shipping, warranty, and seller terms.")
+        risk = product.current_recommended_marketplace_risk_score
+        if risk is not None and risk > 0.72:
+            warnings.append(f"{category} has elevated marketplace risk ({risk:.2f}).")
         if product.lowest_price_warning:
             warnings.append(product.lowest_price_warning)
-        stock_badge = "local" if product.current_recommended_price is not None else "unknown"
+        stock_badge = "imported" if product.current_recommended_seller_type == "marketplace" else "local" if product.current_recommended_price is not None else "unknown"
         selected_price = price or float("inf")
         alt_names = [
             f"{item.name} ({(item.current_recommended_price or item.lowest_market_price or 0):.0f} SAR)"
@@ -465,10 +562,10 @@ class SaudiLocalBuildService:
                 key=lambda item: item.current_recommended_price or item.lowest_market_price or float("inf"),
             )
             if item.id != product.id
-            and item.region == "SA"
-            and item.lowest_market_price is not None
+            and self._has_valid_saudi_price(item)
             and (item.current_recommended_price or item.lowest_market_price or float("inf")) < selected_price
         ][:3]
+        vat_status, shipping_status, warranty_status = self._component_signal_status(product)
         return SaudiBuildComponent(
             product_id=product.id,
             name=product.name,
@@ -481,10 +578,45 @@ class SaudiLocalBuildService:
             seller_type=product.current_recommended_seller_type or product.lowest_market_seller_type,
             vendor_region_type=None,
             stock_badge=stock_badge,
+            vat_status=vat_status,
+            shipping_status=shipping_status,
+            warranty_status=warranty_status,
             reason_selected=self._component_reason(product, category, request),
             alternatives=alt_names,
             warnings=warnings,
         )
+
+    def _component_signal_status(self, product: ProductSearchResult) -> tuple[str, str, str]:
+        flags = [flag.lower() for flag in product.flags]
+        vat_status = "vat_unknown"
+        shipping_status = "unknown_shipping"
+        warranty_status = "unknown_warranty"
+        if any("vat_included" in flag for flag in flags):
+            vat_status = "vat_included"
+        elif any("vat_excluded" in flag for flag in flags):
+            vat_status = "vat_excluded"
+        elif any("vat_unknown" in flag for flag in flags):
+            vat_status = "vat_unknown"
+
+        if any("free_shipping" in flag for flag in flags):
+            shipping_status = "free_shipping"
+        elif any("paid_shipping" in flag for flag in flags):
+            shipping_status = "paid_shipping"
+        elif any("pickup_only" in flag for flag in flags):
+            shipping_status = "pickup_only"
+        elif any("unknown_shipping" in flag for flag in flags):
+            shipping_status = "unknown_shipping"
+
+        if any("manufacturer_warranty" in flag for flag in flags):
+            warranty_status = "manufacturer_warranty"
+        elif any("seller_warranty" in flag for flag in flags):
+            warranty_status = "seller_warranty"
+        elif any("local_warranty" in flag for flag in flags):
+            warranty_status = "local_warranty"
+        elif any("unknown_warranty" in flag for flag in flags):
+            warranty_status = "unknown_warranty"
+
+        return vat_status, shipping_status, warranty_status
 
     def _component_reason(self, product: ProductSearchResult, category: str, request: SaudiBuildRequest) -> str:
         if product.current_recommended_price is not None:
@@ -518,38 +650,429 @@ class SaudiLocalBuildService:
         over_budget_percent = round(over_budget_amount / request.budget_sar, 3) if request.budget_sar and over_budget_amount else 0
         budget_status = self._budget_status(total_recommended, request.budget_sar)
         if over_budget_amount:
-            warnings.append(f"Build is {over_budget_amount:.0f} SAR over the selected budget.")
+            warnings.append(f"This build is {over_budget_amount:.0f} SAR over your budget.")
         expensive = self._most_expensive_components(components)
         savings = self._savings_opportunities(components, request=request)
         confidence_level = "high" if confidence >= 0.75 else "medium" if confidence >= 0.5 else "low"
+        summary = SaudiBuildSummary(
+            total_recommended_price_sar=total_recommended,
+            total_lowest_possible_price_sar=total_lowest,
+            budget_remaining_or_overage=budget_delta,
+            budget_sar=request.budget_sar,
+            budget_delta_sar=budget_delta,
+            over_budget_amount_sar=round(over_budget_amount, 2),
+            over_budget_percent=over_budget_percent,
+            budget_status=budget_status,  # type: ignore[arg-type]
+            most_expensive_components=expensive,
+            easiest_savings_opportunities=savings,
+            compatibility_status="not_validated",
+            performance_estimate=self._performance_estimate(request, mode),
+            bottleneck_summary=self._bottleneck_summary(request),
+            risk_summary=list(dict.fromkeys(warnings))[:8],
+            data_completeness_score=completeness.readiness_score,
+            warning_summary=list(dict.fromkeys(warnings))[:6],
+            components_with_uncertainty=list(dict.fromkeys(uncertain_components)),
+            confidence_level=confidence_level,  # type: ignore[arg-type]
+            confidence_score=confidence,
+            missing_data_warnings=[],
+        )
+        explanation = self._build_explanation(
+            label=label,
+            title=title,
+            components=components,
+            summary=summary,
+            request=request,
+            mode=mode,
+        )
+        confidence_breakdown = self._confidence_breakdown(components, summary, completeness)
+        savings_suggestions = self._structured_savings_suggestions(components, request=request)
+        comparison = self._comparison_item(
+            label=label,
+            title=title,
+            summary=summary,
+            components=components,
+        )
+        export = self._build_export(
+            label=label,
+            title=title,
+            components=components,
+            summary=summary,
+            explanation=explanation,
+            request=request,
+        )
         return SaudiBuildOption(
             label=label,  # type: ignore[arg-type]
             title=title,
             components=components,
-            summary=SaudiBuildSummary(
-                total_recommended_price_sar=total_recommended,
-                total_lowest_possible_price_sar=total_lowest,
-                budget_remaining_or_overage=budget_delta,
-                budget_sar=request.budget_sar,
-                budget_delta_sar=budget_delta,
-                over_budget_amount_sar=round(over_budget_amount, 2),
-                over_budget_percent=over_budget_percent,
-                budget_status=budget_status,  # type: ignore[arg-type]
-                most_expensive_components=expensive,
-                easiest_savings_opportunities=savings,
-                compatibility_status="not_validated",
-                performance_estimate=self._performance_estimate(request, mode),
-                bottleneck_summary=self._bottleneck_summary(request),
-                risk_summary=list(dict.fromkeys(warnings))[:8],
-                data_completeness_score=completeness.readiness_score,
-                warning_summary=list(dict.fromkeys(warnings))[:6],
-                components_with_uncertainty=list(dict.fromkeys(uncertain_components)),
-                confidence_level=confidence_level,  # type: ignore[arg-type]
-                confidence_score=confidence,
-                missing_data_warnings=[],
-            ),
+            summary=summary,
+            explanation=explanation,
+            confidence_breakdown=confidence_breakdown,
+            savings_suggestions=savings_suggestions,
+            comparison_metrics=comparison,
+            export=export,
             why_this_build=self._build_reason(mode, request),
             upgrade_notes=self._upgrade_notes(request),
+        )
+
+    def _build_explanation(
+        self,
+        *,
+        label: str,
+        title: str,
+        components: list[SaudiBuildComponent],
+        summary: SaudiBuildSummary,
+        request: SaudiBuildRequest,
+        mode: str,
+    ) -> SaudiBuildExplanation:
+        trusted = [item.category for item in components if item.stock_badge in {"local", "gcc"} and not item.warnings]
+        uncertain = list(dict.fromkeys(summary.components_with_uncertainty))
+        imported = [item.category for item in components if item.stock_badge == "imported"]
+        pressure = summary.most_expensive_components[:2]
+        strengths = [
+            f"Uses Saudi-region SAR pricing for all {len(components)} core components.",
+            self._build_reason(mode, request),
+        ]
+        if trusted:
+            strengths.append(f"Clearer local buying signals on {', '.join(trusted[:4])}.")
+        weaknesses = []
+        if summary.over_budget_amount_sar:
+            weaknesses.append(
+                f"Current build is {summary.over_budget_amount_sar:.0f} SAR over the selected budget."
+            )
+        if uncertain:
+            weaknesses.append(f"Market evidence is still incomplete for {', '.join(uncertain[:5])}.")
+        risks = list(dict.fromkeys([*summary.warning_summary, *summary.risk_summary]))[:8]
+        if imported:
+            risks.append(f"Imported or marketplace signals appear on {', '.join(imported[:4])}.")
+        budget_analysis = self._budget_analysis(summary)
+        return SaudiBuildExplanation(
+            build_id=f"sa-{label}-{int(request.budget_sar)}",
+            build_mode=label,  # type: ignore[arg-type]
+            confidence_level=summary.confidence_level,
+            summary=self._human_summary(summary, request, mode),
+            strengths=list(dict.fromkeys(strengths))[:5],
+            weaknesses=list(dict.fromkeys(weaknesses))[:5],
+            risks=list(dict.fromkeys(risks))[:8],
+            budget_analysis=budget_analysis,
+            upgrade_path=self._upgrade_path_guidance(components),
+            future_limitations=self._future_limitations(components, request),
+            recommended_purchase_order=self._purchase_order(components),
+            component_explanations=[
+                self._component_explanation(component)
+                for component in components
+            ],
+        )
+
+    def _human_summary(self, summary: SaudiBuildSummary, request: SaudiBuildRequest, mode: str) -> str:
+        market_phrase = "Saudi market"
+        if mode == "budget":
+            intent = "tries to fit the budget first while keeping compatibility intact"
+        elif mode == "risk":
+            intent = "prioritizes safer local buying signals over the lowest headline price"
+        elif mode == "value":
+            intent = "leans toward performance per SAR without treating risky listings as safe"
+        else:
+            intent = f"balances {request.target_resolution} {request.use_case} needs with local price evidence"
+        if summary.over_budget_amount_sar:
+            return (
+                f"This {market_phrase} build {intent}. It is currently "
+                f"{summary.over_budget_amount_sar:.0f} SAR over budget, mostly because of the highest-cost parts."
+            )
+        return f"This {market_phrase} build {intent} and stays within the selected SAR budget."
+
+    def _budget_analysis(self, summary: SaudiBuildSummary) -> str:
+        if summary.total_recommended_price_sar is None:
+            return "The build does not have enough recommended Saudi prices to produce a complete budget total."
+        if summary.over_budget_amount_sar:
+            pressure = "; ".join(summary.most_expensive_components[:3])
+            return (
+                f"Total is {summary.total_recommended_price_sar:.0f} SAR, "
+                f"{summary.over_budget_amount_sar:.0f} SAR over budget. "
+                f"Largest pressure: {pressure or 'not enough component detail'}."
+            )
+        remaining = summary.budget_delta_sar or 0
+        return f"Total is {summary.total_recommended_price_sar:.0f} SAR, leaving about {remaining:.0f} SAR."
+
+    def _component_explanation(self, component: SaudiBuildComponent) -> SaudiComponentExplanation:
+        cheaper = next((item for item in component.alternatives if "SAR" in item), None)
+        risk_summary = "No major market warning visible."
+        if component.warnings:
+            risk_summary = component.warnings[0]
+        elif component.stock_badge == "imported":
+            risk_summary = "Imported or marketplace listing needs extra seller and warranty review."
+        confidence = component.price_confidence if component.price_confidence is not None else 0.35
+        return SaudiComponentExplanation(
+            category=component.category,
+            selected_product=component.name,
+            reason_selected=component.reason_selected,
+            cheaper_alternative=cheaper,
+            stronger_alternative=None,
+            risk_summary=risk_summary,
+            confidence=round(max(0.0, min(confidence, 1.0)), 2),
+            local_availability=component.stock_badge,
+            warranty_confidence=self._status_confidence(component.warranty_status, unknown_token="unknown"),
+            shipping_confidence=self._status_confidence(component.shipping_status, unknown_token="unknown"),
+            compatibility_confidence=self._component_compatibility_confidence(component),
+            market_confidence=round(max(0.0, min(confidence, 1.0)), 2),
+        )
+
+    def _confidence_breakdown(
+        self,
+        components: list[SaudiBuildComponent],
+        summary: SaudiBuildSummary,
+        completeness: SaudiBuildDataCompleteness,
+    ) -> SaudiBuildConfidenceBreakdown:
+        pricing_values = [item.price_confidence for item in components if item.price_confidence is not None]
+        pricing = sum(pricing_values) / len(pricing_values) if pricing_values else 0.35
+        local_ratio = len([item for item in components if item.stock_badge in {"local", "gcc"}]) / max(len(components), 1)
+        shipping = sum(self._status_confidence(item.shipping_status, unknown_token="unknown") for item in components)
+        shipping /= max(len(components), 1)
+        warranty = sum(self._status_confidence(item.warranty_status, unknown_token="unknown") for item in components)
+        warranty /= max(len(components), 1)
+        compatibility = 0.82 - (0.04 * len(summary.components_with_uncertainty))
+        compatibility = max(0.35, compatibility)
+        market = max(0.0, min(pricing * completeness.readiness_score, 1.0))
+        overall = (compatibility + market + local_ratio + pricing + shipping + warranty) / 6
+        return SaudiBuildConfidenceBreakdown(
+            compatibility_confidence=round(compatibility, 2),
+            market_confidence=round(market, 2),
+            vendor_confidence=round(local_ratio, 2),
+            pricing_confidence=round(pricing, 2),
+            shipping_confidence=round(shipping, 2),
+            warranty_confidence=round(warranty, 2),
+            overall_confidence=round(overall, 2),
+        )
+
+    def _structured_savings_suggestions(
+        self,
+        components: list[SaudiBuildComponent],
+        *,
+        request: SaudiBuildRequest,
+    ) -> list[SaudiSavingsSuggestion]:
+        suggestions: list[SaudiSavingsSuggestion] = []
+        for component in sorted(
+            components,
+            key=lambda item: item.recommended_price_sar or item.lowest_market_price_sar or 0,
+            reverse=True,
+        ):
+            current_price = component.recommended_price_sar or component.lowest_market_price_sar
+            alternative = self._first_allowed_substitution(component)
+            if not alternative:
+                continue
+            estimated = self._estimated_savings(component.category, current_price, request)
+            suggestions.append(
+                SaudiSavingsSuggestion(
+                    category=component.category,
+                    current=component.name,
+                    alternative=alternative,
+                    estimated_savings_sar=estimated,
+                    performance_impact=self._performance_impact(component.category),
+                    reason=self._savings_reason(component.category, alternative),
+                )
+            )
+            if len(suggestions) >= 5:
+                break
+        return suggestions
+
+    def _first_allowed_substitution(self, component: SaudiBuildComponent) -> str | None:
+        for alternative in ALLOWED_BUDGET_SUBSTITUTIONS.get(component.category, []):
+            if alternative.upper() not in component.name.upper():
+                return alternative
+        return None
+
+    def _estimated_savings(
+        self,
+        category: str,
+        current_price: float | None,
+        request: SaudiBuildRequest,
+    ) -> float | None:
+        if current_price is None:
+            return None
+        ratios = {
+            "GPU": 0.2,
+            "CPU": 0.25,
+            "Storage": 0.28,
+            "Cooler": 0.22,
+            "PSU": 0.14,
+            "Motherboard": 0.16,
+            "RAM": 0.12,
+            "Case": 0.12,
+        }
+        ratio = ratios.get(category, 0.12)
+        return round(min(current_price * ratio, request.budget_sar * 0.12), 2)
+
+    def _performance_impact(self, category: str) -> str:
+        if category in {"GPU", "CPU"}:
+            return "moderate"
+        if category in {"Storage", "Cooler", "Case"}:
+            return "low"
+        return "unknown"
+
+    def _savings_reason(self, category: str, alternative: str) -> str:
+        reasons = {
+            "GPU": "Largest gaming-performance cost lever; validate FPS tradeoff before buying.",
+            "CPU": "Can reduce platform cost while keeping AM5 compatibility.",
+            "Storage": "Capacity reduction lowers cost with little FPS impact.",
+            "Cooler": "A good AM5 air cooler may be enough if thermals are acceptable.",
+            "PSU": "750W Gold can be acceptable if power margin remains safe.",
+            "Motherboard": "A lower-cost AM5 DDR5 board may preserve compatibility.",
+            "RAM": "A slightly slower DDR5 kit may reduce cost with modest impact.",
+            "Case": "A cheaper airflow case can work if clearance remains valid.",
+        }
+        return reasons.get(category, f"Check {alternative} as a lower-cost compatible option.")
+
+    def _upgrade_path_guidance(self, components: list[SaudiBuildComponent]) -> list[str]:
+        names = " ".join(component.name.upper() for component in components)
+        guidance = []
+        if "AM5" in names or "B650" in names:
+            guidance.append("AM5/B650 platform gives a practical future CPU upgrade path, subject to BIOS support.")
+        if "850W" in names or "750W" in names:
+            guidance.append("Gold-rated PSU capacity should leave some GPU upgrade headroom if connector support is verified.")
+        if "32GB" in names and "DDR5" in names:
+            guidance.append("32GB DDR5 is a strong baseline for modern gaming and general creation workloads.")
+        if "1TB" in names:
+            guidance.append("1TB storage is acceptable for budget fit, but game libraries may need a second SSD later.")
+        return guidance or ["Upgrade guidance is limited until more exact component specs are available."]
+
+    def _future_limitations(
+        self,
+        components: list[SaudiBuildComponent],
+        request: SaudiBuildRequest,
+    ) -> list[str]:
+        limitations = []
+        if request.target_resolution in {"4k", "ultrawide"}:
+            limitations.append("Higher resolutions may need stronger GPU data before recommendation confidence increases.")
+        if any(item.category in {"RAM", "Storage"} and item.warnings for item in components):
+            limitations.append("RAM or storage is usable, but incomplete market evidence lowers buying confidence.")
+        if any(item.shipping_status == "unknown_shipping" for item in components):
+            limitations.append("Unknown shipping terms may change the final landed price.")
+        return limitations or ["No major future limitation is visible from the current Saudi market data."]
+
+    def _purchase_order(self, components: list[SaudiBuildComponent]) -> list[str]:
+        priority = {
+            "GPU": 0,
+            "CPU": 1,
+            "Motherboard": 2,
+            "PSU": 3,
+            "RAM": 4,
+            "Storage": 5,
+            "Cooler": 6,
+            "Case": 7,
+        }
+        ranked = sorted(
+            components,
+            key=lambda item: (
+                priority.get(item.category, 99),
+                0 if item.warnings else 1,
+            ),
+        )
+        return [
+            f"{item.category}: buy early if the listed Saudi price/vendor is still available."
+            for item in ranked
+        ]
+
+    def _component_compatibility_confidence(self, component: SaudiBuildComponent) -> float:
+        confidence = 0.78
+        if component.category in {"CPU", "GPU", "Motherboard", "PSU"}:
+            confidence += 0.08
+        if component.warnings:
+            confidence -= 0.08
+        return round(max(0.35, min(confidence, 1.0)), 2)
+
+    def _status_confidence(self, status: str, *, unknown_token: str) -> float:
+        return 0.42 if unknown_token in status else 0.82
+
+    def _comparison_item(
+        self,
+        *,
+        label: str,
+        title: str,
+        summary: SaudiBuildSummary,
+        components: list[SaudiBuildComponent],
+    ) -> SaudiBuildComparisonItem:
+        warning_count = len(summary.warning_summary) + len(summary.components_with_uncertainty)
+        risk_level = "high" if warning_count >= 6 else "medium" if warning_count >= 3 else "low"
+        local_count = len([item for item in components if item.stock_badge in {"local", "gcc"}])
+        return SaudiBuildComparisonItem(
+            label=label,  # type: ignore[arg-type]
+            title=title,
+            total_price_sar=summary.total_recommended_price_sar,
+            budget_status=summary.budget_status,
+            risk_level=risk_level,  # type: ignore[arg-type]
+            confidence_score=summary.confidence_score,
+            local_availability_summary=f"{local_count}/{len(components)} components have local/GCC buying signals.",
+            upgrade_path_summary=", ".join(self._upgrade_path_guidance(components)[:2]),
+        )
+
+    def _build_comparison(self, builds: list[SaudiBuildOption]) -> list[SaudiBuildComparisonItem]:
+        items = [build.comparison_metrics.model_copy() for build in builds]
+        priced = [item for item in items if item.total_price_sar is not None]
+        if priced:
+            cheapest = min(priced, key=lambda item: item.total_price_sar or float("inf"))
+            for index, item in enumerate(items):
+                if item.label == cheapest.label:
+                    items[index].cheapest_option = True
+        if items:
+            safest = max(items, key=lambda item: (item.risk_level == "low", item.confidence_score))
+            for index, item in enumerate(items):
+                if item.label == safest.label:
+                    items[index].safest_option = True
+        return items
+
+    def _build_export(
+        self,
+        *,
+        label: str,
+        title: str,
+        components: list[SaudiBuildComponent],
+        summary: SaudiBuildSummary,
+        explanation: SaudiBuildExplanation,
+        request: SaudiBuildRequest,
+    ) -> SaudiBuildExport:
+        component_rows = [
+            {
+                "category": item.category,
+                "name": item.name,
+                "vendor": item.recommended_vendor,
+                "price_sar": item.recommended_price_sar,
+                "warnings": item.warnings,
+            }
+            for item in components
+        ]
+        json_summary = {
+            "region": "SA",
+            "city": request.city,
+            "build_mode": label,
+            "title": title,
+            "total_price_sar": summary.total_recommended_price_sar,
+            "budget_sar": request.budget_sar,
+            "budget_status": summary.budget_status,
+            "confidence": summary.confidence_level,
+            "components": component_rows,
+        }
+        lines = [
+            f"# {title}",
+            "",
+            explanation.summary,
+            "",
+            f"- Total: {summary.total_recommended_price_sar or 'Unavailable'} SAR",
+            f"- Budget: {request.budget_sar:.0f} SAR",
+            f"- Status: {summary.budget_status.replace('_', ' ')}",
+            "",
+            "## Components",
+        ]
+        lines.extend(
+            f"- {item['category']}: {item['name']} - {item['price_sar'] or 'Unavailable'} SAR"
+            for item in component_rows
+        )
+        markdown = "\n".join(lines)
+        return SaudiBuildExport(
+            shareable_build_url=(
+                f"/?market_region=SA&build_mode={label}&budget_sar={int(request.budget_sar)}"
+            ),
+            json_summary=json_summary,
+            markdown_summary=markdown,
+            printable_summary=markdown,
         )
 
     def _performance_estimate(self, request: SaudiBuildRequest, mode: str) -> str:
@@ -609,25 +1132,158 @@ class SaudiLocalBuildService:
     def _savings_opportunities(self, components: list[SaudiBuildComponent], *, request: SaudiBuildRequest) -> list[str]:
         opportunities: list[str] = []
         by_category = {component.category: component for component in components}
-        for category in ["GPU", "CPU", "Storage", "PSU", "Case", "Cooler", "RAM", "Motherboard"]:
+        budget_items = ["GPU", "CPU", "Storage", "Cooler", "PSU", "Motherboard", "RAM", "Case"]
+
+        for category in budget_items:
             component = by_category.get(category)
             if not component:
                 continue
             for alternative in component.alternatives[:2]:
-                opportunities.append(f"Check cheaper {category} alternative: {alternative}.")
-            if len(opportunities) >= 5:
+                opportunities.append(f"Cheaper {category} option: {alternative}.")
+            for replacement in ALLOWED_BUDGET_SUBSTITUTIONS.get(category, []):
+                replacement_upper = replacement.upper()
+                if replacement_upper in (component.name or "").upper():
+                    continue
+                opportunities.append(f"Cheaper {category} option candidate: {replacement}.")
                 break
+            if len(opportunities) >= 7:
+                break
+
         if request.budget_sar:
             total = sum(component.recommended_price_sar or component.lowest_market_price_sar or 0 for component in components)
             if total > request.budget_sar:
                 opportunities.extend(
                     [
-                        "Run dry-run discovery for RTX 4070 or RX 7700 XT before downgrading the whole build.",
-                        "Run dry-run discovery for Ryzen 5 7600 or 7500F if CPU savings are needed.",
-                        "Run dry-run discovery for 1TB NVMe SSD if storage capacity can be reduced.",
+                        "Check cheaper GPU options (RTX 4070 / RTX 4060 Ti 16GB / RX 7700 XT).",
+                        "Check cheaper CPU options (Ryzen 5 7600 or Ryzen 5 7500F).",
+                        "Run discovery for 1TB NVMe SSD if storage capacity can be reduced by one tier.",
                     ]
                 )
-        return list(dict.fromkeys(opportunities))[:6]
+        return list(dict.fromkeys(opportunities))[:8]
+
+    def _build_strict_budget_failure(
+        self,
+        candidate_builds: list[SaudiBuildOption],
+        pools: dict[str, ComponentPool],
+        *,
+        request: SaudiBuildRequest,
+    ) -> SaudiNoBudgetFitGuidance:
+        by_category_prices = self._cheapest_valid_category_prices(pools)
+        cheapest_known_total = (
+            round(sum(by_category_prices.values()), 2)
+            if len(by_category_prices) == len(REQUIRED_BUILD_CATEGORIES)
+            else None
+        )
+
+        expensive_categories = [
+            category
+            for category, _ in sorted(
+                by_category_prices.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
+
+        if not expensive_categories:
+            missing_cheaper_categories = REQUIRED_BUILD_CATEGORIES[:3]
+        else:
+            missing_cheaper_categories = expensive_categories[:4]
+
+        suggested_products: list[str] = []
+        for category in missing_cheaper_categories:
+            suggested_products.extend(ALLOWED_BUDGET_SUBSTITUTIONS.get(category, []))
+
+        discovery_targets = self._build_strict_budget_discovery_targets(
+            missing_cheaper_categories,
+            pool=pools,
+            city=request.city,
+        )
+
+        manual_targets = self._manual_url_target_hints(missing_cheaper_categories)
+        reason = self._strict_budget_failure_reason(
+            request=request,
+            cheapest_known_total=cheapest_known_total,
+        )
+
+        return SaudiNoBudgetFitGuidance(
+            reason=reason,
+            missing_cheaper_categories=missing_cheaper_categories,
+            suggested_products_to_add=sorted(set(suggested_products))[:10],
+            suggested_discovery_targets=discovery_targets,
+            suggested_manual_url_targets=manual_targets,
+        )
+
+    def _cheapest_valid_category_prices(self, pools: dict[str, ComponentPool]) -> dict[str, float]:
+        prices: dict[str, float] = {}
+        for category, pool in pools.items():
+            valid_prices = [
+                product.current_recommended_price or product.lowest_market_price
+                for product in pool.products
+                if product.region == "SA"
+                and self._has_valid_saudi_price(product)
+                and self._has_valid_category_identity(category, product)
+                and not self._has_severe_price_or_identity_risk(product)
+            ]
+            valid_prices = [price for price in valid_prices if price is not None]
+            if valid_prices:
+                prices[category] = min(valid_prices)
+        return prices
+
+    def _manual_url_target_hints(self, categories: list[str]) -> list[str]:
+        hints = {
+            "GPU": "Add known Saudi URLs for RTX 4070, RX 7800 XT, RX 7700 XT, or RTX 4060 Ti 16GB.",
+            "CPU": "Add known Saudi URLs for Ryzen 5 7600, Ryzen 5 7500F, or Ryzen 7 7700.",
+            "Motherboard": "Add known Saudi URLs for compatible B650 mATX or A620 AM5 DDR5 boards.",
+            "RAM": "Add known Saudi URLs for DDR5 32GB 5600 or lower-risk DDR5 32GB 6000 kits.",
+            "Storage": "Add known Saudi URLs for 1TB NVMe SSDs or lower-cost 2TB NVMe alternatives.",
+            "PSU": "Add known Saudi URLs for safe 750W Gold PSUs.",
+            "Case": "Add known Saudi URLs for lower-cost ATX or mATX airflow cases.",
+            "Cooler": "Add known Saudi URLs for AM5 air coolers.",
+        }
+        return [hints[category] for category in categories if category in hints]
+
+    def _strict_budget_failure_reason(
+        self,
+        *,
+        request: SaudiBuildRequest,
+        cheapest_known_total: float | None,
+    ) -> str:
+        if cheapest_known_total is not None and cheapest_known_total > request.budget_sar:
+            overage = cheapest_known_total - request.budget_sar
+            return (
+                f"No full Saudi build fits {request.budget_sar:.0f} SAR with currently ingested data. "
+                f"The cheapest compatible known set is about {cheapest_known_total:.0f} SAR, "
+                f"which is {overage:.0f} SAR over budget."
+            )
+        return (
+            f"No full Saudi build fits {request.budget_sar:.0f} SAR with currently ingested data. "
+            "Check the suggested discovery targets and add cheaper compatible Saudi candidates."
+        )
+
+    def _build_strict_budget_discovery_targets(
+        self,
+        categories: list[str],
+        *,
+        pool: dict[str, ComponentPool],
+        city: str,
+    ) -> list[RecommendedDiscoveryJob]:
+        targets: list[RecommendedDiscoveryJob] = []
+        for category in categories:
+            for query in BUDGET_DISCOVERY_QUERIES.get(category, []):
+                targets.append(
+                    RecommendedDiscoveryJob(
+                        category=category,
+                        query=query,
+                        region="SA",
+                        city=city,
+                        limit=5,
+                        dry_run=True,
+                        reason=(
+                            f"Cheaper {category} options may be required to reach a strict budget fit for Saudi build generation."
+                        ),
+                    )
+                )
+        return targets[:10]
 
     def _budget_gap_discovery_jobs(
         self,

@@ -175,6 +175,7 @@ class CategoryCoverage(BaseModel):
     ready: bool = False
     readiness_level: ReadinessLevel = "not_ready"
     notes: list[str] = Field(default_factory=list)
+    next_action: str = "No action needed."
 
 
 class SaudiBuildDataCompleteness(BaseModel):
@@ -233,11 +234,93 @@ class SaudiBuildSummary(BaseModel):
     missing_data_warnings: list[str] = Field(default_factory=list)
 
 
+class SaudiSavingsSuggestion(BaseModel):
+    category: str
+    current: str
+    alternative: str
+    estimated_savings_sar: float | None = None
+    performance_impact: Literal["low", "moderate", "high", "unknown"] = "unknown"
+    reason: str
+
+
+class SaudiBuildConfidenceBreakdown(BaseModel):
+    compatibility_confidence: float = Field(ge=0, le=1)
+    market_confidence: float = Field(ge=0, le=1)
+    vendor_confidence: float = Field(ge=0, le=1)
+    pricing_confidence: float = Field(ge=0, le=1)
+    shipping_confidence: float = Field(ge=0, le=1)
+    warranty_confidence: float = Field(ge=0, le=1)
+    overall_confidence: float = Field(ge=0, le=1)
+
+
+class SaudiComponentExplanation(BaseModel):
+    category: str
+    selected_product: str
+    reason_selected: str
+    cheaper_alternative: str | None = None
+    stronger_alternative: str | None = None
+    risk_summary: str
+    confidence: float = Field(ge=0, le=1)
+    local_availability: str
+    warranty_confidence: float = Field(ge=0, le=1)
+    shipping_confidence: float = Field(ge=0, le=1)
+    compatibility_confidence: float = Field(ge=0, le=1)
+    market_confidence: float = Field(ge=0, le=1)
+
+
+class SaudiBuildExplanation(BaseModel):
+    build_id: str
+    build_mode: SaudiBuildLabel
+    confidence_level: Literal["high", "medium", "low"]
+    summary: str
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    budget_analysis: str
+    upgrade_path: list[str] = Field(default_factory=list)
+    future_limitations: list[str] = Field(default_factory=list)
+    recommended_purchase_order: list[str] = Field(default_factory=list)
+    component_explanations: list[SaudiComponentExplanation] = Field(default_factory=list)
+
+
+class SaudiBuildComparisonItem(BaseModel):
+    label: SaudiBuildLabel
+    title: str
+    total_price_sar: float | None = None
+    budget_status: BudgetStatus
+    risk_level: Literal["low", "medium", "high"]
+    confidence_score: float = Field(ge=0, le=1)
+    local_availability_summary: str
+    upgrade_path_summary: str
+    cheapest_option: bool = False
+    safest_option: bool = False
+
+
+class SaudiBuildExport(BaseModel):
+    shareable_build_url: str
+    json_summary: dict[str, Any]
+    markdown_summary: str
+    printable_summary: str
+
+
+class SaudiNoBudgetFitGuidance(BaseModel):
+    reason: str
+    missing_cheaper_categories: list[str] = Field(default_factory=list)
+    suggested_products_to_add: list[str] = Field(default_factory=list)
+    suggested_discovery_targets: list[RecommendedDiscoveryJob] = Field(default_factory=list)
+    suggested_manual_url_targets: list[str] = Field(default_factory=list)
+
+
 class SaudiBuildOption(BaseModel):
     label: SaudiBuildLabel
     title: str
     components: list[SaudiBuildComponent]
     summary: SaudiBuildSummary
+    explanation: SaudiBuildExplanation
+    confidence_breakdown: SaudiBuildConfidenceBreakdown
+    savings_suggestions: list[SaudiSavingsSuggestion] = Field(default_factory=list)
+    comparison_metrics: SaudiBuildComparisonItem
+    export: SaudiBuildExport
     why_this_build: str
     upgrade_notes: list[str] = Field(default_factory=list)
 
@@ -245,11 +328,13 @@ class SaudiBuildOption(BaseModel):
 class SaudiBuildResponse(BaseModel):
     region: Literal["SA"] = "SA"
     city: str = "Riyadh"
-    build_status: Literal["ready", "incomplete_data", "no_valid_build", "incomplete_budget_fit"]
+    build_status: Literal["ready", "incomplete_data", "no_valid_build", "no_budget_fit"]
     builds: list[SaudiBuildOption] = Field(default_factory=list)
     data_completeness: SaudiBuildDataCompleteness
     recommended_discovery_jobs: list[RecommendedDiscoveryJob] = Field(default_factory=list)
     missing_data_warnings: list[str] = Field(default_factory=list)
+    strict_budget_failure: SaudiNoBudgetFitGuidance | None = None
+    build_comparison: list[SaudiBuildComparisonItem] = Field(default_factory=list)
     audit_trace_id: str | None = None
 
 

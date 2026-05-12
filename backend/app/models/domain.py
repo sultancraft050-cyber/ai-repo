@@ -54,6 +54,7 @@ class BuildPreferences(BaseModel):
     budget_usd: float | None = Field(default=None, ge=0)
     purpose: Purpose = "gaming"
     resolution: Resolution = "1440p"
+    display_refresh_hz: int = Field(default=144, ge=30, le=1000)
     region: str = Field(default="US", min_length=2, max_length=8)
     brand_bias: list[str] = Field(default_factory=list)
     size: CaseSize | None = None

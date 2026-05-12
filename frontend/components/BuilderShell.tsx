@@ -136,63 +136,72 @@ export function BuilderShell() {
           <PreferencePanel preferences={state.context.preferences} onChange={updatePreferences} />
 
           <div className="grid gap-4">
-            <AutoBuildGenerator
-              budget={state.context.preferences.budget_usd}
-              response={state.context.generatedBuilds}
-              error={state.context.buildError}
-              generating={state.matches("generating_build")}
-              onGenerate={() => send({ type: "GENERATE_BUILD" })}
-              onApply={(selection) => send({ type: "APPLY_GENERATED_BUILD", selection })}
-            />
-
             <SaudiBuildWizard />
 
-            <SoloFounderOpsPanel />
+            <details className="rounded-lg border border-line bg-white p-3 shadow-tight">
+              <summary className="cursor-pointer text-base font-semibold text-ink">Manual graph builder tools</summary>
+              <div className="mt-4 grid gap-4">
+                <AutoBuildGenerator
+                  budget={state.context.preferences.budget_usd}
+                  response={state.context.generatedBuilds}
+                  error={state.context.buildError}
+                  generating={state.matches("generating_build")}
+                  onGenerate={() => send({ type: "GENERATE_BUILD" })}
+                  onApply={(selection) => send({ type: "APPLY_GENERATED_BUILD", selection })}
+                />
 
-            <PricingIntelligencePanel />
-
-            <div className="rounded-lg border border-line bg-white p-3 shadow-tight">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h2 className="text-base font-semibold text-ink">Graph-filtered selectors</h2>
-                <button
-                  type="button"
-                  onClick={() => send({ type: "RESET" })}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-line bg-panel text-ink hover:bg-white"
-                  aria-label="Reset builder"
-                  title="Reset builder"
-                >
-                  <RotateCcw size={16} aria-hidden />
-                </button>
-              </div>
-              {optionError ? (
-                <div className="mb-3 rounded-md border border-caution/40 bg-amber-50 px-3 py-2 text-sm text-caution">
-                  {optionError}
+                <div className="rounded-lg border border-line bg-white p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h2 className="text-base font-semibold text-ink">Graph-filtered selectors</h2>
+                    <button
+                      type="button"
+                      onClick={() => send({ type: "RESET" })}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-line bg-panel text-ink hover:bg-white"
+                      aria-label="Reset builder"
+                      title="Reset builder"
+                    >
+                      <RotateCcw size={16} aria-hidden />
+                    </button>
+                  </div>
+                  {optionError ? (
+                    <div className="mb-3 rounded-md border border-caution/40 bg-amber-50 px-3 py-2 text-sm text-caution">
+                      {optionError}
+                    </div>
+                  ) : null}
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {componentOrder.map((kind) => (
+                      <ComponentSelector
+                        key={kind}
+                        kind={kind}
+                        iconText={kindIcon[kind]}
+                        options={options[kind]}
+                        selectedId={state.context.selected[selectionKeyByKind[kind]]}
+                        loading={loadingKind === kind}
+                        onSelect={(componentId) => send({ type: "SELECT_COMPONENT", kind, componentId })}
+                      />
+                    ))}
+                  </div>
                 </div>
-              ) : null}
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {componentOrder.map((kind) => (
-                  <ComponentSelector
-                    key={kind}
-                    kind={kind}
-                    iconText={kindIcon[kind]}
-                    options={options[kind]}
-                    selectedId={state.context.selected[selectionKeyByKind[kind]]}
-                    loading={loadingKind === kind}
-                    onSelect={(componentId) => send({ type: "SELECT_COMPONENT", kind, componentId })}
-                  />
-                ))}
-              </div>
-            </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-              <CompatibilityPanel
-                response={compatibility ?? null}
-                error={state.context.error}
-                selectedNames={selectedNames}
-                validating={state.matches("validating")}
-              />
-              <PerformancePanel response={performance ?? null} validating={state.matches("validating")} />
-            </div>
+                <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                  <CompatibilityPanel
+                    response={compatibility ?? null}
+                    error={state.context.error}
+                    selectedNames={selectedNames}
+                    validating={state.matches("validating")}
+                  />
+                  <PerformancePanel response={performance ?? null} validating={state.matches("validating")} />
+                </div>
+              </div>
+            </details>
+
+            <details className="rounded-lg border border-line bg-white p-3 shadow-tight">
+              <summary className="cursor-pointer text-base font-semibold text-ink">Founder operations and market data tools</summary>
+              <div className="mt-4 grid gap-4">
+                <SoloFounderOpsPanel />
+                <PricingIntelligencePanel />
+              </div>
+            </details>
           </div>
         </section>
       </div>

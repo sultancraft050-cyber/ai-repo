@@ -39,6 +39,7 @@ export type BuildPreferences = {
   budget_usd?: number;
   purpose: Purpose;
   resolution: Resolution;
+  display_refresh_hz: number;
   region: string;
   brand_bias: string[];
   size?: CaseSize;
@@ -145,6 +146,11 @@ export type SaudiBuildPriority =
   | "upgrade_path"
   | "local_availability"
   | "lowest_risk";
+export type SaudiBuildLabel =
+  | "recommended_saudi_build"
+  | "budget_fit_build"
+  | "best_value_build"
+  | "lowest_risk_local_build";
 export type SaudiBuildRequest = {
   region: "SA";
   city: string;
@@ -183,6 +189,7 @@ export type CategoryCoverage = {
   ready: boolean;
   readiness_level: "ready" | "usable_with_warnings" | "not_ready";
   notes: string[];
+  next_action: string;
 };
 export type SaudiBuildDataCompleteness = {
   region: "SA";
@@ -237,22 +244,100 @@ export type SaudiBuildSummary = {
   confidence_score: number;
   missing_data_warnings: string[];
 };
+export type SaudiSavingsSuggestion = {
+  category: string;
+  current: string;
+  alternative: string;
+  estimated_savings_sar?: number | null;
+  performance_impact: "low" | "moderate" | "high" | "unknown";
+  reason: string;
+};
+export type SaudiBuildConfidenceBreakdown = {
+  compatibility_confidence: number;
+  market_confidence: number;
+  vendor_confidence: number;
+  pricing_confidence: number;
+  shipping_confidence: number;
+  warranty_confidence: number;
+  overall_confidence: number;
+};
+export type SaudiComponentExplanation = {
+  category: string;
+  selected_product: string;
+  reason_selected: string;
+  cheaper_alternative?: string | null;
+  stronger_alternative?: string | null;
+  risk_summary: string;
+  confidence: number;
+  local_availability: string;
+  warranty_confidence: number;
+  shipping_confidence: number;
+  compatibility_confidence: number;
+  market_confidence: number;
+};
+export type SaudiBuildExplanation = {
+  build_id: string;
+  build_mode: SaudiBuildLabel;
+  confidence_level: "high" | "medium" | "low";
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  risks: string[];
+  budget_analysis: string;
+  upgrade_path: string[];
+  future_limitations: string[];
+  recommended_purchase_order: string[];
+  component_explanations: SaudiComponentExplanation[];
+};
+export type SaudiBuildComparisonItem = {
+  label: SaudiBuildLabel;
+  title: string;
+  total_price_sar?: number | null;
+  budget_status: SaudiBuildSummary["budget_status"];
+  risk_level: "low" | "medium" | "high";
+  confidence_score: number;
+  local_availability_summary: string;
+  upgrade_path_summary: string;
+  cheapest_option: boolean;
+  safest_option: boolean;
+};
+export type SaudiBuildExport = {
+  shareable_build_url: string;
+  json_summary: Record<string, unknown>;
+  markdown_summary: string;
+  printable_summary: string;
+};
 export type SaudiBuildOption = {
-  label: "recommended_saudi_build" | "budget_fit_build" | "best_value_build" | "lowest_risk_local_build";
+  label: SaudiBuildLabel;
   title: string;
   components: SaudiBuildComponent[];
   summary: SaudiBuildSummary;
+  explanation: SaudiBuildExplanation;
+  confidence_breakdown: SaudiBuildConfidenceBreakdown;
+  savings_suggestions: SaudiSavingsSuggestion[];
+  comparison_metrics: SaudiBuildComparisonItem;
+  export: SaudiBuildExport;
   why_this_build: string;
   upgrade_notes: string[];
 };
+export type SaudiNoBudgetFitGuidance = {
+  reason: string;
+  missing_cheaper_categories: string[];
+  suggested_products_to_add: string[];
+  suggested_discovery_targets: RecommendedDiscoveryJob[];
+  suggested_manual_url_targets: string[];
+};
+
 export type SaudiBuildResponse = {
   region: "SA";
   city: string;
-  build_status: "ready" | "incomplete_data" | "no_valid_build" | "incomplete_budget_fit";
+  build_status: "ready" | "incomplete_data" | "no_valid_build" | "no_budget_fit";
   builds: SaudiBuildOption[];
   data_completeness: SaudiBuildDataCompleteness;
   recommended_discovery_jobs: RecommendedDiscoveryJob[];
   missing_data_warnings: string[];
+  strict_budget_failure?: SaudiNoBudgetFitGuidance | null;
+  build_comparison: SaudiBuildComparisonItem[];
   audit_trace_id?: string | null;
 };
 export type SaudiBuildValidationRequest = {

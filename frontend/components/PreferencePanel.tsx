@@ -48,6 +48,13 @@ export function PreferencePanel({
         />
 
         <SelectField
+          label="Refresh target"
+          value={String(preferences.display_refresh_hz ?? 144)}
+          options={["60", "120", "144", "165", "240"]}
+          onChange={(refresh) => onChange({ ...preferences, display_refresh_hz: Number(refresh) })}
+        />
+
+        <SelectField
           label="Pricing region"
           value={preferences.region}
           options={MARKET_REGIONS.map((region) => region.code)}

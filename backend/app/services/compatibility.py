@@ -8,6 +8,17 @@ from app.models.api import CompatibilityRequest, CompatibilityResponse, Constrai
 from app.models.domain import ComponentKind, ComponentNode
 from app.services.geometry import detect_collisions
 
+POWER_DRAW_FIELDS = (
+    ("power", "board_power_w"),
+    ("power", "tdp_w"),
+    ("power", "peak_w"),
+    ("power", "fan_power_w"),
+)
+PSU_WATTAGE_FIELDS = (
+    ("specs", "continuous_wattage"),
+    ("power", "12v_w"),
+)
+
 
 class CompatibilityEngine:
     def __init__(self, repository: Neo4jComponentRepository) -> None:
@@ -273,18 +284,11 @@ class CompatibilityEngine:
     ) -> tuple[float, float]:
         total_draw = 0.0
         for component in components:
-            draw = (
-                component.number("power", "board_power_w")
-                or component.number("power", "tdp_w")
-                or component.number("power", "peak_w")
-                or component.number("power", "fan_power_w")
-                or 0.0
-            )
-            total_draw += draw
+            total_draw += self._first_known_number(component, POWER_DRAW_FIELDS, default=0.0) or 0.0
         required_psu = float(ceil((total_draw + 60.0) * 1.35))
         if not psu:
             return total_draw, required_psu
-        wattage = psu.number("specs", "continuous_wattage") or psu.number("power", "12v_w")
+        wattage = self._first_known_number(psu, PSU_WATTAGE_FIELDS)
         if wattage is None:
             self._unknown(checks, "psu:system:wattage", "PSU continuous wattage")
             return total_draw, required_psu
@@ -323,7 +327,7 @@ class CompatibilityEngine:
 
         lane_consumers = [component for component in (gpu, storage) if component]
         required_lanes = sum(
-            component.number("bandwidth", "pcie_lanes_required", 0) or 0 for component in lane_consumers
+            component.number("bandwidth", "pcie_lanes_required", 0) for component in lane_consumers
         )
         total_lanes = cpu_lanes + chipset_lanes
         lane_ok = required_lanes <= total_lanes
@@ -481,3 +485,16 @@ class CompatibilityEngine:
                 details="Neo4j data is missing required technical fields for deterministic validation.",
             )
         )
+
+    def _first_known_number(
+        self,
+        component: ComponentNode,
+        fields: tuple[tuple[str, str], ...],
+        *,
+        default: float | None = None,
+    ) -> float | None:
+        for group, key in fields:
+            value = component.number(group, key)
+            if value is not None:
+                return value
+        return default

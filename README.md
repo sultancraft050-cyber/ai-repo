@@ -202,3 +202,12 @@ Tests:
 cd backend
 python -m pytest
 ```
+
+API contract:
+
+```bash
+cd backend
+python scripts/export_openapi.py
+```
+
+This writes `backend/openapi.json` from the FastAPI/Pydantic source of truth for frontend contract review. Do not hand-edit the exported file.

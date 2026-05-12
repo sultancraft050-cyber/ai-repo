@@ -27,6 +27,18 @@ SOLVER_ORDER = [
     ComponentKind.PSU,
 ]
 
+MAX_VALID_SOLVER_BUILDS = 120
+POWER_DRAW_FIELDS = (
+    ("power", "board_power_w"),
+    ("power", "tdp_w"),
+    ("power", "peak_w"),
+    ("power", "fan_power_w"),
+)
+PSU_WATTAGE_FIELDS = (
+    ("specs", "continuous_wattage"),
+    ("power", "12v_w"),
+)
+
 
 @dataclass
 class CandidateBuild:
@@ -171,6 +183,8 @@ class BuildSolver:
         valid: list[CandidateBuild],
         closest: list[CandidateBuild],
     ) -> None:
+        if len(valid) >= MAX_VALID_SOLVER_BUILDS:
+            return
         if depth == len(order):
             self.explored_configurations += 1
             candidate = self._evaluate(partial, preferences, budget)
@@ -182,6 +196,8 @@ class BuildSolver:
 
         kind = order[depth]
         for node in self._filtered_candidates(kind, partial, catalog, preferences):
+            if len(valid) >= MAX_VALID_SOLVER_BUILDS:
+                return
             next_partial = {**partial, kind: node}
             if not self._partial_is_possible(next_partial, preferences):
                 self.pruned_configurations += 1
@@ -319,7 +335,7 @@ class BuildSolver:
             gpu=parts[ComponentKind.GPU],
             ram=parts.get(ComponentKind.RAM),
             preferences=preferences,
-            display_refresh_hz=144,
+            display_refresh_hz=preferences.display_refresh_hz,
         )
         total_cost = self._cost(parts)
         perf_score = performance.expected_fps * 3.2 + performance.one_percent_low_fps
@@ -411,7 +427,7 @@ class BuildSolver:
             gpu=candidate.parts[ComponentKind.GPU],
             ram=candidate.parts.get(ComponentKind.RAM),
             preferences=preferences,
-            display_refresh_hz=144,
+            display_refresh_hz=preferences.display_refresh_hz,
         )
         return GeneratedBuild(
             label=label,
@@ -553,28 +569,31 @@ class BuildSolver:
         chipset_lanes = board.number("bandwidth", "chipset_pcie_lanes", 0)
         if cpu_lanes is None or chipset_lanes is None:
             return True
-        required = sum(
-            component.number("bandwidth", "pcie_lanes_required", 0) or 0
-            for component in (gpu, storage)
-            if component
-        )
+        required = sum(component.number("bandwidth", "pcie_lanes_required", 0) for component in (gpu, storage) if component)
         return required <= cpu_lanes + chipset_lanes
+
+    def _first_known_number(
+        self,
+        component: ComponentNode,
+        fields: tuple[tuple[str, str], ...],
+        *,
+        default: float | None = None,
+    ) -> float | None:
+        for group, key in fields:
+            value = component.number(group, key)
+            if value is not None:
+                return value
+        return default
 
     def _psu_possible(
         self,
         partial: dict[ComponentKind, ComponentNode],
         psu: ComponentNode,
     ) -> bool:
-        wattage = psu.number("specs", "continuous_wattage") or psu.number("power", "12v_w")
+        wattage = self._first_known_number(psu, PSU_WATTAGE_FIELDS)
         if wattage is None:
             return True
         total_draw = 0.0
         for component in partial.values():
-            total_draw += (
-                component.number("power", "board_power_w")
-                or component.number("power", "tdp_w")
-                or component.number("power", "peak_w")
-                or component.number("power", "fan_power_w")
-                or 0.0
-            )
+            total_draw += self._first_known_number(component, POWER_DRAW_FIELDS, default=0.0) or 0.0
         return wattage >= (total_draw + 60.0) * 1.35

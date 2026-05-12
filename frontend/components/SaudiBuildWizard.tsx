@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Cpu, Loader2, SlidersHorizontal, Wand2 } from "lucide-react";
+import { AlertTriangle, Cpu, Loader2, Scale, SlidersHorizontal, Wand2 } from "lucide-react";
 import { BuildRecommendationCard } from "@/components/BuildRecommendationCard";
 import { DataCompletenessPanel } from "@/components/DataCompletenessPanel";
 import { useRegion } from "@/components/RegionProvider";
@@ -42,6 +42,13 @@ const priorities: { value: SaudiBuildPriority; label: string }[] = [
 ];
 
 const brandOptions = ["AMD", "Intel", "NVIDIA"] as const;
+
+const buildModeLabels: Record<string, string> = {
+  recommended_saudi_build: "Recommended",
+  budget_fit_build: "Budget Fit",
+  best_value_build: "Best Value",
+  lowest_risk_local_build: "Lowest Risk",
+};
 
 export function SaudiBuildWizard() {
   const { region, setRegion } = useRegion();
@@ -260,7 +267,7 @@ export function SaudiBuildWizard() {
         </div>
       ) : null}
 
-      {response?.build_status === "incomplete_budget_fit" ? (
+      {response?.build_status === "no_budget_fit" ? (
         <div className="rounded-lg border border-caution/30 bg-amber-50 p-4 text-caution">
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
             <SlidersHorizontal size={16} aria-hidden />
@@ -270,6 +277,24 @@ export function SaudiBuildWizard() {
             {response.missing_data_warnings.slice(0, 4).map((warning) => (
               <span key={warning}>{warning}</span>
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {response?.build_status === "no_budget_fit" && response.strict_budget_failure ? (
+        <div className="rounded-lg border border-caution/30 bg-amber-50 p-4 text-caution">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <SlidersHorizontal size={16} aria-hidden />
+            Strict budget guidance
+          </div>
+          <div className="grid gap-2 text-sm leading-6">
+            <span>{response.strict_budget_failure.reason}</span>
+            <span>
+              Missing cheaper categories: {response.strict_budget_failure.missing_cheaper_categories.join(", ")}
+            </span>
+            <span>
+              Suggested product families: {response.strict_budget_failure.suggested_products_to_add.slice(0, 5).join(", ")}
+            </span>
           </div>
         </div>
       ) : null}
@@ -289,6 +314,48 @@ export function SaudiBuildWizard() {
         </div>
       ) : null}
 
+      {response?.build_comparison.length ? (
+        <div className="rounded-lg border border-line bg-white p-4 shadow-tight">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+            <Scale size={16} aria-hidden />
+            Build comparison
+          </div>
+          <div className="grid gap-2 lg:grid-cols-4">
+            {response.build_comparison.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => setSelectedBuildLabel(item.label)}
+                className={`rounded-md border p-3 text-left text-sm ${
+                  selectedBuildLabel === item.label ? "border-signal bg-teal-50" : "border-line bg-panel"
+                }`}
+              >
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {item.cheapest_option ? (
+                    <span className="rounded border border-teal-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-signal">
+                      Cheapest
+                    </span>
+                  ) : null}
+                  {item.safest_option ? (
+                    <span className="rounded border border-teal-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-signal">
+                      Safest
+                    </span>
+                  ) : null}
+                </div>
+                <div className="font-semibold text-ink">{buildModeLabels[item.label] ?? item.title}</div>
+                <div className="mt-1 text-xs leading-5 text-muted">
+                  {formatSar(item.total_price_sar)} · {item.budget_status.replaceAll("_", " ")}
+                </div>
+                <div className="mt-2 text-xs leading-5 text-muted">
+                  Risk {item.risk_level}; confidence {Math.round(item.confidence_score * 100)}%
+                </div>
+                <div className="mt-2 text-xs leading-5 text-muted">{item.local_availability_summary}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {response?.builds.length ? (
         <div className="grid gap-4">
           <div className="flex flex-wrap gap-2">
@@ -301,7 +368,7 @@ export function SaudiBuildWizard() {
                   selectedBuildLabel === build.label ? "border-signal bg-teal-50 text-signal" : "border-line bg-white text-muted"
                 }`}
               >
-                {build.label.replaceAll("_", " ")}
+                {buildModeLabels[build.label] ?? build.label.replaceAll("_", " ")}
               </button>
             ))}
           </div>
@@ -343,4 +410,13 @@ function SelectField({
       </select>
     </label>
   );
+}
+
+function formatSar(value?: number | null) {
+  if (value === null || value === undefined) return "Unavailable";
+  return new Intl.NumberFormat("en-SA", {
+    style: "currency",
+    currency: "SAR",
+    maximumFractionDigits: 0
+  }).format(value);
 }

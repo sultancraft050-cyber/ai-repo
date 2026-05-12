@@ -479,47 +479,186 @@ def test_over_budget_build_reports_budget_pressure_and_allows_when_not_strict() 
     assert all(region == "SA" for region in repository.requested_regions)
 
 
-def test_strict_budget_blocks_over_budget_build_and_suggests_targeted_discovery() -> None:
+def test_budget_fit_build_uses_cheaper_compatible_saudi_products_when_available() -> None:
+    products = {}
+    for category in REQUIRED_BUILD_CATEGORIES:
+        products[category] = [
+            _ready_product(category, product_id=f"{category}:premium", price=1200, lowest=1200),
+            _ready_product(category, product_id=f"{category}:budget", price=650, lowest=650, confidence=0.68),
+        ]
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000, strict_budget=True))
+
+    assert response.build_status == "ready"
+    budget_build = next(build for build in response.builds if build.label == "budget_fit_build")
+    assert budget_build.summary.total_recommended_price_sar is not None
+    assert budget_build.summary.total_recommended_price_sar <= 6000
+    assert budget_build.summary.budget_status == "under_budget"
+    assert budget_build.summary.over_budget_amount_sar == 0
+    assert any(component.product_id.endswith(":budget") for component in budget_build.components)
+
+
+def test_strict_budget_blocks_over_budget_build_and_returns_no_budget_fit_guidance() -> None:
     products = {category: [_ready_product(category, product_id=f"{category}:priced", price=1200, lowest=1200)] for category in REQUIRED_BUILD_CATEGORIES}
     repository = FakePricingRepository(products)
     service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
 
     response = service.generate_local(SaudiBuildRequest(budget_sar=6000, strict_budget=True))
 
-    assert response.build_status == "incomplete_budget_fit"
+    assert response.build_status == "no_budget_fit"
     assert response.builds == []
-    assert response.recommended_discovery_jobs
-    assert any(job.query == "RTX 4070 graphics card" for job in response.recommended_discovery_jobs)
+    assert response.strict_budget_failure is not None
+    assert response.strict_budget_failure.reason
+    assert response.strict_budget_failure.missing_cheaper_categories
+    assert response.strict_budget_failure.suggested_discovery_targets
+    assert "RTX 4070" in " ".join(response.strict_budget_failure.suggested_products_to_add)
     assert response.missing_data_warnings
+    assert "9600 SAR" in response.strict_budget_failure.reason
+    assert "3600 SAR over budget" in response.strict_budget_failure.reason
 
 
-def test_budget_fit_build_uses_cheaper_available_saudi_candidates_when_possible() -> None:
+def test_over_budget_message_uses_expected_phrase() -> None:
+    products = {category: [_ready_product(category, product_id=f"{category}:priced", price=1200, lowest=1200)] for category in REQUIRED_BUILD_CATEGORIES}
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000, strict_budget=False))
+
+    first = response.builds[0]
+    assert first.summary.over_budget_amount_sar == 3600
+    assert f"This build is {int(first.summary.over_budget_amount_sar)} SAR over your budget." in first.summary.warning_summary
+
+
+def test_no_us_prices_accepted_for_saudi_build_generation() -> None:
+    products = {
+        category: [_product(category, product_id=f"{category}:us", region="US", price=100, lowest=100)]
+        for category in REQUIRED_BUILD_CATEGORIES
+    }
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000))
+
+    assert response.build_status == "incomplete_data"
+    assert response.builds == []
+    assert response.data_completeness.missing_categories
+    assert set(response.data_completeness.missing_categories) == set(REQUIRED_BUILD_CATEGORIES)
+
+def test_strict_budget_guidance_uses_only_allowed_substitution_targets() -> None:
+    products = {category: [_ready_product(category, product_id=f"{category}:priced", price=1200, lowest=1200)] for category in REQUIRED_BUILD_CATEGORIES}
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000, strict_budget=True))
+
+    assert response.strict_budget_failure is not None
+    allowed = {
+        "GPU": {"RTX 4070 Super", "RTX 4070", "RX 7800 XT", "RX 7700 XT", "RTX 4060 Ti 16GB"},
+        "CPU": {"Ryzen 7 7800X3D", "Ryzen 7 7700", "Ryzen 5 7600", "Ryzen 5 7500F"},
+        "Motherboard": {"B650 ATX", "B650 mATX AM5 DDR5", "A620 AM5 DDR5"},
+        "RAM": {"DDR5 32GB 6000", "DDR5 32GB 5600", "DDR5 16GB"},
+        "Storage": {"2TB NVMe SSD", "1TB NVMe SSD", "SSD"},
+        "PSU": {"850W Gold", "750W Gold"},
+        "Case": {"ATX airflow case", "mATX airflow case"},
+        "Cooler": {"240mm AIO", "AM5 air cooler"},
+    }
+    allowed_products = {item for values in allowed.values() for item in values}
+
+    for item in response.strict_budget_failure.suggested_products_to_add:
+        assert item in allowed_products
+
+    assert response.strict_budget_failure.suggested_discovery_targets
+    assert all(target.limit == 5 and target.region == "SA" and target.city == "Riyadh" for target in response.strict_budget_failure.suggested_discovery_targets)
+
+
+def test_total_sar_price_calculation_is_exact_for_generated_build() -> None:
+    products = {category: [_ready_product(category, product_id=f"{category}:priced", price=100, lowest=100)] for category in REQUIRED_BUILD_CATEGORIES}
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=2000))
+
+    assert response.build_status == "ready"
+    first = response.builds[0]
+    assert first.summary.total_recommended_price_sar == len(REQUIRED_BUILD_CATEGORIES) * 100
+
+
+def test_build_explanation_confidence_purchase_order_and_export_are_generated() -> None:
+    products = {category: [_ready_product(category, product_id=f"{category}:priced", price=700, lowest=700)] for category in REQUIRED_BUILD_CATEGORIES}
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000))
+
+    assert response.build_status == "ready"
+    assert response.build_comparison
+    first = response.builds[0]
+    assert first.explanation.summary
+    assert first.explanation.strengths
+    assert first.explanation.budget_analysis
+    assert len(first.explanation.component_explanations) == len(REQUIRED_BUILD_CATEGORIES)
+    assert first.explanation.recommended_purchase_order[0].startswith("GPU:")
+    assert first.explanation.upgrade_path
+    assert 0 <= first.confidence_breakdown.overall_confidence <= 1
+    assert first.comparison_metrics.total_price_sar == first.summary.total_recommended_price_sar
+    assert first.export.shareable_build_url.startswith("/?market_region=SA")
+    assert "SAR" in first.export.markdown_summary
+    export_text = f"{first.export.json_summary} {first.export.markdown_summary}".lower()
+    assert "secret" not in export_text
+    assert "audit" not in export_text
+
+
+def test_over_budget_build_generates_structured_savings_suggestions() -> None:
+    products = {category: [_ready_product(category, product_id=f"{category}:priced", price=1200, lowest=1200)] for category in REQUIRED_BUILD_CATEGORIES}
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000, strict_budget=False))
+
+    first = response.builds[0]
+    assert first.summary.over_budget_amount_sar > 0
+    assert first.savings_suggestions
+    assert all(suggestion.alternative for suggestion in first.savings_suggestions)
+    assert all(suggestion.performance_impact in {"low", "moderate", "high", "unknown"} for suggestion in first.savings_suggestions)
+
+
+def test_marketplace_risk_is_visible_in_build_explanation() -> None:
     products = {category: [_ready_product(category, product_id=f"{category}:priced", price=700, lowest=700)] for category in REQUIRED_BUILD_CATEGORIES}
     products["GPU"] = [
-        _ready_product("GPU", product_id="gpu:expensive", price=3300, lowest=3300, risk=0.08, confidence=0.85),
-        _ready_product("GPU", product_id="gpu:budget", price=1400, lowest=1400, risk=0.18, confidence=0.68),
+        _ready_product(
+            "GPU",
+            product_id="GPU:risky",
+            price=1700,
+            lowest=1700,
+            risk=0.9,
+            confidence=0.5,
+        )
     ]
     repository = FakePricingRepository(products)
     service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
 
-    response = service.generate_local(SaudiBuildRequest(budget_sar=6500, strict_budget=True))
-    budget_build = next(build for build in response.builds if build.label == "budget_fit_build")
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000))
 
-    assert response.build_status == "ready"
-    assert budget_build.summary.total_recommended_price_sar is not None
-    assert budget_build.summary.total_recommended_price_sar <= 6500
-    assert any(component.product_id == "gpu:budget" for component in budget_build.components)
-    assert budget_build.summary.budget_status == "under_budget"
+    first = response.builds[0]
+    assert any("marketplace risk" in risk.lower() for risk in first.explanation.risks)
+    gpu_explanation = next(item for item in first.explanation.component_explanations if item.category == "GPU")
+    assert "marketplace risk" in gpu_explanation.risk_summary.lower()
 
 
-def test_budget_score_penalizes_overage() -> None:
-    repository = FakePricingRepository({})
+def test_build_comparison_marks_cheapest_and_safest_options() -> None:
+    products = {}
+    for category in REQUIRED_BUILD_CATEGORIES:
+        products[category] = [
+            _ready_product(category, product_id=f"{category}:premium", price=900, lowest=900, risk=0.05, confidence=0.85),
+            _ready_product(category, product_id=f"{category}:budget", price=650, lowest=650, risk=0.35, confidence=0.68),
+        ]
+    repository = FakePricingRepository(products)
     service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
-    request = SaudiBuildRequest(budget_sar=6000)
-    cheap = _ready_product("GPU", price=800, lowest=800, risk=0.1, confidence=0.8)
-    expensive = _ready_product("GPU", price=3000, lowest=3000, risk=0.1, confidence=0.8)
 
-    cheap_score = service._product_market_score(cheap, request=request, mode="budget", target_budget=1200)
-    expensive_score = service._product_market_score(expensive, request=request, mode="budget", target_budget=1200)
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000))
 
-    assert cheap_score > expensive_score
+    assert len(response.build_comparison) == len(response.builds)
+    assert any(item.cheapest_option for item in response.build_comparison)
+    assert any(item.safest_option for item in response.build_comparison)
