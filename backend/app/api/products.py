@@ -8,6 +8,8 @@ from app.graph.pricing_repository import Neo4jPricingRepository
 from app.models.pricing import (
     CanonicalMergePreviewRequest,
     CanonicalMergePreviewResponse,
+    CpuSpecsImportRequest,
+    CpuSpecsImportResponse,
     PriceHistoryPoint,
     PriceSnapshotView,
     ProductCategoryResponse,
@@ -54,6 +56,18 @@ def canonical_merge_preview(
         product_ids=request_body.product_ids,
         region=resolve_market_region(request_body.region),
         trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.post("/cpu-specs/import", response_model=CpuSpecsImportResponse)
+def import_cpu_specs(
+    request_body: CpuSpecsImportRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> CpuSpecsImportResponse:
+    return repository.import_cpu_specs(
+        rows=request_body.rows,
+        source_name=request_body.source_name,
+        dry_run=request_body.dry_run,
     )
 
 

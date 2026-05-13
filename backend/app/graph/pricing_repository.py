@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 import json
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -9,6 +10,9 @@ from neo4j import Driver
 
 from app.core.config import settings
 from app.models.pricing import (
+    CpuSpecsImportResponse,
+    CpuSpecsImportRow,
+    CpuSpecsImportedProduct,
     FieldEvidence,
     PriceHistoryPoint,
     PriceOffer,
@@ -831,6 +835,96 @@ def _cpu_price_sort_value(product: ProductSearchResult) -> tuple[float, str]:
     return price, product.name.lower()
 
 
+def _cpu_specs_import_product(row: CpuSpecsImportRow) -> CpuSpecsImportedProduct | None:
+    model_key = cpu_model_key_from_title(row.name)
+    if not model_key:
+        return None
+    brand = "AMD" if model_key.startswith("AMD_") else "Intel" if model_key.startswith("INTEL_") else "Unknown"
+    model = model_key.removeprefix(f"{brand.upper()}_")
+    canonical_key = f"CPU|{brand.upper()}|{model}"
+    cores, threads = _parse_cores_threads(row)
+    base_clock, boost_clock = _parse_cpu_clock(row)
+    summary_specs = _present_specs(
+        {
+            "socket": _normalize_cpu_socket(row.socket),
+            "cores": cores,
+            "threads": threads,
+            "base_clock_ghz": base_clock,
+            "boost_clock_ghz": boost_clock,
+            "process_nm": _parse_number(row.process),
+            "l3_cache_mb": _parse_number(row.l3_cache),
+            "tdp_w": _parse_number(row.tdp),
+        }
+    )
+    return CpuSpecsImportedProduct(
+        canonical_key=canonical_key,
+        name=_cpu_display_name(canonical_key),
+        brand=brand,
+        model=model,
+        summary_specs=summary_specs,
+        image_url=row.image_url,
+    )
+
+
+def _parse_cores_threads(row: CpuSpecsImportRow) -> tuple[int | None, int | None]:
+    if row.cores and row.threads:
+        return row.cores, row.threads
+    text = row.cores_threads or ""
+    match = re.search(r"(\d+)\s*/\s*(\d+)", text)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    return row.cores, row.threads
+
+
+def _parse_cpu_clock(row: CpuSpecsImportRow) -> tuple[float | None, float | None]:
+    if row.base_clock_ghz and row.boost_clock_ghz:
+        return row.base_clock_ghz, row.boost_clock_ghz
+    values = [_parse_number(value) for value in re.findall(r"\d+(?:\.\d+)?", row.clock or "")]
+    values = [value for value in values if value is not None]
+    if len(values) >= 2:
+        return values[0], values[-1]
+    if len(values) == 1:
+        return row.base_clock_ghz or values[0], row.boost_clock_ghz
+    return row.base_clock_ghz, row.boost_clock_ghz
+
+
+def _parse_number(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not value:
+        return None
+    match = re.search(r"\d+(?:\.\d+)?", str(value))
+    return float(match.group(0)) if match else None
+
+
+def _normalize_cpu_socket(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.upper().replace("SOCKET", "").strip()
+    return re.sub(r"\s+", " ", text)
+
+
+def _cpu_specs_evidence(product: CpuSpecsImportedProduct) -> list[dict[str, str]]:
+    evidence: list[dict[str, str]] = []
+    for field, value in product.summary_specs.items():
+        evidence.append(
+            {
+                "id": f"evidence:{product.canonical_key}:techpowerup:{field}",
+                "field": field,
+                "value_json": json.dumps(value, sort_keys=True),
+            }
+        )
+    if product.image_url:
+        evidence.append(
+            {
+                "id": f"evidence:{product.canonical_key}:techpowerup:image_url",
+                "field": "image_url",
+                "value_json": json.dumps(product.image_url, sort_keys=True),
+            }
+        )
+    return evidence
+
+
 def _intelligence_from_record(data: dict[str, Any]) -> HardwareIntelligence:
     return HardwareIntelligence.model_validate_json(data["payload_json"])
 
@@ -1539,6 +1633,89 @@ class Neo4jPricingRepository:
         )
         return bool(records)
 
+    def import_cpu_specs(
+        self,
+        *,
+        rows: list[CpuSpecsImportRow],
+        source_name: str = "TechPowerUp CPU Database",
+        dry_run: bool = False,
+    ) -> CpuSpecsImportResponse:
+        products: list[CpuSpecsImportedProduct] = []
+        skipped: list[str] = []
+        for row in rows:
+            normalized = _cpu_specs_import_product(row)
+            if not normalized:
+                skipped.append(row.name)
+                continue
+            products.append(normalized)
+            if dry_run:
+                continue
+            self.driver.execute_query(
+                """
+                MERGE (p:Product {canonical_key: $canonical_key})
+                ON CREATE SET p.id = $product_id,
+                              p.created_at = datetime()
+                SET p.name = $name,
+                    p.brand = $brand,
+                    p.category = "CPU",
+                    p.model = $model,
+                    p.normalized_model = $model,
+                    p.data_origin = "live",
+                    p.spec_source_name = $source_name,
+                    p.spec_source_type = "cpu_specs_database",
+                    p.spec_updated_at = datetime(),
+                    p.spec_socket = $socket,
+                    p.spec_cores = $cores,
+                    p.spec_core_count = $cores,
+                    p.spec_threads = $threads,
+                    p.spec_thread_count = $threads,
+                    p.spec_base_clock_ghz = $base_clock_ghz,
+                    p.spec_boost_clock_ghz = $boost_clock_ghz,
+                    p.spec_process_nm = $process_nm,
+                    p.spec_l3_cache_mb = $l3_cache_mb,
+                    p.spec_tdp_w = $tdp_w,
+                    p.imageUrl = coalesce(p.imageUrl, $image_url),
+                    p.image_url = coalesce(p.image_url, $image_url),
+                    p.updated_at = datetime()
+                WITH p
+                UNWIND $evidence AS evidence
+                MERGE (field:FieldEvidence {id: evidence.id})
+                SET field.field = evidence.field,
+                    field.value_json = evidence.value_json,
+                    field.source = $source_name,
+                    field.timestamp = datetime(),
+                    field.trust_score = 0.82,
+                    field.freshness_score = 0.7,
+                    field.source_tier = 1
+                MERGE (p)-[:HAS_FIELD_EVIDENCE]->(field)
+                RETURN p.id AS id
+                """,
+                canonical_key=normalized.canonical_key,
+                product_id=f"cpu-spec:{normalized.canonical_key}",
+                name=normalized.name,
+                brand=normalized.brand,
+                model=normalized.model,
+                source_name=source_name,
+                socket=normalized.summary_specs.get("socket"),
+                cores=normalized.summary_specs.get("cores"),
+                threads=normalized.summary_specs.get("threads"),
+                base_clock_ghz=normalized.summary_specs.get("base_clock_ghz"),
+                boost_clock_ghz=normalized.summary_specs.get("boost_clock_ghz"),
+                process_nm=normalized.summary_specs.get("process_nm"),
+                l3_cache_mb=normalized.summary_specs.get("l3_cache_mb"),
+                tdp_w=normalized.summary_specs.get("tdp_w"),
+                image_url=normalized.image_url,
+                evidence=_cpu_specs_evidence(normalized),
+                database_=settings.neo4j_database,
+            )
+        return CpuSpecsImportResponse(
+            imported_count=len(products),
+            skipped_count=len(skipped),
+            products=products,
+            skipped_rows=skipped,
+            dry_run=dry_run,
+        )
+
     def search_products(
         self,
         *,
@@ -1577,6 +1754,8 @@ class Neo4jPricingRepository:
                      threads: coalesce(p.spec_threads, p.spec_thread_count),
                      base_clock_ghz: coalesce(p.spec_base_clock_ghz, p.spec_base_clock),
                      boost_clock_ghz: coalesce(p.spec_boost_clock_ghz, p.spec_boost_clock),
+                     process_nm: p.spec_process_nm,
+                     l3_cache_mb: p.spec_l3_cache_mb,
                      tdp_w: coalesce(p.spec_tdp_w, p.spec_tdp)
                    } AS summary_specs,
                    coalesce(p.imageUrl, p.image_url) AS image_url,

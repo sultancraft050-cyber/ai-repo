@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.main import _audit_metadata
 from app.models.pricing import (
+    CpuSpecsImportRow,
     PriceSnapshotView,
     ProductDiscoveryRequest,
     SourceMetadata,
@@ -40,6 +41,7 @@ from app.services.pricing_quality import PriceQualityValidator
 from app.services import pricing_sources
 from app.services.pricing_sources import SerpApiShoppingSource
 from app.graph.pricing_repository import _cpu_product_first_results, _price_rollups, _search_result, _search_sort_key
+from app.graph.pricing_repository import _cpu_specs_import_product
 
 
 def _record(price: float = 599.99) -> SourceProductRecord:
@@ -1672,6 +1674,39 @@ def test_cpu_product_first_results_keep_stable_product_and_cheapest_seller_price
     assert grouped[0].current_recommended_vendor == "Computer Palace"
     assert grouped[0].image_url == "https://cdn.example.test/7800x3d.jpg"
     assert grouped[0].summary_specs["socket"] == "AM5"
+
+
+def test_techpowerup_cpu_specs_import_ignores_codename_and_released() -> None:
+    row = {
+        "name": "Ryzen 7 7800X3D",
+        "codename": "Raphael",
+        "cores_threads": "8 / 16",
+        "clock": "4.2 to 5 GHz",
+        "socket": "Socket AM5",
+        "process": "5 nm",
+        "l3_cache": "96 MB",
+        "tdp": "120 W",
+        "released": "Jan 2023",
+        "image_url": "https://cdn.example.test/7800x3d.jpg",
+    }
+
+    product = _cpu_specs_import_product(CpuSpecsImportRow.model_validate(row))
+
+    assert product is not None
+    assert product.canonical_key == "CPU|AMD|RYZEN_7_7800X3D"
+    assert product.name == "AMD Ryzen 7 7800X3D"
+    assert product.summary_specs == {
+        "socket": "AM5",
+        "cores": 8,
+        "threads": 16,
+        "base_clock_ghz": 4.2,
+        "boost_clock_ghz": 5.0,
+        "process_nm": 5.0,
+        "l3_cache_mb": 96.0,
+        "tdp_w": 120.0,
+    }
+    assert "codename" not in product.summary_specs
+    assert "released" not in product.summary_specs
 
 
 def test_saudi_trusted_local_listing_can_be_recommended_with_uncertainty() -> None:

@@ -5,7 +5,7 @@ from enum import Enum, IntEnum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SourceTier(IntEnum):
@@ -445,6 +445,47 @@ class ProductImageUpdateResponse(BaseModel):
     image_url: str
     image_source_name: str | None = None
     updated: bool = True
+
+
+class CpuSpecsImportRow(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(min_length=2, max_length=200)
+    cores: int | None = Field(default=None, ge=1, le=512)
+    threads: int | None = Field(default=None, ge=1, le=1024)
+    cores_threads: str | None = Field(default=None, max_length=40)
+    clock: str | None = Field(default=None, max_length=80)
+    base_clock_ghz: float | None = Field(default=None, ge=0, le=10)
+    boost_clock_ghz: float | None = Field(default=None, ge=0, le=10)
+    socket: str | None = Field(default=None, max_length=80)
+    process: str | None = Field(default=None, max_length=80)
+    l3_cache: str | None = Field(default=None, max_length=80)
+    tdp: str | None = Field(default=None, max_length=80)
+    image_url: str | None = Field(default=None, max_length=2048)
+
+
+class CpuSpecsImportRequest(BaseModel):
+    rows: list[CpuSpecsImportRow] = Field(min_length=1, max_length=500)
+    source_name: str = Field(default="TechPowerUp CPU Database", max_length=120)
+    dry_run: bool = False
+
+
+class CpuSpecsImportedProduct(BaseModel):
+    canonical_key: str
+    name: str
+    brand: str
+    model: str
+    summary_specs: dict[str, Any] = Field(default_factory=dict)
+    image_url: str | None = None
+
+
+class CpuSpecsImportResponse(BaseModel):
+    imported_count: int = 0
+    skipped_count: int = 0
+    ignored_fields: list[str] = Field(default_factory=lambda: ["codename", "released"])
+    products: list[CpuSpecsImportedProduct] = Field(default_factory=list)
+    skipped_rows: list[str] = Field(default_factory=list)
+    dry_run: bool = False
 
 
 class PriceHistoryPoint(BaseModel):
