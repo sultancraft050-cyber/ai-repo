@@ -352,7 +352,7 @@ export function PricingIntelligencePanel({ region: regionOverride }: { region?: 
             type="button"
             onClick={handleDiscover}
             disabled={discovering}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-signal px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-signal px-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             <Sparkles size={16} className={discovering ? "animate-pulse" : ""} aria-hidden />
             Discover

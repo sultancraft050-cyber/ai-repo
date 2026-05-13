@@ -40,7 +40,7 @@ export function AutoBuildGenerator({
           type="button"
           onClick={onGenerate}
           disabled={!hasBudget || generating}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-signal px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-signal px-4 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {generating ? <Loader2 size={17} className="animate-spin" aria-hidden /> : <Play size={17} aria-hidden />}
           Generate

@@ -5,16 +5,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#111827",
-        panel: "#f8fafc",
-        line: "#d8dee8",
-        signal: "#0f766e",
-        caution: "#b45309",
-        danger: "#b91c1c",
-        violet: "#6d28d9"
+        ink: "#e5edf8",
+        panel: "#172033",
+        line: "#2b3851",
+        muted: "#9ca8bd",
+        signal: "#2dd4bf",
+        caution: "#fbbf24",
+        danger: "#fb7185",
+        violet: "#a78bfa"
       },
       boxShadow: {
-        tight: "0 1px 2px rgba(15, 23, 42, 0.08)"
+        tight: "0 18px 48px rgba(0, 0, 0, 0.22)"
       }
     }
   },
@@ -22,4 +23,3 @@ const config: Config = {
 };
 
 export default config;
-

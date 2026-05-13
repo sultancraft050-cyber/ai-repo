@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useMachine } from "@xstate/react";
-import { Activity, Cpu, Database, RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { builderMachine } from "@/machines/builderMachine";
 import { fetchComponentOptions } from "@/lib/api";
 import { useRegion } from "@/components/RegionProvider";
@@ -76,11 +75,22 @@ export function BuilderShell() {
   const [options, setOptions] = useState<Record<ComponentKind, ComponentOption[]>>(createEmptyOptions);
   const [optionError, setOptionError] = useState<string | null>(null);
   const [loadingKind, setLoadingKind] = useState<ComponentKind | null>(null);
+  const [toolVisibility, setToolVisibility] = useState({ advanced: false, ops: false });
 
+  const showAdvanced = toolVisibility.advanced;
+  const showOps = toolVisibility.ops;
   const selectedCount = Object.values(state.context.selected).filter(Boolean).length;
   const stateLabel = String(state.value).replaceAll("_", " ");
   const compatibility = state.context.validation?.compatibility;
   const performance = state.context.validation?.performance;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setToolVisibility({
+      advanced: params.get("advanced") === "1",
+      ops: params.get("ops") === "1"
+    });
+  }, []);
 
   useEffect(() => {
     if (state.context.preferences.region !== region) {
@@ -91,6 +101,12 @@ export function BuilderShell() {
   useEffect(() => {
     let cancelled = false;
     async function loadAllOptions() {
+      if (!showAdvanced) {
+        setLoadingKind(null);
+        setOptionError(null);
+        setOptions(createEmptyOptions());
+        return;
+      }
       setOptionError(null);
       setLoadingKind(componentOrder[0] ?? null);
       const results = await Promise.allSettled(
@@ -119,7 +135,7 @@ export function BuilderShell() {
     return () => {
       cancelled = true;
     };
-  }, [state.context.selected, state.context.preferences]);
+  }, [showAdvanced, state.context.selected, state.context.preferences]);
 
   const selectedNames = useMemo(() => {
     const names: Record<string, string> = {};
@@ -139,41 +155,37 @@ export function BuilderShell() {
   }
 
   return (
-    <main className="min-h-screen">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-line pb-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.08em] text-signal">
-              <Database size={16} aria-hidden />
-              Neo4j constraint graph active
-            </div>
-            <h1 className="text-3xl font-semibold leading-tight text-ink sm:text-4xl">
-              Custom PC Compatibility Intelligence
-            </h1>
+    <main id="builder" className="min-h-screen">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 shadow-tight md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase text-signal">Start here</div>
+            <h2 className="text-xl font-semibold text-ink">Saudi build wizard</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
+              Enter a budget and a target resolution. Advanced graph and founder tools are hidden from the normal buyer view.
+            </p>
           </div>
-          <div className="grid gap-2 text-sm sm:grid-cols-[auto_auto_auto] lg:grid-cols-[minmax(190px,auto)_auto_auto_auto]">
-            <RegionSelector />
-            <StatusChip icon={<Activity size={16} />} label="State" value={stateLabel} tone="signal" />
-            <StatusChip icon={<Cpu size={16} />} label="Selected" value={`${selectedCount}/8`} tone="violet" />
-            <StatusChip
-              icon={compatibility?.valid ? <ShieldCheck size={16} /> : <TriangleAlert size={16} />}
-              label="Graph"
-              value={compatibility?.state.replaceAll("_", " ") ?? "pending"}
-              tone={compatibility?.valid ? "signal" : "caution"}
-            />
-          </div>
-        </header>
+          <RegionSelector />
+        </div>
 
-        <section className="grid gap-4 lg:grid-cols-[320px_1fr]">
-          <PreferencePanel preferences={state.context.preferences} onChange={updatePreferences} />
+        <SaudiBuildWizard />
 
-          <div className="grid gap-4">
-            <SaudiBuildWizard />
+        <details className="rounded-lg border border-line bg-white p-3 shadow-tight">
+          <summary className="cursor-pointer text-base font-semibold text-ink">Saved builds and price watchlist</summary>
+          <div className="mt-4">
             <UserBuildsWorkspace />
+          </div>
+        </details>
 
-            <details className="rounded-lg border border-line bg-white p-3 shadow-tight">
-              <summary className="cursor-pointer text-base font-semibold text-ink">Manual graph builder tools</summary>
-              <div className="mt-4 grid gap-4">
+        {showAdvanced ? (
+          <details className="rounded-lg border border-line bg-white p-3 shadow-tight" open>
+          <summary className="cursor-pointer text-base font-semibold text-ink">
+            Advanced graph builder tools ({stateLabel}, {selectedCount}/8 selected)
+          </summary>
+            <div className="mt-4 grid gap-4">
+              <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+                <PreferencePanel preferences={state.context.preferences} onChange={updatePreferences} />
+                <div className="grid gap-4">
                 <AutoBuildGenerator
                   budget={state.context.preferences.budget_usd}
                   response={state.context.generatedBuilds}
@@ -182,6 +194,8 @@ export function BuilderShell() {
                   onGenerate={() => send({ type: "GENERATE_BUILD" })}
                   onApply={(selection) => send({ type: "APPLY_GENERATED_BUILD", selection })}
                 />
+                </div>
+              </div>
 
                 <div className="rounded-lg border border-line bg-white p-3">
                   <div className="mb-3 flex items-center justify-between gap-3">
@@ -225,44 +239,22 @@ export function BuilderShell() {
                   />
                   <PerformancePanel response={performance ?? null} validating={state.matches("validating")} />
                 </div>
-              </div>
-            </details>
+            </div>
+          </details>
+        ) : null}
 
-            <details className="rounded-lg border border-line bg-white p-3 shadow-tight">
-              <summary className="cursor-pointer text-base font-semibold text-ink">Founder operations and market data tools</summary>
-              <div className="mt-4 grid gap-4">
-                <CatalogCompletenessPanel />
-                <SoloFounderOpsPanel />
-                <PricingIntelligencePanel />
-              </div>
-            </details>
-          </div>
-        </section>
+        {showOps ? (
+          <details className="rounded-lg border border-line bg-white p-3 shadow-tight" open>
+            <summary className="cursor-pointer text-base font-semibold text-ink">Founder operations and market data tools</summary>
+            <div className="mt-4 grid gap-4">
+              <CatalogCompletenessPanel />
+              <SoloFounderOpsPanel />
+              <PricingIntelligencePanel />
+            </div>
+          </details>
+        ) : null}
       </div>
     </main>
-  );
-}
-
-function StatusChip({
-  icon,
-  label,
-  value,
-  tone
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  tone: "signal" | "violet" | "caution";
-}) {
-  const color = tone === "signal" ? "text-signal" : tone === "violet" ? "text-violet" : "text-caution";
-  return (
-    <div className="min-w-0 rounded-md border border-line bg-white px-3 py-2 shadow-tight">
-      <div className={`mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase ${color}`}>
-        {icon}
-        <span>{label}</span>
-      </div>
-      <div className="truncate text-sm font-medium capitalize text-ink">{value}</div>
-    </div>
   );
 }
 

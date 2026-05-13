@@ -21,7 +21,7 @@ const checks = [
   },
   {
     file: "components/BuilderShell.tsx",
-    snippets: ["Manual graph builder tools", "Founder operations and market data tools"]
+    snippets: ["Advanced graph builder tools", "Founder operations and market data tools"]
   },
   {
     file: "components/ProductUrlImportPanel.tsx",

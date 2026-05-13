@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
-  background: #eef2f7;
+  color-scheme: dark;
+  background: #080f1f;
 }
 
 * {
@@ -13,10 +13,11 @@
 
 body {
   margin: 0;
-  color: #111827;
+  color: #e5edf8;
   background:
-    linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(238, 242, 247, 0.98)),
-    #eef2f7;
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.15), transparent 32rem),
+    linear-gradient(180deg, #0b1220 0%, #101827 48%, #070d18 100%),
+    #080f1f;
 }
 
 button,
@@ -26,7 +27,40 @@ input {
 }
 
 :focus-visible {
-  outline: 2px solid #0f766e;
+  outline: 2px solid #2dd4bf;
   outline-offset: 2px;
 }
 
+::selection {
+  background: rgba(45, 212, 191, 0.28);
+}
+
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
+.bg-white {
+  background-color: #111827 !important;
+}
+
+.bg-panel {
+  background-color: #172033 !important;
+}
+
+.bg-teal-50 {
+  background-color: rgba(20, 184, 166, 0.13) !important;
+}
+
+.bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.13) !important;
+}
+
+.border-teal-200 {
+  border-color: rgba(45, 212, 191, 0.35) !important;
+}
+
+.border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.36) !important;
+}

@@ -221,7 +221,7 @@ export function SaudiBuildWizard() {
           )}
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+        <div className="grid gap-3 md:grid-cols-3">
           <label className="grid gap-1 text-sm font-semibold text-ink">
             Budget in SAR
             <input
@@ -238,63 +238,69 @@ export function SaudiBuildWizard() {
             onChange={(value) => setResolution(value as SaudiBuildResolution)}
             options={resolutions}
           />
-          <SelectField
-            label="Refresh target"
-            value={String(refreshRate)}
-            onChange={(value) => setRefreshRate(Number(value) as 60 | 120 | 144 | 165 | 240)}
-            options={[60, 120, 144, 165, 240].map((value) => ({ value: String(value), label: `${value} Hz` }))}
-          />
-          <SelectField
-            label="Case size"
-            value={caseSize}
-            onChange={(value) => setCaseSize(value as SaudiBuildRequest["case_size"])}
-            options={[
-              { value: "ATX", label: "ATX" },
-              { value: "mATX", label: "mATX" },
-              { value: "ITX", label: "ITX" },
-              { value: "no_preference", label: "No preference" }
-            ]}
-          />
-          <SelectField label="Priority" value={priority} onChange={(value) => setPriority(value as SaudiBuildPriority)} options={priorities} />
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-          <div>
-            <div className="mb-2 text-sm font-semibold text-ink">Preferred brands</div>
-            <div className="flex flex-wrap gap-2">
-              {brandOptions.map((brand) => (
-                <button
-                  key={brand}
-                  type="button"
-                  onClick={() => toggleBrand(brand)}
-                  className={`rounded-md border px-3 py-2 text-sm font-semibold ${
-                    brands.includes(brand) ? "border-signal bg-teal-50 text-signal" : "border-line bg-panel text-muted"
-                  }`}
-                >
-                  {brand}
-                </button>
-              ))}
+        <details className="mt-4 rounded-md border border-line bg-panel px-3 py-2">
+          <summary className="cursor-pointer text-sm font-semibold text-ink">More options</summary>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <SelectField
+              label="Refresh target"
+              value={String(refreshRate)}
+              onChange={(value) => setRefreshRate(Number(value) as 60 | 120 | 144 | 165 | 240)}
+              options={[60, 120, 144, 165, 240].map((value) => ({ value: String(value), label: `${value} Hz` }))}
+            />
+            <SelectField
+              label="Case size"
+              value={caseSize}
+              onChange={(value) => setCaseSize(value as SaudiBuildRequest["case_size"])}
+              options={[
+                { value: "ATX", label: "ATX" },
+                { value: "mATX", label: "mATX" },
+                { value: "ITX", label: "ITX" },
+                { value: "no_preference", label: "No preference" }
+              ]}
+            />
+            <SelectField label="Priority" value={priority} onChange={(value) => setPriority(value as SaudiBuildPriority)} options={priorities} />
+            <div className="md:col-span-3">
+              <div className="mb-2 text-sm font-semibold text-ink">Preferred brands</div>
+              <div className="flex flex-wrap gap-2">
+                {brandOptions.map((brand) => (
+                  <button
+                    key={brand}
+                    type="button"
+                    onClick={() => toggleBrand(brand)}
+                    className={`rounded-md border px-3 py-2 text-sm font-semibold ${
+                      brands.includes(brand) ? "border-signal bg-teal-50 text-signal" : "border-line bg-panel text-muted"
+                    }`}
+                  >
+                    {brand}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 md:col-span-3">
+              <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
+                <input type="checkbox" checked={includeMonitor} onChange={(event) => setIncludeMonitor(event.target.checked)} />
+                Include monitor
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
+                <input type="checkbox" checked={includePeripherals} onChange={(event) => setIncludePeripherals(event.target.checked)} />
+                Include peripherals
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
+                <input type="checkbox" checked={strictBudget} onChange={(event) => setStrictBudget(event.target.checked)} />
+                Strict budget
+              </label>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-              <input type="checkbox" checked={includeMonitor} onChange={(event) => setIncludeMonitor(event.target.checked)} />
-              Include monitor
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-              <input type="checkbox" checked={includePeripherals} onChange={(event) => setIncludePeripherals(event.target.checked)} />
-              Include peripherals
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-              <input type="checkbox" checked={strictBudget} onChange={(event) => setStrictBudget(event.target.checked)} />
-              Strict budget
-            </label>
-          </div>
+        </details>
+
+        <div className="mt-4 flex justify-end">
           <button
             type="button"
             onClick={generateBuild}
             disabled={generating || !isSaudiRegion || !budgetValid}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-4 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {generating ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Wand2 size={16} aria-hidden />}
             Generate Saudi Build

@@ -185,7 +185,7 @@ export function UserBuildsWorkspace() {
                 <button
                   type="button"
                   onClick={createAccount}
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-white"
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950"
                 >
                   Create Account
                 </button>

@@ -100,7 +100,7 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
                 type="button"
                 onClick={() => onSave(build)}
                 disabled={saving}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Save size={15} aria-hidden />
                 {saving ? "Saving" : "Save Build"}

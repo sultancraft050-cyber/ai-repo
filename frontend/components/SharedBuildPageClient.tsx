@@ -30,7 +30,7 @@ export function SharedBuildPageClient({ slug }: { slug: string }) {
   );
 
   return (
-    <main className="min-h-screen bg-[#eef2f7]">
+    <main className="min-h-screen">
       <div className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-6 sm:px-6">
         <header className="rounded-lg border border-line bg-white p-4 shadow-tight">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-signal">
@@ -83,16 +83,10 @@ export function SharedBuildPageClient({ slug }: { slug: string }) {
               <div className="flex flex-wrap gap-2 md:col-span-3">
                 <a
                   href="/#builder"
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-white"
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950"
                 >
                   Start your own build
                   <ArrowRight size={15} aria-hidden />
-                </a>
-                <a
-                  href="/#submit-deal"
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink"
-                >
-                  Submit a better Saudi deal
                 </a>
               </div>
             </section>
