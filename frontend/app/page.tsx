@@ -1,13 +1,10 @@
-import { BuilderShell } from "@/components/BuilderShell";
+import { AppChrome } from "@/components/AppChrome";
 import { PublicLandingPage } from "@/components/PublicLandingPage";
 
 export default function Home() {
   return (
-    <>
+    <AppChrome>
       <PublicLandingPage />
-      <div id="builder">
-        <BuilderShell />
-      </div>
-    </>
+    </AppChrome>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, ClipboardList, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import type { SaudiBuildDataCompleteness } from "@/types/builder";
 
 type DataCompletenessPanelProps = {
@@ -35,6 +35,11 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
   }
 
   const readinessPercent = Math.round(completeness.readiness_score * 100);
+  const readyCount = completeness.category_coverage.filter((coverage) => coverage.readiness_level === "ready").length;
+  const warningCount = completeness.category_coverage.filter((coverage) => coverage.readiness_level === "usable_with_warnings").length;
+  const notReady = completeness.category_coverage.filter((coverage) => coverage.readiness_level === "not_ready");
+  const attention = completeness.category_coverage.filter((coverage) => coverage.readiness_level !== "ready");
+  const canGenerate = notReady.length === 0;
 
   return (
     <section className="rounded-lg border border-line bg-white p-4 shadow-tight">
@@ -45,69 +50,63 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
         </span>
       </div>
       {error ? <InlineError message={error} onRetry={onRetry} /> : null}
-      <p className="mb-3 text-sm text-muted">{completeness.message}</p>
+      <div className={`rounded-md border px-3 py-3 ${canGenerate ? "border-teal-200 bg-teal-50" : "border-caution/30 bg-amber-50"}`}>
+        <div className={`mb-1 flex items-center gap-2 text-sm font-semibold ${canGenerate ? "text-signal" : "text-caution"}`}>
+          {canGenerate ? <CheckCircle2 size={16} aria-hidden /> : <AlertTriangle size={16} aria-hidden />}
+          {canGenerate ? "Ready to generate a Saudi build" : "Some data is still missing"}
+        </div>
+        <p className="text-sm leading-6 text-muted">{completeness.message}</p>
+        <div className="mt-3 h-2 overflow-hidden rounded bg-white">
+          <div className="h-full rounded bg-signal" style={{ width: `${Math.max(4, readinessPercent)}%` }} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+          <span className="rounded border border-line bg-panel px-2 py-1">{readyCount} ready</span>
+          {warningCount ? <span className="rounded border border-caution/30 bg-amber-50 px-2 py-1 text-caution">{warningCount} usable with warnings</span> : null}
+          {notReady.length ? <span className="rounded border border-caution/30 bg-amber-50 px-2 py-1 text-caution">{notReady.length} not ready</span> : null}
+        </div>
+      </div>
 
-      <div className="grid gap-2 md:grid-cols-4">
-        {completeness.category_coverage.map((coverage) => (
-          <div key={coverage.category} className="rounded-md border border-line bg-panel px-3 py-2">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-ink">{coverage.category}</span>
-              <ReadinessBadge level={coverage.readiness_level} />
-            </div>
-            <div className="grid gap-1 text-xs text-muted">
-              <span>{coverage.priced_product_count} priced products</span>
-              <span>{coverage.trusted_local_listing_count} trusted listings</span>
-              <span>{Math.round(coverage.identity_confidence * 100)}% identity confidence</span>
-              <span>Freshness: {coverage.price_freshness_status}</span>
-              {coverage.usable_with_warnings_count ? <span>{coverage.usable_with_warnings_count} usable with warnings</span> : null}
-              <span>{coverage.risky_listing_count} risky listings</span>
-            </div>
-            {coverage.blocker_reasons.length ? (
-              <div className="mt-2 grid gap-1 text-[11px] leading-4 text-caution">
-                {coverage.blocker_reasons.slice(0, 2).map((reason) => (
-                  <span key={reason}>{reason}</span>
-                ))}
+      {attention.length ? (
+        <div className="mt-3 grid gap-2">
+          <div className="text-sm font-semibold text-ink">Needs attention</div>
+          {attention.slice(0, 3).map((coverage) => (
+            <div key={coverage.category} className="rounded-md border border-line bg-panel px-3 py-2 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-ink">{coverage.category}</span>
+                <ReadinessBadge level={coverage.readiness_level} />
               </div>
-            ) : null}
-            {coverage.readiness_level === "usable_with_warnings" ? (
-              <div className="mt-2 grid gap-1 text-[11px] leading-4 text-caution">
+              <p className="mt-1 leading-6 text-muted">{simpleCategoryMessage(coverage)}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <details className="mt-3 rounded-md border border-line bg-panel px-3 py-2">
+        <summary className="cursor-pointer text-sm font-semibold text-ink">Advanced readiness details</summary>
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {completeness.category_coverage.map((coverage) => (
+            <div key={coverage.category} className="rounded-md border border-line bg-white px-3 py-2">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-ink">{coverage.category}</span>
+                <ReadinessBadge level={coverage.readiness_level} />
+              </div>
+              <div className="grid gap-1 text-xs text-muted">
+                <span>{coverage.priced_product_count} priced products</span>
+                <span>{coverage.trusted_local_listing_count} trusted listings</span>
+                <span>{Math.round(coverage.identity_confidence * 100)}% identity confidence</span>
+                <span>Freshness: {coverage.price_freshness_status}</span>
                 {coverage.unknown_vat_count ? <span>{coverage.unknown_vat_count} VAT unclear</span> : null}
                 {coverage.unknown_shipping_count ? <span>{coverage.unknown_shipping_count} shipping unclear</span> : null}
                 {coverage.unknown_warranty_count ? <span>{coverage.unknown_warranty_count} warranty unclear</span> : null}
-                {coverage.warning_reasons.slice(0, 2).map((reason) => (
-                  <span key={reason}>{reason}</span>
-                ))}
+                <span>{coverage.risky_listing_count} risky listings</span>
               </div>
-            ) : null}
-            {coverage.notes.length ? (
-              <p className="mt-2 text-xs leading-5 text-caution">{coverage.notes[0]}</p>
-            ) : null}
-            <p className="mt-2 rounded border border-line bg-white px-2 py-1 text-[11px] leading-4 text-muted">
-              Next: {coverage.next_action}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {completeness.recommended_discovery_jobs.length ? (
-        <div className="mt-4 rounded-md border border-caution/30 bg-amber-50 px-3 py-3">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-caution">
-            <ClipboardList size={16} aria-hidden />
-            Suggested dry-run discovery jobs
-          </div>
-          <div className="grid gap-2">
-            {completeness.recommended_discovery_jobs.slice(0, 6).map((job) => (
-              <div key={`${job.category}-${job.query}`} className="rounded border border-amber-200 bg-white px-3 py-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="font-semibold text-ink">{job.category}</span>
-                  <code className="rounded bg-panel px-2 py-1 text-xs text-muted">dry_run=true</code>
-                </div>
-                <p className="mt-1 text-xs leading-5 text-muted">{job.query}</p>
-              </div>
-            ))}
-          </div>
+              <p className="mt-2 rounded border border-line bg-panel px-2 py-1 text-[11px] leading-4 text-muted">
+                Next: {coverage.next_action}
+              </p>
+            </div>
+          ))}
         </div>
-      ) : null}
+      </details>
     </section>
   );
 }
@@ -157,4 +156,20 @@ function InlineError({ message, onRetry }: { message: string; onRetry?: () => vo
       ) : null}
     </div>
   );
+}
+
+function simpleCategoryMessage(coverage: SaudiBuildDataCompleteness["category_coverage"][number]) {
+  if (coverage.readiness_level === "not_ready") {
+    return coverage.blocker_reasons[0] ?? coverage.next_action ?? "More Saudi market data is needed before this category can be used.";
+  }
+  const warnings = [
+    coverage.unknown_vat_count ? "VAT unclear" : null,
+    coverage.unknown_shipping_count ? "shipping unclear" : null,
+    coverage.unknown_warranty_count ? "warranty unclear" : null,
+    coverage.risky_listing_count ? "some risky listings" : null
+  ].filter(Boolean);
+  if (warnings.length) {
+    return `Usable, but ${warnings.slice(0, 3).join(", ")}.`;
+  }
+  return "Usable with visible warnings.";
 }

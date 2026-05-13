@@ -160,9 +160,9 @@ export function BuilderShell() {
         <div className="flex flex-col gap-3 rounded-lg border border-line bg-white p-4 shadow-tight md:flex-row md:items-center md:justify-between">
           <div>
             <div className="mb-1 text-xs font-semibold uppercase text-signal">Start here</div>
-            <h2 className="text-xl font-semibold text-ink">Saudi build wizard</h2>
+            <h1 className="text-xl font-semibold text-ink">Generate a Saudi build</h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-              Enter a budget and a target resolution. Advanced graph and founder tools are hidden from the normal buyer view.
+              Enter a budget and target resolution. The assistant chooses compatible Saudi-market parts and keeps warnings visible.
             </p>
           </div>
           <RegionSelector />
@@ -170,7 +170,7 @@ export function BuilderShell() {
 
         <SaudiBuildWizard />
 
-        <details className="rounded-lg border border-line bg-white p-3 shadow-tight">
+        <details id="saved-builds" className="scroll-mt-20 rounded-lg border border-line bg-white p-3 shadow-tight">
           <summary className="cursor-pointer text-base font-semibold text-ink">Saved builds and price watchlist</summary>
           <div className="mt-4">
             <UserBuildsWorkspace />

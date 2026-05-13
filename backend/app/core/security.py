@@ -30,6 +30,7 @@ class EndpointRule:
 ENDPOINT_RULES: tuple[EndpointRule, ...] = (
     EndpointRule("GET", "/ops", "analyst", "level_0"),
     EndpointRule("POST", "/products/canonical-merge-preview", "analyst", "level_0"),
+    EndpointRule("POST", "/products/", "admin", "level_1"),
     EndpointRule("POST", "/ops/autonomy-queue", "admin", "level_1"),
     EndpointRule("GET", "/approvals", "analyst", "level_0"),
     EndpointRule("GET", "/health/workers", "analyst", "level_0"),

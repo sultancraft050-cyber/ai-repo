@@ -12,6 +12,8 @@ from app.models.pricing import (
     PriceSnapshotView,
     ProductCategoryResponse,
     ProductDetail,
+    ProductImageUpdateRequest,
+    ProductImageUpdateResponse,
     ProductSearchResult,
 )
 from app.services.graph_integrity import GraphIntegrityService
@@ -52,6 +54,28 @@ def canonical_merge_preview(
         product_ids=request_body.product_ids,
         region=resolve_market_region(request_body.region),
         trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.post("/{product_id}/image", response_model=ProductImageUpdateResponse)
+def update_product_image(
+    product_id: str,
+    request_body: ProductImageUpdateRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> ProductImageUpdateResponse:
+    updated = repository.update_product_image_url(
+        product_id,
+        image_url=request_body.image_url,
+        source_name=request_body.source_name,
+        note=request_body.note,
+    )
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return ProductImageUpdateResponse(
+        product_id=product_id,
+        image_url=request_body.image_url,
+        image_source_name=request_body.source_name,
+        updated=True,
     )
 
 

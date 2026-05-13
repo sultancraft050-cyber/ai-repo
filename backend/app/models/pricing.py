@@ -419,6 +419,33 @@ class ProductDetail(ProductSearchResult):
     latest_prices: list[PriceSnapshotView] = Field(default_factory=list)
 
 
+class ProductImageUpdateRequest(BaseModel):
+    image_url: str = Field(min_length=8, max_length=2048)
+    source_name: str | None = Field(default=None, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("image_url")
+    @classmethod
+    def validate_image_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.startswith(("https://", "http://")):
+            raise ValueError("image_url must be an absolute http(s) URL")
+        lowered = normalized.lower()
+        if not any(
+            lowered.split("?", 1)[0].endswith(extension)
+            for extension in (".jpg", ".jpeg", ".png", ".webp", ".avif")
+        ):
+            raise ValueError("image_url must point to a common image file")
+        return normalized
+
+
+class ProductImageUpdateResponse(BaseModel):
+    product_id: str
+    image_url: str
+    image_source_name: str | None = None
+    updated: bool = True
+
+
 class PriceHistoryPoint(BaseModel):
     timestamp: datetime
     vendor_name: str

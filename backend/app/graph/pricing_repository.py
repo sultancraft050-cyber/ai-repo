@@ -1426,6 +1426,35 @@ class Neo4jPricingRepository:
             database_=settings.neo4j_database,
         )
 
+    def update_product_image_url(
+        self,
+        product_id: str,
+        *,
+        image_url: str,
+        source_name: str | None = None,
+        note: str | None = None,
+    ) -> bool:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p)
+            WHERE (p.id = $product_id OR p.canonical_key = $product_id)
+              AND (p:Product OR p:Component)
+            SET p.imageUrl = $image_url,
+                p.image_url = $image_url,
+                p.image_source_name = $source_name,
+                p.image_note = $note,
+                p.image_updated_at = datetime()
+            RETURN p.id AS id
+            LIMIT 1
+            """,
+            product_id=product_id,
+            image_url=image_url,
+            source_name=source_name,
+            note=note,
+            database_=settings.neo4j_database,
+        )
+        return bool(records)
+
     def search_products(
         self,
         *,
