@@ -39,7 +39,7 @@ from app.services.pricing_normalization import (
 from app.services.pricing_quality import PriceQualityValidator
 from app.services import pricing_sources
 from app.services.pricing_sources import SerpApiShoppingSource
-from app.graph.pricing_repository import _price_rollups, _search_result, _search_sort_key
+from app.graph.pricing_repository import _cpu_product_first_results, _price_rollups, _search_result, _search_sort_key
 
 
 def _record(price: float = 599.99) -> SourceProductRecord:
@@ -1610,6 +1610,68 @@ def test_stale_seed_product_ranks_below_live_priced_product() -> None:
     )
 
     assert sorted([seed, live], key=_search_sort_key)[0].id == "product-live"
+
+
+def test_cpu_product_first_results_keep_stable_product_and_cheapest_seller_price() -> None:
+    image_rich = _search_result(
+        {
+            "id": "cpu-image",
+            "canonical_key": "CPU|AMD|RYZEN_7_7800X3D",
+            "name": "AMD Ryzen 7 7800X3D Processor",
+            "brand": "AMD",
+            "category": "CPU",
+            "model": "Ryzen 7 7800X3D",
+            "summary_specs": {"socket": "AM5", "cores": 8, "threads": 16, "boost_clock_ghz": 5.0},
+            "image_url": "https://cdn.example.test/7800x3d.jpg",
+            "data_origin": "live",
+            "price_status": "active",
+            "flags": [],
+            "current_recommended_price": 1799,
+            "current_recommended_currency": "SAR",
+            "current_recommended_vendor": "OnlyPc-sa.com",
+            "lowest_market_price": 1799,
+            "lowest_market_currency": "SAR",
+            "lowest_market_vendor": "OnlyPc-sa.com",
+            "stale": False,
+            "best_value": False,
+            "previous_price": None,
+        }
+    )
+    cheapest = _search_result(
+        {
+            "id": "cpu-cheapest",
+            "canonical_key": "CPU|AMD|7800X3D|socket:AM5",
+            "name": "7-7800X3D, 5.0, 104, 100100000910WOF",
+            "brand": "AMD",
+            "category": "CPU",
+            "model": "7800X3D",
+            "summary_specs": {},
+            "image_url": None,
+            "data_origin": "live",
+            "price_status": "active",
+            "flags": [],
+            "current_recommended_price": 1499,
+            "current_recommended_currency": "SAR",
+            "current_recommended_vendor": "Computer Palace",
+            "lowest_market_price": 1499,
+            "lowest_market_currency": "SAR",
+            "lowest_market_vendor": "Computer Palace",
+            "stale": False,
+            "best_value": False,
+            "previous_price": None,
+        }
+    )
+
+    grouped = _cpu_product_first_results([image_rich, cheapest])
+
+    assert len(grouped) == 1
+    assert grouped[0].id == "cpu-cheapest"
+    assert grouped[0].canonical_key == "CPU|AMD|RYZEN_7_7800X3D"
+    assert grouped[0].name == "AMD Ryzen 7 7800X3D"
+    assert grouped[0].current_recommended_price == 1499
+    assert grouped[0].current_recommended_vendor == "Computer Palace"
+    assert grouped[0].image_url == "https://cdn.example.test/7800x3d.jpg"
+    assert grouped[0].summary_specs["socket"] == "AM5"
 
 
 def test_saudi_trusted_local_listing_can_be_recommended_with_uncertainty() -> None:

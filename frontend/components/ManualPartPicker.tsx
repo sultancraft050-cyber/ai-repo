@@ -619,6 +619,7 @@ function ProductPickerModal({
 function ProductCard({ product, selected, onSelect }: { product: ProductSearchResult; selected: boolean; onSelect: () => void }) {
   const price = bestSarPrice(product);
   const productName = displayProductName(product);
+  const specs = productSummarySpecs(product);
   return (
     <article className={`flex min-h-[360px] flex-col overflow-hidden rounded-lg border bg-panel ${selected ? "border-signal" : "border-line"}`}>
       <div className="grid aspect-[4/3] place-items-center bg-white p-4">
@@ -640,6 +641,16 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
             {displayStoreName(price?.vendor ?? product.current_recommended_vendor ?? product.lowest_market_vendor)}
           </div>
         </div>
+        {specs.length ? (
+          <dl className="grid gap-1 text-xs text-muted">
+            {specs.map((spec) => (
+              <div key={spec.label} className="flex justify-between gap-3">
+                <dt>{spec.label}</dt>
+                <dd className="text-right text-ink">{spec.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
         <button
           type="button"
           onClick={onSelect}
@@ -770,6 +781,40 @@ function displayStoreName(value?: string | null): string {
   if (/قصر\s*الحاسبات/.test(raw)) return "Computer Palace";
   if (/الحاسبات/.test(raw)) return "Local computer store";
   return "Store unknown";
+}
+
+function productSummarySpecs(product: ProductSearchResult): Array<{ label: string; value: string }> {
+  if (product.category !== "CPU") return [];
+  const specs = product.summary_specs ?? {};
+  return [
+    { label: "Socket", value: stringSpec(specs.socket) },
+    {
+      label: "Cores",
+      value: stringSpec(specs.cores)
+    },
+    {
+      label: "Threads",
+      value: stringSpec(specs.threads)
+    },
+    {
+      label: "Boost",
+      value: clockSpec(specs.boost_clock_ghz)
+    }
+  ].filter((item): item is { label: string; value: string } => Boolean(item.value));
+}
+
+function stringSpec(value: unknown): string {
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return "";
+}
+
+function clockSpec(value: unknown): string {
+  if (typeof value === "number") return `${value} GHz`;
+  if (typeof value === "string" && value.trim()) {
+    return value.toLowerCase().includes("ghz") ? value.trim() : `${value.trim()} GHz`;
+  }
+  return "";
 }
 
 function brandFromName(name: string): string {

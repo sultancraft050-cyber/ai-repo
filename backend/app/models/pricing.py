@@ -366,6 +366,7 @@ class ProductSearchResult(BaseModel):
     brand: str | None = None
     category: str
     model: str | None = None
+    summary_specs: dict[str, Any] = Field(default_factory=dict)
     image_url: str | None = None
     data_origin: DataOrigin = "unknown"
     price_status: PriceStatus = "unavailable"

@@ -718,6 +718,7 @@ export type ProductSearchResult = {
   brand?: string;
   category: ProductCategory | string;
   model?: string;
+  summary_specs?: Record<string, unknown>;
   image_url?: string;
   data_origin: DataOrigin;
   price_status: PriceStatus;

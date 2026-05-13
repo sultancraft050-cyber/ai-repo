@@ -23,6 +23,7 @@ from app.models.pricing import (
 from app.models.intelligence import HardwareIntelligence
 from app.services.hardware_taxonomy import GLOBAL_HARDWARE_CATEGORIES
 from app.services.pricing_classification import infer_listing_market
+from app.services.pricing_normalization import cpu_model_key_from_title
 from app.services.region_config import get_region_config, normalize_region, vendor_region_type, vendor_trust_profile
 
 
@@ -178,6 +179,7 @@ def _search_result(data: dict[str, Any]) -> ProductSearchResult:
         brand=data.get("brand"),
         category=data["category"],
         model=data.get("model"),
+        summary_specs=dict(data.get("summary_specs") or {}),
         image_url=data.get("image_url"),
         data_origin=data.get("data_origin") or "unknown",
         price_status=data.get("price_status") or "unavailable",
@@ -745,6 +747,88 @@ def _canonical_search_penalty(product: ProductSearchResult) -> float:
     if "7800X3D" in text and "RYZEN_7_7800X3D" not in (product.canonical_key or ""):
         return 1
     return 0
+
+
+def _cpu_product_first_results(products: list[ProductSearchResult]) -> list[ProductSearchResult]:
+    grouped: dict[str, list[ProductSearchResult]] = {}
+    passthrough: list[ProductSearchResult] = []
+    for product in products:
+        key = _cpu_canonical_key(product)
+        if not key:
+            passthrough.append(product)
+            continue
+        grouped.setdefault(key, []).append(product)
+
+    canonical_products = [_stable_cpu_product(key, group) for key, group in grouped.items()]
+    return [*canonical_products, *passthrough]
+
+
+def _stable_cpu_product(key: str, group: list[ProductSearchResult]) -> ProductSearchResult:
+    cheapest = min(group, key=_cpu_price_sort_value)
+    image_source = next((product for product in group if product.image_url), cheapest)
+    specs_source = max(group, key=lambda product: len(_present_specs(product.summary_specs)))
+    brand, model = _cpu_brand_model_from_key(key)
+    stable_name = _cpu_display_name(key)
+    summary_specs = _present_specs(specs_source.summary_specs)
+    return cheapest.model_copy(
+        update={
+            "canonical_key": key,
+            "name": stable_name,
+            "brand": brand,
+            "model": model,
+            "image_url": cheapest.image_url or image_source.image_url,
+            "summary_specs": summary_specs,
+            "flags": list(dict.fromkeys([*cheapest.flags, "cpu_product_first_view"])),
+        }
+    )
+
+
+def _cpu_canonical_key(product: ProductSearchResult) -> str | None:
+    for value in (product.canonical_key, product.model, product.name):
+        if not value:
+            continue
+        key = cpu_model_key_from_title(value)
+        if key:
+            brand = "AMD" if key.startswith("AMD_") else "Intel" if key.startswith("INTEL_") else product.brand or "Unknown"
+            model = key.removeprefix(f"{brand.upper()}_")
+            return f"CPU|{brand.upper()}|{model}"
+    return None
+
+
+def _cpu_display_name(key: str) -> str:
+    brand, model = _cpu_brand_model_from_key(key)
+    model_text = model.replace("_", " ").title()
+    model_text = model_text.replace("Ryzen ", "Ryzen ").replace("Core I", "Core i")
+    for token in ("X3D", "XT", "X", "K", "F"):
+        model_text = model_text.replace(token.title(), token)
+    return f"{brand} {model_text}".strip()
+
+
+def _cpu_brand_model_from_key(key: str) -> tuple[str, str]:
+    parts = key.split("|")
+    brand = parts[1].title() if len(parts) > 1 else "CPU"
+    model = parts[2] if len(parts) > 2 else key
+    if brand.upper() == "AMD":
+        brand = "AMD"
+    elif brand.upper() == "INTEL":
+        brand = "Intel"
+    return brand, model
+
+
+def _present_specs(specs: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in specs.items() if value is not None and value != ""}
+
+
+def _cpu_price_sort_value(product: ProductSearchResult) -> tuple[float, str]:
+    prices = [
+        product.lowest_market_price,
+        product.best_local_price,
+        product.best_trusted_price,
+        product.current_recommended_price,
+        product.current_best_price,
+    ]
+    price = min((value for value in prices if value is not None and value > 0), default=float("inf"))
+    return price, product.name.lower()
 
 
 def _intelligence_from_record(data: dict[str, Any]) -> HardwareIntelligence:
@@ -1487,6 +1571,14 @@ class Neo4jPricingRepository:
                    p.brand AS brand,
                    coalesce(p.category, head([label IN labels(p) WHERE label <> "Component" AND label <> "Product"])) AS category,
                    p.model AS model,
+                   {
+                     socket: p.spec_socket,
+                     cores: coalesce(p.spec_cores, p.spec_core_count),
+                     threads: coalesce(p.spec_threads, p.spec_thread_count),
+                     base_clock_ghz: coalesce(p.spec_base_clock_ghz, p.spec_base_clock),
+                     boost_clock_ghz: coalesce(p.spec_boost_clock_ghz, p.spec_boost_clock),
+                     tdp_w: coalesce(p.spec_tdp_w, p.spec_tdp)
+                   } AS summary_specs,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
                    p.data_origin AS data_origin,
                    coalesce(p.stale, false) AS stale,
@@ -1509,6 +1601,8 @@ class Neo4jPricingRepository:
             prices = self.vendor_prices(str(data["id"]), region=region)
             rollups = _price_rollups(prices, region=region)
             products.append(_search_result(_finalize_search_data(data, rollups)))
+        if category == "CPU":
+            products = _cpu_product_first_results(products)
         return sorted(products, key=_search_sort_key)[:limit]
 
     def product_categories(self) -> list[str]:
