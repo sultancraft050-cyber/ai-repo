@@ -483,7 +483,7 @@ function ProductPickerModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/76 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-label={`Add ${kind}`}>
-      <div className="mx-auto grid h-full max-w-7xl overflow-hidden rounded-lg border border-line bg-[#0b101d] shadow-tight lg:grid-cols-[250px_1fr]">
+      <div className="mx-auto grid h-full min-h-0 max-w-7xl overflow-hidden rounded-lg border border-line bg-[#0b101d] shadow-tight lg:grid-cols-[250px_1fr]">
         <aside className="hidden overflow-y-auto border-r border-line bg-[#080d18] p-4 lg:block">
           <div className="mb-5 flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-signal text-slate-950">
@@ -546,7 +546,7 @@ function ProductPickerModal({
           </div>
         </aside>
 
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
             <div>
               <h3 className="text-lg font-semibold text-ink">Showing {visible.length} market products</h3>
@@ -586,7 +586,7 @@ function ProductPickerModal({
             </label>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {failure ? (
               <div className="rounded-md border border-danger/30 bg-red-50 px-3 py-2 text-sm text-danger">{failure}</div>
             ) : loading ? (
