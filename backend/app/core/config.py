@@ -45,6 +45,11 @@ class Settings:
     processed_image_storage_dir: str
     processed_image_public_base_url: str
     product_image_max_bytes: int
+    object_storage_endpoint: str | None
+    object_storage_bucket: str | None
+    object_storage_access_key: str | None
+    object_storage_secret_key: str | None
+    object_storage_public_base_url: str | None
     autonomous_agents_enabled: bool
     autonomous_agent_interval_seconds: int
     autonomous_agent_max_products: int
@@ -86,6 +91,11 @@ class Settings:
             processed_image_storage_dir=os.getenv("PROCESSED_IMAGE_STORAGE_DIR", ""),
             processed_image_public_base_url=os.getenv("PROCESSED_IMAGE_PUBLIC_BASE_URL", ""),
             product_image_max_bytes=int(os.getenv("PRODUCT_IMAGE_MAX_BYTES", "5000000")),
+            object_storage_endpoint=os.getenv("OBJECT_STORAGE_ENDPOINT"),
+            object_storage_bucket=os.getenv("OBJECT_STORAGE_BUCKET"),
+            object_storage_access_key=os.getenv("OBJECT_STORAGE_ACCESS_KEY"),
+            object_storage_secret_key=os.getenv("OBJECT_STORAGE_SECRET_KEY"),
+            object_storage_public_base_url=os.getenv("OBJECT_STORAGE_PUBLIC_BASE_URL"),
             auth_required=os.getenv("AUTH_REQUIRED", "true").lower() in {"1", "true", "yes"},
             viewer_api_key=os.getenv("VIEWER_API_KEY"),
             analyst_api_key=os.getenv("ANALYST_API_KEY"),

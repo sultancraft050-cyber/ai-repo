@@ -146,19 +146,46 @@ export async function searchProducts({
   query,
   category,
   region,
-  limit = 12
+  limit = 12,
+  offset = 0,
+  brand,
+  socket,
+  chipset,
+  memoryType,
+  minPriceSar,
+  maxPriceSar,
+  inStockPricedOnly,
+  sort
 }: {
   query?: string;
   category?: ProductCategory | "";
   region?: string;
   limit?: number;
+  offset?: number;
+  brand?: string;
+  socket?: string;
+  chipset?: string;
+  memoryType?: string;
+  minPriceSar?: number;
+  maxPriceSar?: number;
+  inStockPricedOnly?: boolean;
+  sort?: "recommended" | "cheapest" | "newest" | "name";
 }): Promise<ProductSearchResult[]> {
   const params = new URLSearchParams({
     q: query ?? "",
-    limit: String(limit)
+    limit: String(limit),
+    offset: String(offset)
   });
   if (category) params.set("category", category);
   if (region) params.set("region", region);
+  if (brand) params.set("brand", brand);
+  if (socket) params.set("socket", socket);
+  if (chipset) params.set("chipset", chipset);
+  if (memoryType) params.set("memory_type", memoryType);
+  if (typeof minPriceSar === "number") params.set("min_price_sar", String(minPriceSar));
+  if (typeof maxPriceSar === "number") params.set("max_price_sar", String(maxPriceSar));
+  if (inStockPricedOnly) params.set("in_stock_priced_only", "true");
+  if (sort) params.set("sort", sort);
   return requestJson<ProductSearchResult[]>(`/products/search?${params.toString()}`);
 }
 

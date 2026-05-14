@@ -721,6 +721,10 @@ export type ProductSearchResult = {
   summary_specs?: Record<string, unknown>;
   image_url?: string;
   processed_image_url?: string;
+  seller_count?: number;
+  cheapest_vendor?: string | null;
+  cheapest_price_sar?: number | null;
+  compatibility_tags?: string[];
   data_origin: DataOrigin;
   price_status: PriceStatus;
   flags: string[];

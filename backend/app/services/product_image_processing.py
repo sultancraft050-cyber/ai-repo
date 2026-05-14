@@ -30,11 +30,21 @@ class ProductImageProcessor:
         storage_dir: str,
         public_base_url: str,
         max_bytes: int,
+        object_storage_endpoint: str | None = None,
+        object_storage_bucket: str | None = None,
+        object_storage_access_key: str | None = None,
+        object_storage_secret_key: str | None = None,
+        object_storage_public_base_url: str | None = None,
     ) -> None:
         self.enabled = enabled
         self.storage_dir = Path(storage_dir) if storage_dir else None
         self.public_base_url = public_base_url.rstrip("/")
         self.max_bytes = max_bytes
+        self.object_storage_endpoint = (object_storage_endpoint or "").rstrip("/")
+        self.object_storage_bucket = object_storage_bucket or ""
+        self.object_storage_access_key = object_storage_access_key or ""
+        self.object_storage_secret_key = object_storage_secret_key or ""
+        self.object_storage_public_base_url = (object_storage_public_base_url or "").rstrip("/")
 
     @classmethod
     def from_settings(cls) -> "ProductImageProcessor":
@@ -43,10 +53,17 @@ class ProductImageProcessor:
             storage_dir=settings.processed_image_storage_dir,
             public_base_url=settings.processed_image_public_base_url,
             max_bytes=settings.product_image_max_bytes,
+            object_storage_endpoint=settings.object_storage_endpoint,
+            object_storage_bucket=settings.object_storage_bucket,
+            object_storage_access_key=settings.object_storage_access_key,
+            object_storage_secret_key=settings.object_storage_secret_key,
+            object_storage_public_base_url=settings.object_storage_public_base_url,
         )
 
     def process(self, image_url: str | None, *, canonical_key: str | None = None) -> ProcessedProductImage | None:
-        if not self.enabled or not image_url or not self.storage_dir or not self.public_base_url:
+        has_local_storage = bool(self.storage_dir and self.public_base_url)
+        has_object_storage = self._object_storage_configured()
+        if not self.enabled or not image_url or not (has_local_storage or has_object_storage):
             return None
         if not _is_safe_image_url(image_url):
             return None
@@ -73,20 +90,63 @@ class ProductImageProcessor:
             image = _pad_to_aspect_ratio(image, Image, width=800, height=600)
 
             digest = sha256(f"{canonical_key or ''}:{image_url}".encode("utf-8")).hexdigest()[:24]
-            output_dir = self.storage_dir.resolve()
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"{digest}.png"
-            image.save(output_path, format="PNG", optimize=True)
+            filename = f"{digest}.png"
+            buffer = BytesIO()
+            image.save(buffer, format="PNG", optimize=True)
+            payload = buffer.getvalue()
+            processed_url, storage_path = self._publish_image(filename, payload)
 
             return ProcessedProductImage(
                 source_url=image_url,
-                processed_image_url=f"{self.public_base_url}/{output_path.name}",
-                storage_path=str(output_path),
+                processed_image_url=processed_url,
+                storage_path=storage_path,
                 background_removed=background_removed,
             )
         except Exception as error:  # noqa: BLE001 - bad vendor images should not block ingestion.
             logger.info("product_image_processing_failed reason=%s", type(error).__name__)
             return None
+
+    def _object_storage_configured(self) -> bool:
+        return all(
+            (
+                self.object_storage_endpoint,
+                self.object_storage_bucket,
+                self.object_storage_access_key,
+                self.object_storage_secret_key,
+                self.object_storage_public_base_url,
+            )
+        )
+
+    def _publish_image(self, filename: str, payload: bytes) -> tuple[str, str]:
+        if self._object_storage_configured():
+            try:
+                import boto3
+
+                client = boto3.client(
+                    "s3",
+                    endpoint_url=self.object_storage_endpoint,
+                    aws_access_key_id=self.object_storage_access_key,
+                    aws_secret_access_key=self.object_storage_secret_key,
+                )
+                key = f"products/{filename}"
+                client.put_object(
+                    Bucket=self.object_storage_bucket,
+                    Key=key,
+                    Body=payload,
+                    ContentType="image/png",
+                    CacheControl="public, max-age=31536000, immutable",
+                )
+                return f"{self.object_storage_public_base_url}/{key}", f"s3://{self.object_storage_bucket}/{key}"
+            except Exception as error:  # noqa: BLE001 - fall back to local storage if available.
+                logger.info("product_image_object_storage_skipped reason=%s", type(error).__name__)
+
+        if not self.storage_dir or not self.public_base_url:
+            raise ValueError("processed image storage is not configured")
+        output_dir = self.storage_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / filename
+        output_path.write_bytes(payload)
+        return f"{self.public_base_url}/{filename}", str(output_path)
 
 
 def attach_processed_image(offer: PriceOffer, processor: ProductImageProcessor | None = None) -> PriceOffer:

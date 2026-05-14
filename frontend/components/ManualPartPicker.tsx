@@ -31,7 +31,10 @@ import {
 type ProductMap = Record<ComponentKind, ProductSearchResult[]>;
 type SelectionMap = Partial<Record<ComponentKind, ProductSearchResult>>;
 type CategoryFailures = Partial<Record<ComponentKind, string>>;
+type CategoryLoading = Partial<Record<ComponentKind, boolean>>;
+type CategoryHasMore = Partial<Record<ComponentKind, boolean>>;
 type SortMode = "recommended" | "price_low" | "price_high" | "name";
+const PRODUCT_PAGE_SIZE = 24;
 
 const categoryCopy: Record<ComponentKind, string> = {
   CPU: "Processor",
@@ -59,6 +62,8 @@ function emptyProducts(): ProductMap {
 export function ManualPartPicker() {
   const [products, setProducts] = useState<ProductMap>(emptyProducts);
   const [failures, setFailures] = useState<CategoryFailures>({});
+  const [loadingMore, setLoadingMore] = useState<CategoryLoading>({});
+  const [hasMore, setHasMore] = useState<CategoryHasMore>({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<SelectionMap>({});
   const [activeKind, setActiveKind] = useState<ComponentKind | null>(null);
@@ -106,23 +111,27 @@ export function ManualPartPicker() {
       const results = await Promise.allSettled(
         componentOrder.map(async (kind) => ({
           kind,
-          products: await searchProducts({ category: kind, region: "SA", limit: 100 })
+          products: await searchProducts({ category: kind, region: "SA", limit: PRODUCT_PAGE_SIZE, offset: 0 })
         }))
       );
       if (cancelled) return;
       const next = emptyProducts();
       const nextFailures: CategoryFailures = {};
+      const nextHasMore: CategoryHasMore = {};
       results.forEach((result, index) => {
         const kind = componentOrder[index];
         if (result.status === "fulfilled") {
           next[result.value.kind] = result.value.products;
+          nextHasMore[result.value.kind] = result.value.products.length === PRODUCT_PAGE_SIZE;
         } else {
           const message = result.reason instanceof Error ? result.reason.message : "Unable to load this category.";
           nextFailures[kind] = message;
+          nextHasMore[kind] = false;
         }
       });
       setProducts(next);
       setFailures(nextFailures);
+      setHasMore(nextHasMore);
       setLoading(false);
     }
     loadProducts();
@@ -130,6 +139,32 @@ export function ManualPartPicker() {
       cancelled = true;
     };
   }, []);
+
+  async function loadMoreProducts(kind: ComponentKind) {
+    if (loadingMore[kind] || !hasMore[kind]) return;
+    setLoadingMore((current) => ({ ...current, [kind]: true }));
+    setFailures((current) => ({ ...current, [kind]: undefined }));
+    try {
+      const nextPage = await searchProducts({
+        category: kind,
+        region: "SA",
+        limit: PRODUCT_PAGE_SIZE,
+        offset: products[kind].length
+      });
+      setProducts((current) => ({
+        ...current,
+        [kind]: dedupeProducts([...current[kind], ...nextPage])
+      }));
+      setHasMore((current) => ({ ...current, [kind]: nextPage.length === PRODUCT_PAGE_SIZE }));
+    } catch (error) {
+      setFailures((current) => ({
+        ...current,
+        [kind]: error instanceof Error ? error.message : "Unable to load more products."
+      }));
+    } finally {
+      setLoadingMore((current) => ({ ...current, [kind]: false }));
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -327,10 +362,13 @@ export function ManualPartPicker() {
           buildWattage={compatibility?.total_power_draw_w ?? 0}
           loading={loading}
           failure={failures[activeKind]}
-          onClose={() => setActiveKind(null)}
-          onSelect={(product) => chooseProduct(activeKind, product)}
-        />
-      ) : null}
+            onClose={() => setActiveKind(null)}
+            onSelect={(product) => chooseProduct(activeKind, product)}
+            onLoadMore={() => loadMoreProducts(activeKind)}
+            loadingMore={Boolean(loadingMore[activeKind])}
+            hasMore={Boolean(hasMore[activeKind])}
+          />
+        ) : null}
     </section>
   );
 }
@@ -420,7 +458,10 @@ function ProductPickerModal({
   loading,
   failure,
   onClose,
-  onSelect
+  onSelect,
+  onLoadMore,
+  loadingMore,
+  hasMore
 }: {
   kind: ComponentKind;
   products: ProductSearchResult[];
@@ -431,6 +472,9 @@ function ProductPickerModal({
   failure?: string;
   onClose: () => void;
   onSelect: (product: ProductSearchResult) => void;
+  onLoadMore: () => void;
+  loadingMore: boolean;
+  hasMore: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("recommended");
@@ -609,6 +653,18 @@ function ProductPickerModal({
                 ))}
               </div>
             )}
+            {!failure && !loading && hasMore ? (
+              <div className="mt-4 grid place-items-center">
+                <button
+                  type="button"
+                  onClick={onLoadMore}
+                  disabled={loadingMore}
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-line bg-[#2d2d30] px-4 text-sm font-bold text-white transition hover:border-signal disabled:cursor-wait disabled:opacity-60"
+                >
+                  {loadingMore ? "Loading more..." : "Load more products"}
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -741,6 +797,16 @@ function cheapestProducts(products: ProductSearchResult[]): ProductSearchResult[
   return Array.from(grouped.values());
 }
 
+function dedupeProducts(products: ProductSearchResult[]): ProductSearchResult[] {
+  const seen = new Set<string>();
+  return products.filter((product) => {
+    const key = product.id || product.canonical_key || productIdentityKey(product);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function productIdentityKey(product: ProductSearchResult): string {
   const displayName = displayProductName(product);
   const detectedModel = productModelKey(displayName);
@@ -849,6 +915,11 @@ function shortModelName(name: string, category: string): string {
 function bestSarPrice(product: ProductSearchResult): { amount: number; vendor?: string } | null {
   const candidates = [
     {
+      amount: product.cheapest_price_sar,
+      currency: product.cheapest_price_sar ? "SAR" : undefined,
+      vendor: product.cheapest_vendor
+    },
+    {
       amount: product.current_recommended_price,
       currency: product.current_recommended_currency,
       vendor: product.current_recommended_vendor
@@ -860,7 +931,7 @@ function bestSarPrice(product: ProductSearchResult): { amount: number; vendor?: 
   ];
   const matches = candidates.flatMap((candidate) =>
     typeof candidate.amount === "number" && candidate.amount > 0 && candidate.currency === "SAR"
-      ? [{ amount: candidate.amount, vendor: candidate.vendor }]
+      ? [{ amount: candidate.amount, vendor: candidate.vendor ?? undefined }]
       : []
   );
   const cheapest = matches.sort((left, right) => left.amount - right.amount)[0];

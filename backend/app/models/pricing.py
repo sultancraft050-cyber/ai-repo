@@ -373,6 +373,10 @@ class ProductSearchResult(BaseModel):
     summary_specs: dict[str, Any] = Field(default_factory=dict)
     image_url: str | None = None
     processed_image_url: str | None = None
+    seller_count: int = 0
+    cheapest_vendor: str | None = None
+    cheapest_price_sar: float | None = None
+    compatibility_tags: list[str] = Field(default_factory=list)
     data_origin: DataOrigin = "unknown"
     price_status: PriceStatus = "unavailable"
     flags: list[str] = Field(default_factory=list)

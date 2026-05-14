@@ -30,9 +30,32 @@ def search_products(
     category: str | None = None,
     region: str | None = None,
     limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    brand: str | None = None,
+    socket: str | None = None,
+    chipset: str | None = None,
+    memory_type: str | None = None,
+    min_price_sar: float | None = Query(default=None, ge=0),
+    max_price_sar: float | None = Query(default=None, ge=0),
+    in_stock_priced_only: bool = False,
+    sort: str = Query(default="recommended", pattern="^(recommended|cheapest|newest|name)$"),
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> list[ProductSearchResult]:
-    return repository.search_products(q=q, category=category, region=resolve_market_region(region), limit=limit)
+    return repository.search_products(
+        q=q,
+        category=category,
+        region=resolve_market_region(region),
+        limit=limit,
+        offset=offset,
+        brand=brand,
+        socket=socket,
+        chipset=chipset,
+        memory_type=memory_type,
+        min_price_sar=min_price_sar,
+        max_price_sar=max_price_sar,
+        in_stock_priced_only=in_stock_priced_only,
+        sort=sort,
+    )
 
 
 @router.get("/categories", response_model=ProductCategoryResponse)

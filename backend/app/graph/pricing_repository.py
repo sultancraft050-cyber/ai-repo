@@ -9,6 +9,13 @@ from uuid import uuid4
 from neo4j import Driver
 
 from app.core.config import settings
+from app.models.catalog import (
+    CatalogCategoryCoverage,
+    CatalogCoverageResponse,
+    CatalogFeedImportResponse,
+    CatalogFeedImportRow,
+    CatalogFeedRunView,
+)
 from app.models.pricing import (
     CpuSpecsImportResponse,
     CpuSpecsImportRow,
@@ -33,6 +40,21 @@ from app.services.region_config import get_region_config, normalize_region, vend
 
 ACTIVE_PRICE_AVAILABILITY = {"in_stock", "preorder", "backorder"}
 ACTIVE_BUILD_CATEGORIES = {"CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"}
+CATALOG_CATEGORY_LABELS = {
+    "CPU": "CPU",
+    "GPU": "GPU",
+    "Motherboard": "Motherboard",
+    "RAM": "RAM",
+    "Storage": "Storage",
+    "PSU": "PSU",
+    "Case": "Case",
+    "Cooler": "Cooler",
+    "Monitor": "Monitor",
+    "Keyboard": "Keyboard",
+    "Mouse": "Mouse",
+    "Speaker": "Speaker",
+    "Accessories": "Accessories",
+}
 
 
 def _refresh_priority_for_category(category: str) -> int:
@@ -55,6 +77,29 @@ def _clean_properties(values: dict[str, Any]) -> dict[str, Any]:
         else:
             clean[key] = json.dumps(value, sort_keys=True)
     return clean
+
+
+def _category_label(category: str | None) -> str:
+    return CATALOG_CATEGORY_LABELS.get(str(category or "").strip(), "Accessories")
+
+
+def _catalog_canonical_key(category: str, name: str, brand: str | None, model: str | None) -> str:
+    parts = [category, brand or _brand_from_name(name) or "UNKNOWN", model or name]
+    normalized = [
+        re.sub(r"[^A-Z0-9]+", "_", str(part).upper()).strip("_")
+        for part in parts
+        if str(part).strip()
+    ]
+    return "|".join(normalized)
+
+
+def _brand_from_name(name: str) -> str | None:
+    match = re.search(
+        r"\b(AMD|Intel|NVIDIA|ASUS|MSI|Gigabyte|Corsair|Kingston|Samsung|WD|Crucial|DeepCool|NZXT|Seasonic|Thermalright|Cooler Master)\b",
+        name,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1) if match else None
 
 
 def _product_properties(identity: ProductIdentity) -> dict[str, Any]:
@@ -187,6 +232,10 @@ def _search_result(data: dict[str, Any]) -> ProductSearchResult:
         summary_specs=dict(data.get("summary_specs") or {}),
         image_url=data.get("image_url"),
         processed_image_url=data.get("processed_image_url"),
+        seller_count=int(data.get("seller_count") or 0),
+        cheapest_vendor=data.get("cheapest_vendor"),
+        cheapest_price_sar=_optional_float(data.get("cheapest_price_sar")),
+        compatibility_tags=list(data.get("compatibility_tags") or []),
         data_origin=data.get("data_origin") or "unknown",
         price_status=data.get("price_status") or "unavailable",
         flags=list(data.get("flags") or []),
@@ -637,6 +686,9 @@ def _price_rollups(prices: list[PriceSnapshotView], *, region: str | None = None
         flags.append("recommended_saudi_buy")
     return {
         "price_status": price_status,
+        "seller_count": len({price.vendor_id for price in active}),
+        "cheapest_vendor": low.get("vendor"),
+        "cheapest_price_sar": low.get("price") if low.get("currency") == "SAR" else None,
         "region": config.region_code,
         "region_currency": config.currency,
         "region_price_status": price_status,
@@ -723,12 +775,100 @@ def _price_confidence(price: PriceSnapshotView | None) -> float | None:
 
 def _finalize_search_data(data: dict[str, Any], rollups: dict[str, Any]) -> dict[str, Any]:
     data = {**data, **rollups}
+    data["compatibility_tags"] = _compatibility_tags(data.get("category"), data.get("summary_specs") or {})
     seed_without_price = not data.get("canonical_key") and data["price_status"] == "unavailable"
     data["data_origin"] = data.get("data_origin") or ("seed" if seed_without_price else "live")
     if seed_without_price:
         data["stale"] = True
         data["flags"] = list(dict.fromkeys([*(data.get("flags") or []), "stale_seed_product"]))
     return data
+
+
+def _compatibility_tags(category: str | None, specs: dict[str, Any]) -> list[str]:
+    tags: list[str] = []
+    category = str(category or "")
+    for key in ("socket", "chipset", "memory_type", "form_factor", "efficiency_rating"):
+        value = specs.get(key)
+        if isinstance(value, str) and value.strip():
+            tags.append(value.strip())
+    if category == "CPU" and specs.get("tdp_w"):
+        tags.append(f"{specs['tdp_w']}W TDP")
+    if category == "RAM":
+        capacity = specs.get("capacity_gb")
+        speed = specs.get("speed_mhz") or specs.get("speed_mt_s")
+        if capacity:
+            tags.append(f"{capacity}GB")
+        if speed:
+            tags.append(f"{speed}MT/s")
+    if category == "Storage":
+        capacity = specs.get("capacity_gb")
+        interface = specs.get("interface")
+        if capacity:
+            tags.append(f"{capacity}GB")
+        if interface:
+            tags.append(str(interface))
+    if category == "PSU":
+        wattage = specs.get("wattage_w") or specs.get("wattage")
+        if wattage:
+            tags.append(f"{wattage}W")
+    return list(dict.fromkeys(tags[:8]))
+
+
+def _form_factors_for_category(category: str, specs: dict[str, Any]) -> list[str]:
+    if category == "Motherboard":
+        return [str(specs.get("form_factor") or "").strip()]
+    if category == "Case":
+        values = specs.get("supported_motherboard_form_factors") or specs.get("supported_form_factors") or []
+        if isinstance(values, str):
+            values = re.split(r"[,/|]", values)
+        if isinstance(values, list):
+            return [str(value).strip() for value in values if str(value).strip()]
+    return []
+
+
+def _catalog_product_properties(row: CatalogFeedImportRow, category: str, source_name: str) -> dict[str, Any]:
+    brand = row.brand or _brand_from_name(row.name)
+    props: dict[str, Any] = {
+        "name": row.name,
+        "brand": brand,
+        "category": category,
+        "model": row.model,
+        "normalized_model": row.model,
+        "data_origin": "spec_feed",
+        "spec_source_name": source_name,
+        "spec_source_type": "catalog_feed",
+        "spec_updated_at": datetime.now(UTC),
+        "imageUrl": row.image_url,
+        "image_url": row.image_url,
+        "processed_image_url": row.processed_image_url,
+    }
+    for key, value in row.specs.items():
+        props[f"spec_{key}"] = value
+    return _clean_properties(props)
+
+
+def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
+    required = {
+        "CPU": ("spec_socket", "spec_cores", "spec_threads"),
+        "Motherboard": ("spec_socket", "spec_memory_type", "spec_form_factor"),
+        "RAM": ("spec_memory_type", "spec_capacity_gb"),
+        "Storage": ("spec_capacity_gb", "spec_interface"),
+        "PSU": ("spec_wattage_w", "spec_efficiency_rating"),
+        "Case": ("spec_supported_motherboard_form_factors",),
+        "Cooler": ("spec_cooler_type",),
+        "GPU": (),
+    }.get(category, ())
+    return all(props.get(key) not in (None, "", []) for key in required)
+
+
+def _coverage_next_action(category: str, priced_count: int, missing_specs: int, stale_count: int) -> str:
+    if priced_count == 0:
+        return f"Add trusted Saudi product URLs or structured price rows for {category}."
+    if missing_specs:
+        return f"Import compatibility-grade specs for {missing_specs} {category} product(s)."
+    if stale_count:
+        return f"Refresh approved known URLs for {category} to reduce stale prices."
+    return "Keep normal price refresh monitoring."
 
 
 def _search_sort_key(product: ProductSearchResult) -> tuple[int, float, float, str]:
@@ -744,6 +884,35 @@ def _search_sort_key(product: ProductSearchResult) -> tuple[int, float, float, s
     canonical_penalty = _canonical_search_penalty(product)
     price = product.current_recommended_price or product.lowest_market_price or float("inf")
     return bucket, canonical_penalty, price, product.name.lower()
+
+
+def _search_product_sort_key(product: ProductSearchResult, sort: str) -> tuple[Any, ...]:
+    price = product.cheapest_price_sar or product.current_recommended_price or product.lowest_market_price
+    if sort == "cheapest":
+        return (price is None, price or float("inf"), product.name.lower())
+    if sort == "newest":
+        timestamp = product.current_price_timestamp.timestamp() if product.current_price_timestamp else 0
+        return (-timestamp, product.name.lower())
+    if sort == "name":
+        return (product.name.lower(),)
+    return _search_sort_key(product)
+
+
+def _search_product_filter(
+    product: ProductSearchResult,
+    *,
+    min_price_sar: float | None,
+    max_price_sar: float | None,
+    in_stock_priced_only: bool,
+) -> bool:
+    price = product.cheapest_price_sar or product.current_recommended_price or product.lowest_market_price
+    if in_stock_priced_only and price is None:
+        return False
+    if min_price_sar is not None and (price is None or price < min_price_sar):
+        return False
+    if max_price_sar is not None and (price is None or price > max_price_sar):
+        return False
+    return True
 
 
 def _canonical_search_penalty(product: ProductSearchResult) -> float:
@@ -948,6 +1117,12 @@ class Neo4jPricingRepository:
             "FOR (n:Product) REQUIRE n.canonical_key IS UNIQUE",
             "CREATE CONSTRAINT brand_name IF NOT EXISTS FOR (n:Brand) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT socket_name IF NOT EXISTS FOR (n:Socket) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT memory_type_name IF NOT EXISTS FOR (n:MemoryType) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT chipset_name IF NOT EXISTS FOR (n:Chipset) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT form_factor_name IF NOT EXISTS FOR (n:FormFactor) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT efficiency_rating_name IF NOT EXISTS FOR (n:EfficiencyRating) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT product_family_key IF NOT EXISTS FOR (n:ProductFamily) REQUIRE n.family_key IS UNIQUE",
+            "CREATE CONSTRAINT catalog_feed_run_id IF NOT EXISTS FOR (n:CatalogFeedRun) REQUIRE n.run_id IS UNIQUE",
             "CREATE CONSTRAINT vendor_id IF NOT EXISTS FOR (n:Vendor) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT price_snapshot_id IF NOT EXISTS "
             "FOR (n:PriceSnapshot) REQUIRE n.id IS UNIQUE",
@@ -1262,6 +1437,12 @@ class Neo4jPricingRepository:
             database_=settings.neo4j_database,
         )
         self._upsert_gpu_family_link(product_id, offer.product.specs)
+        self._apply_catalog_shape(
+            product_id=product_id,
+            category=offer.product.category,
+            brand=offer.product.brand,
+            specs=offer.product.specs,
+        )
         self._upsert_cpu_family_link(product_id, offer.product.specs)
         self._upsert_storage_family_link(product_id, offer.product.specs)
         self._upsert_ram_family_link(product_id, offer.product.specs)
@@ -1443,6 +1624,103 @@ class Neo4jPricingRepository:
             family_key=family_key,
             family_name=specs.get("gpu_family_name") or family_key,
             chipset=specs.get("chipset"),
+            database_=settings.neo4j_database,
+        )
+
+    def _apply_catalog_shape(
+        self,
+        *,
+        product_id: str,
+        category: str,
+        brand: str | None,
+        specs: dict[str, Any],
+    ) -> None:
+        label = _category_label(category)
+        self.driver.execute_query(
+            f"""
+            MATCH (p:Product {{id: $product_id}})
+            SET p:{label}
+            WITH p
+            CALL {{
+              WITH p
+              WITH p WHERE $brand IS NOT NULL
+              MERGE (brand:Brand {{name: $brand}})
+              SET brand.normalized_name = toUpper($brand),
+                  brand.updated_at = datetime()
+              MERGE (p)-[:MADE_BY]->(brand)
+              RETURN count(*) AS brand_count
+            }}
+            WITH p
+            CALL {{
+              WITH p
+              WITH p WHERE $cpu_socket IS NOT NULL
+              MERGE (socket:Socket {{name: $cpu_socket}})
+              SET socket.normalized_name = $cpu_socket,
+                  socket.updated_at = datetime()
+              MERGE (p)-[:REQUIRES_SOCKET]->(socket)
+              RETURN count(*) AS cpu_socket_count
+            }}
+            WITH p
+            CALL {{
+              WITH p
+              WITH p WHERE $board_socket IS NOT NULL
+              MERGE (socket:Socket {{name: $board_socket}})
+              SET socket.normalized_name = $board_socket,
+                  socket.updated_at = datetime()
+              MERGE (p)-[:HAS_SOCKET]->(socket)
+              RETURN count(*) AS board_socket_count
+            }}
+            WITH p
+            CALL {{
+              WITH p
+              WITH p WHERE $memory_type IS NOT NULL
+              MERGE (memory:MemoryType {{name: $memory_type}})
+              SET memory.normalized_name = $memory_type,
+                  memory.updated_at = datetime()
+              MERGE (p)-[:SUPPORTS_MEMORY]->(memory)
+              RETURN count(*) AS memory_count
+            }}
+            WITH p
+            CALL {{
+              WITH p
+              WITH p WHERE $chipset IS NOT NULL
+              MERGE (chipset:Chipset {{name: $chipset}})
+              SET chipset.normalized_name = $chipset,
+                  chipset.updated_at = datetime()
+              MERGE (p)-[:HAS_CHIPSET]->(chipset)
+              RETURN count(*) AS chipset_count
+            }}
+            WITH p
+            CALL {{
+              WITH p
+              UNWIND $form_factors AS factor
+              WITH p, factor WHERE factor IS NOT NULL AND factor <> ""
+              MERGE (form:FormFactor {{name: factor}})
+              SET form.normalized_name = factor,
+                  form.updated_at = datetime()
+              MERGE (p)-[:SUPPORTS_FORM_FACTOR]->(form)
+              RETURN count(*) AS form_count
+            }}
+            WITH p
+            CALL {{
+              WITH p
+              WITH p WHERE $efficiency_rating IS NOT NULL
+              MERGE (eff:EfficiencyRating {{name: $efficiency_rating}})
+              SET eff.normalized_name = $efficiency_rating,
+                  eff.updated_at = datetime()
+              MERGE (p)-[:HAS_EFFICIENCY_RATING]->(eff)
+              RETURN count(*) AS efficiency_count
+            }}
+            RETURN p.id AS id
+            """,
+            product_id=product_id,
+            brand=brand,
+            cpu_socket=specs.get("socket") if category == "CPU" else None,
+            board_socket=specs.get("socket") if category == "Motherboard" else None,
+            memory_type=specs.get("memory_type"),
+            chipset=specs.get("chipset"),
+            form_factors=_form_factors_for_category(category, specs),
+            efficiency_rating=specs.get("efficiency_rating"),
             database_=settings.neo4j_database,
         )
 
@@ -1745,6 +2023,292 @@ class Neo4jPricingRepository:
             dry_run=dry_run,
         )
 
+    def import_catalog_feed(
+        self,
+        *,
+        rows: list[CatalogFeedImportRow],
+        source_name: str,
+        category: str,
+        region: str = "SA",
+        dry_run: bool = True,
+    ) -> CatalogFeedImportResponse:
+        region = normalize_region(region)
+        run_id = f"feed-{uuid4()}"
+        imported = 0
+        updated = 0
+        skipped = 0
+        failed = 0
+        sanitized_error: str | None = None
+        if dry_run:
+            return CatalogFeedImportResponse(
+                run_id=run_id,
+                source_name=source_name,
+                category=category,
+                region=region,
+                dry_run=True,
+                status="dry_run",
+                imported_count=len(rows),
+                updated_count=0,
+                skipped_count=0,
+                failed_count=0,
+            )
+
+        self._record_catalog_feed_run(
+            run_id=run_id,
+            source_name=source_name,
+            category=category,
+            region=region,
+            dry_run=False,
+            status="running",
+            imported=0,
+            updated=0,
+            skipped=0,
+            failed=0,
+            sanitized_error=None,
+            finished=False,
+        )
+        for row in rows:
+            try:
+                row_category = row.category or category
+                canonical_key = row.canonical_key or _catalog_canonical_key(
+                    row_category,
+                    row.name,
+                    row.brand,
+                    row.model,
+                )
+                props = _catalog_product_properties(row, row_category, source_name)
+                label = _category_label(row_category)
+                records, _, _ = self.driver.execute_query(
+                    f"""
+                    MERGE (p:Product {{canonical_key: $canonical_key}})
+                    ON CREATE SET p.id = $product_id,
+                                  p.created_at = datetime(),
+                                  p._catalog_feed_created = true
+                    ON MATCH SET p._catalog_feed_created = false
+                    SET p:{label},
+                        p += $properties,
+                        p.updated_at = datetime()
+                    WITH p, coalesce(p._catalog_feed_created, false) AS created
+                    REMOVE p._catalog_feed_created
+                    RETURN p.id AS id, created
+                    """,
+                    canonical_key=canonical_key,
+                    product_id=f"catalog:{canonical_key}",
+                    properties=props,
+                    database_=settings.neo4j_database,
+                )
+                product_id = str(records[0]["id"])
+                if records[0]["created"]:
+                    imported += 1
+                else:
+                    updated += 1
+                self._apply_catalog_shape(
+                    product_id=product_id,
+                    category=row_category,
+                    brand=row.brand or _brand_from_name(row.name),
+                    specs=row.specs,
+                )
+                self._upsert_product_family(product_id, row_category, row.specs, canonical_key)
+            except Exception as error:  # noqa: BLE001 - one bad row should not stop the feed.
+                failed += 1
+                sanitized_error = type(error).__name__
+        status = "completed" if failed == 0 else "completed_with_errors"
+        self._record_catalog_feed_run(
+            run_id=run_id,
+            source_name=source_name,
+            category=category,
+            region=region,
+            dry_run=False,
+            status=status,
+            imported=imported,
+            updated=updated,
+            skipped=skipped,
+            failed=failed,
+            sanitized_error=sanitized_error,
+            finished=True,
+        )
+        return CatalogFeedImportResponse(
+            run_id=run_id,
+            source_name=source_name,
+            category=category,
+            region=region,
+            dry_run=False,
+            status=status,
+            imported_count=imported,
+            updated_count=updated,
+            skipped_count=skipped,
+            failed_count=failed,
+            sanitized_error=sanitized_error,
+        )
+
+    def catalog_feed_runs(self, *, limit: int = 50) -> list[CatalogFeedRunView]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (run:CatalogFeedRun)
+            RETURN run.run_id AS run_id,
+                   run.source_name AS source_name,
+                   run.category AS category,
+                   run.region AS region,
+                   run.status AS status,
+                   coalesce(run.imported_count, 0) AS imported_count,
+                   coalesce(run.updated_count, 0) AS updated_count,
+                   coalesce(run.skipped_count, 0) AS skipped_count,
+                   coalesce(run.failed_count, 0) AS failed_count,
+                   coalesce(run.dry_run, false) AS dry_run,
+                   run.started_at AS started_at,
+                   run.finished_at AS finished_at,
+                   run.sanitized_error AS sanitized_error
+            ORDER BY coalesce(run.finished_at, run.started_at, datetime("1970-01-01T00:00:00Z")) DESC
+            LIMIT $limit
+            """,
+            limit=limit,
+            database_=settings.neo4j_database,
+        )
+        runs: list[CatalogFeedRunView] = []
+        for record in records:
+            data = record.data()
+            data["started_at"] = _to_datetime(data.get("started_at")) if data.get("started_at") else None
+            data["finished_at"] = _to_datetime(data.get("finished_at")) if data.get("finished_at") else None
+            runs.append(CatalogFeedRunView(**data))
+        return runs
+
+    def _record_catalog_feed_run(
+        self,
+        *,
+        run_id: str,
+        source_name: str,
+        category: str,
+        region: str,
+        dry_run: bool,
+        status: str,
+        imported: int,
+        updated: int,
+        skipped: int,
+        failed: int,
+        sanitized_error: str | None,
+        finished: bool,
+    ) -> None:
+        self.driver.execute_query(
+            """
+            MERGE (run:CatalogFeedRun {run_id: $run_id})
+            ON CREATE SET run.started_at = datetime()
+            SET run.source_name = $source_name,
+                run.category = $category,
+                run.region = $region,
+                run.dry_run = $dry_run,
+                run.status = $status,
+                run.imported_count = $imported,
+                run.updated_count = $updated,
+                run.skipped_count = $skipped,
+                run.failed_count = $failed,
+                run.sanitized_error = $sanitized_error,
+                run.finished_at = CASE WHEN $finished THEN datetime() ELSE run.finished_at END
+            """,
+            run_id=run_id,
+            source_name=source_name,
+            category=category,
+            region=region,
+            dry_run=dry_run,
+            status=status,
+            imported=imported,
+            updated=updated,
+            skipped=skipped,
+            failed=failed,
+            sanitized_error=sanitized_error,
+            finished=finished,
+            database_=settings.neo4j_database,
+        )
+
+    def _upsert_product_family(self, product_id: str, category: str, specs: dict[str, Any], canonical_key: str) -> None:
+        family_key = specs.get("product_family_key") or specs.get("family_key") or canonical_key
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (family:ProductFamily {family_key: $family_key})
+            SET family.name = $family_name,
+                family.category = $category,
+                family.updated_at = datetime()
+            MERGE (p)-[:VARIANT_OF]->(family)
+            """,
+            product_id=product_id,
+            family_key=str(family_key),
+            family_name=specs.get("product_family_name") or str(family_key).replace("_", " "),
+            category=category,
+            database_=settings.neo4j_database,
+        )
+
+    def catalog_coverage(self, *, region: str = "SA") -> CatalogCoverageResponse:
+        region = normalize_region(region)
+        categories = list(ACTIVE_BUILD_CATEGORIES)
+        records, _, _ = self.driver.execute_query(
+            """
+            UNWIND $categories AS category
+            OPTIONAL MATCH (p:Product)
+            WHERE p.category = category OR category IN labels(p)
+            OPTIONAL MATCH (p)-[:HAS_PRICE]->(price:PriceSnapshot)
+            WHERE price.region = $region AND price.accepted = true
+            WITH category, p, collect(DISTINCT price) AS product_prices
+            WITH category,
+                 collect({
+                   props: CASE WHEN p IS NULL THEN null ELSE properties(p) END,
+                   key: CASE WHEN p IS NULL THEN null ELSE coalesce(p.canonical_key, p.id) END,
+                   priced: size([price IN product_prices WHERE price IS NOT NULL]) > 0,
+                   missing_image: CASE WHEN p IS NULL THEN false ELSE p.processed_image_url IS NULL END
+                 }) AS product_rows,
+                 sum(size([price IN product_prices WHERE price IS NOT NULL AND coalesce(price.marketplace_risk_score, 0.5) < 0.45])) AS trusted_listing_count,
+                 sum(size([price IN product_prices WHERE price IS NOT NULL AND coalesce(price.stale, false) = true])) AS stale_listing_count
+            RETURN category,
+                   [row IN product_rows WHERE row.props IS NOT NULL | row.props] AS product_properties,
+                   size([row IN product_rows WHERE row.props IS NOT NULL]) AS product_count,
+                   size([row IN product_rows WHERE row.props IS NOT NULL AND row.priced]) AS priced_product_count,
+                   trusted_listing_count,
+                   stale_listing_count,
+                   size([row IN product_rows WHERE row.props IS NOT NULL AND row.missing_image]) AS missing_processed_image_count,
+                   [row IN product_rows WHERE row.key IS NOT NULL | row.key] AS identity_keys
+            ORDER BY category
+            """,
+            categories=categories,
+            region=region,
+            database_=settings.neo4j_database,
+        )
+        coverage: list[CatalogCategoryCoverage] = []
+        for record in records:
+            data = record.data()
+            product_count = int(data["product_count"] or 0)
+            priced_count = int(data["priced_product_count"] or 0)
+            product_properties = list(data.get("product_properties") or [])
+            missing_specs = sum(
+                1
+                for props in product_properties
+                if not _catalog_has_required_specs(str(data["category"]), dict(props or {}))
+            )
+            stale_count = int(data["stale_listing_count"] or 0)
+            identity_keys = [str(key) for key in data.get("identity_keys") or [] if key]
+            duplicate_risk = len(identity_keys) - len(set(identity_keys))
+            readiness = "ready" if priced_count >= 2 and missing_specs == 0 else "usable_with_warnings" if priced_count >= 1 else "not_ready"
+            coverage.append(
+                CatalogCategoryCoverage(
+                    category=str(data["category"]),
+                    product_count=product_count,
+                    priced_product_count=priced_count,
+                    trusted_listing_count=int(data["trusted_listing_count"] or 0),
+                    stale_listing_count=stale_count,
+                    missing_processed_image_count=int(data["missing_processed_image_count"] or 0),
+                    missing_compatibility_spec_count=missing_specs,
+                    duplicate_risk_count=max(0, duplicate_risk),
+                    readiness_level=readiness,
+                    next_best_action=_coverage_next_action(str(data["category"]), priced_count, missing_specs, stale_count),
+                )
+            )
+        return CatalogCoverageResponse(
+            region=region,
+            category_count=len(coverage),
+            product_count=sum(item.product_count for item in coverage),
+            priced_product_count=sum(item.priced_product_count for item in coverage),
+            stale_listing_count=sum(item.stale_listing_count for item in coverage),
+            categories=coverage,
+        )
+
     def search_products(
         self,
         *,
@@ -1752,9 +2316,18 @@ class Neo4jPricingRepository:
         category: str | None = None,
         region: str | None = None,
         limit: int = 25,
+        offset: int = 0,
+        brand: str | None = None,
+        socket: str | None = None,
+        chipset: str | None = None,
+        memory_type: str | None = None,
+        min_price_sar: float | None = None,
+        max_price_sar: float | None = None,
+        in_stock_priced_only: bool = False,
+        sort: str = "recommended",
     ) -> list[ProductSearchResult]:
         region = normalize_region(region)
-        candidate_limit = min(max(limit * 4, 50), 250)
+        candidate_limit = min(max((limit + offset) * 5, 100), 1000)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p)
@@ -1766,6 +2339,10 @@ class Neo4jPricingRepository:
                 OR toLower(coalesce(p.brand, "")) CONTAINS toLower($q)
                 OR toLower(coalesce(p.model, "")) CONTAINS toLower($q)
               )
+              AND ($brand IS NULL OR toLower(coalesce(p.brand, "")) = toLower($brand))
+              AND ($socket IS NULL OR toLower(coalesce(p.spec_socket, "")) = toLower($socket))
+              AND ($chipset IS NULL OR toLower(coalesce(p.spec_chipset, "")) = toLower($chipset))
+              AND ($memory_type IS NULL OR toLower(coalesce(p.spec_memory_type, "")) = toLower($memory_type))
             OPTIONAL MATCH (p)-[:HAS_PRICE]->(s:PriceSnapshot)
             WHERE (s IS NULL OR s.region = $region OR ($region = "US" AND s.region IS NULL))
             WITH p, s
@@ -1785,7 +2362,16 @@ class Neo4jPricingRepository:
                      boost_clock_ghz: coalesce(p.spec_boost_clock_ghz, p.spec_boost_clock),
                      process_nm: p.spec_process_nm,
                      l3_cache_mb: p.spec_l3_cache_mb,
-                     tdp_w: coalesce(p.spec_tdp_w, p.spec_tdp)
+                     tdp_w: coalesce(p.spec_tdp_w, p.spec_tdp),
+                     chipset: p.spec_chipset,
+                     memory_type: p.spec_memory_type,
+                     form_factor: p.spec_form_factor,
+                     capacity_gb: p.spec_capacity_gb,
+                     speed_mhz: coalesce(p.spec_speed_mhz, p.spec_speed_mt_s),
+                     speed_mt_s: p.spec_speed_mt_s,
+                     interface: p.spec_interface,
+                     wattage_w: coalesce(p.spec_wattage_w, p.spec_wattage),
+                     efficiency_rating: p.spec_efficiency_rating
                    } AS summary_specs,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
                    p.processed_image_url AS processed_image_url,
@@ -1801,6 +2387,10 @@ class Neo4jPricingRepository:
             q=q,
             category=category,
             region=region,
+            brand=brand,
+            socket=socket,
+            chipset=chipset,
+            memory_type=memory_type,
             candidate_limit=candidate_limit,
             database_=settings.neo4j_database,
         )
@@ -1812,7 +2402,17 @@ class Neo4jPricingRepository:
             products.append(_search_result(_finalize_search_data(data, rollups)))
         if category == "CPU":
             products = _cpu_product_first_results(products)
-        return sorted(products, key=_search_sort_key)[:limit]
+        products = [
+            product
+            for product in products
+            if _search_product_filter(
+                product,
+                min_price_sar=min_price_sar,
+                max_price_sar=max_price_sar,
+                in_stock_priced_only=in_stock_priced_only,
+            )
+        ]
+        return sorted(products, key=lambda product: _search_product_sort_key(product, sort))[offset : offset + limit]
 
     def product_categories(self) -> list[str]:
         records, _, _ = self.driver.execute_query(

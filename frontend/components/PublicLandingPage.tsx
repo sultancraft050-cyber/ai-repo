@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { ArrowRight, CheckCircle2, MessageSquare, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, Cpu, MessageSquare, ShieldCheck, Wand2 } from "lucide-react";
 import { recordAnalyticsEvent, submitFeedback } from "@/lib/api";
 import { getGuestId } from "@/lib/userSession";
 import type { FeedbackSubmissionResponse, FeedbackType } from "@/types/builder";
@@ -73,20 +73,20 @@ export function PublicLandingPage() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <a
+              <div className="grid gap-3 sm:grid-cols-2">
+                <PathCard
+                  title="Generate a build for me"
+                  text="Best for normal buyers. Enter budget, game target, and resolution."
                   href="/build/generate"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-4 text-sm font-semibold text-slate-950"
-                >
-                  Start Building
-                  <ArrowRight size={16} aria-hidden />
-                </a>
-                <a
+                  primary
+                  icon={<Wand2 size={18} aria-hidden />}
+                />
+                <PathCard
+                  title="Pick every part myself"
+                  text="Expert mode with manual product picking, wattage, FPS, and compatibility."
                   href="/build/manual"
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-line bg-panel px-4 text-sm font-semibold text-ink"
-                >
-                  Pick Parts Myself
-                </a>
+                  icon={<Cpu size={18} aria-hidden />}
+                />
               </div>
 
               <div className="grid gap-2 text-sm text-muted sm:grid-cols-3">
@@ -98,9 +98,8 @@ export function PublicLandingPage() {
 
             <div className="grid gap-3">
               <Hero3DScene />
-              <div className="grid gap-3 sm:grid-cols-3">
-                <QuickStartCard title="Generate a build" text="Fastest path for normal buyers." href="/build/generate" />
-                <QuickStartCard title="Pick every part" text="Manual control with final wattage and FPS." href="/build/manual" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <QuickStartCard title="6000 SAR 1440p Gaming" text="Open the auto builder with the common Saudi starter target." href="/build/generate" />
                 <button
                   type="button"
                   onClick={() => setFeedbackOpen((open) => !open)}
@@ -172,6 +171,36 @@ function TrustPoint({ children }: { children: ReactNode }) {
       <CheckCircle2 size={15} className="shrink-0 text-signal" aria-hidden />
       <span>{children}</span>
     </div>
+  );
+}
+
+function PathCard({
+  title,
+  text,
+  href,
+  icon,
+  primary = false
+}: {
+  title: string;
+  text: string;
+  href: string;
+  icon: ReactNode;
+  primary?: boolean;
+}) {
+  return (
+    <a
+      href={href}
+      className={`group rounded-lg border p-4 transition hover:-translate-y-0.5 ${
+        primary ? "border-signal bg-signal text-slate-950" : "border-line bg-panel text-ink hover:border-signal"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="grid h-9 w-9 place-items-center rounded-md bg-black/10">{icon}</span>
+        <ArrowRight size={16} className="transition group-hover:translate-x-0.5" aria-hidden />
+      </div>
+      <div className="mt-4 text-base font-semibold">{title}</div>
+      <p className={`mt-1 text-sm leading-6 ${primary ? "text-slate-900/75" : "text-muted"}`}>{text}</p>
+    </a>
   );
 }
 
