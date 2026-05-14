@@ -942,6 +942,8 @@ class Neo4jPricingRepository:
         statements = [
             "CREATE CONSTRAINT product_canonical_key IF NOT EXISTS "
             "FOR (n:Product) REQUIRE n.canonical_key IS UNIQUE",
+            "CREATE CONSTRAINT brand_name IF NOT EXISTS FOR (n:Brand) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT socket_name IF NOT EXISTS FOR (n:Socket) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT vendor_id IF NOT EXISTS FOR (n:Vendor) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT price_snapshot_id IF NOT EXISTS "
             "FOR (n:PriceSnapshot) REQUIRE n.id IS UNIQUE",
@@ -1683,6 +1685,21 @@ class Neo4jPricingRepository:
                     p.image_url = coalesce(p.image_url, $image_url),
                     p.updated_at = datetime()
                 WITH p
+                MERGE (brand:Brand {name: $brand})
+                SET brand.normalized_name = $brand_key,
+                    brand.updated_at = datetime()
+                MERGE (p)-[:MADE_BY]->(brand)
+                WITH p
+                CALL {
+                    WITH p
+                    WITH p WHERE $socket IS NOT NULL
+                    MERGE (socket:Socket {name: $socket})
+                    SET socket.normalized_name = $socket,
+                        socket.updated_at = datetime()
+                    MERGE (p)-[:REQUIRES_SOCKET]->(socket)
+                    RETURN count(*) AS socket_relationship_count
+                }
+                WITH p
                 UNWIND $evidence AS evidence
                 MERGE (field:FieldEvidence {id: evidence.id})
                 SET field.field = evidence.field,
@@ -1699,6 +1716,7 @@ class Neo4jPricingRepository:
                 product_id=f"cpu-spec:{normalized.canonical_key}",
                 name=normalized.name,
                 brand=normalized.brand,
+                brand_key=normalized.brand.upper(),
                 model=normalized.model,
                 source_name=source_name,
                 socket=normalized.summary_specs.get("socket"),

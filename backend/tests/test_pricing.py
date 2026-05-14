@@ -41,7 +41,13 @@ from app.services.pricing_normalization import (
 from app.services.pricing_quality import PriceQualityValidator
 from app.services import pricing_sources
 from app.services.pricing_sources import SerpApiShoppingSource
-from app.graph.pricing_repository import _cpu_product_first_results, _price_rollups, _search_result, _search_sort_key
+from app.graph.pricing_repository import (
+    Neo4jPricingRepository,
+    _cpu_product_first_results,
+    _price_rollups,
+    _search_result,
+    _search_sort_key,
+)
 from app.graph.pricing_repository import _cpu_specs_import_product
 
 
@@ -1739,6 +1745,53 @@ def test_cpu_specs_import_supports_wider_cpu_names(name: str, canonical_key: str
 
     assert product is not None
     assert product.canonical_key == canonical_key
+
+
+class _CaptureDriver:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def execute_query(self, query: str, **params: object):
+        self.calls.append((query, params))
+        return [{"id": params.get("product_id", "ok")}], None, None
+
+
+def test_cpu_specs_import_links_brand_and_socket_nodes() -> None:
+    driver = _CaptureDriver()
+
+    response = Neo4jPricingRepository(driver).import_cpu_specs(
+        rows=[
+            CpuSpecsImportRow(
+                name="Ryzen 7 7800X3D",
+                cores_threads="8 / 16",
+                clock="4.2 to 5 GHz",
+                socket="Socket AM5",
+                process="5 nm",
+                l3_cache="96 MB",
+                tdp="120 W",
+            )
+        ],
+        dry_run=False,
+    )
+
+    assert response.imported_count == 1
+    query, params = driver.calls[0]
+    assert "MERGE (brand:Brand {name: $brand})" in query
+    assert "MERGE (p)-[:MADE_BY]->(brand)" in query
+    assert "MERGE (socket:Socket {name: $socket})" in query
+    assert "MERGE (p)-[:REQUIRES_SOCKET]->(socket)" in query
+    assert params["brand"] == "AMD"
+    assert params["socket"] == "AM5"
+
+
+def test_pricing_schema_includes_brand_and_socket_constraints() -> None:
+    driver = _CaptureDriver()
+
+    Neo4jPricingRepository(driver).apply_schema()
+    statements = "\n".join(query for query, _ in driver.calls)
+
+    assert "CREATE CONSTRAINT brand_name IF NOT EXISTS" in statements
+    assert "CREATE CONSTRAINT socket_name IF NOT EXISTS" in statements
 
 
 def test_saudi_trusted_local_listing_can_be_recommended_with_uncertainty() -> None:
