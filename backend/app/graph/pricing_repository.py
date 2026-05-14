@@ -807,6 +807,7 @@ def _cpu_display_name(key: str) -> str:
     model_text = model_text.replace(" Max ", " Max+ ")
     model_text = model_text.replace(" Hx ", " HX ")
     model_text = model_text.replace(" Pro ", " PRO ")
+    model_text = model_text.replace("Fx ", "FX ")
     for token in ("X3D", "XT", "X", "K", "F"):
         model_text = model_text.replace(token.title(), token)
     return f"{brand} {model_text}".strip()
