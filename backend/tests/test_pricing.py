@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import os
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from pydantic import ValidationError
 
 from app.main import _audit_metadata
@@ -1707,6 +1708,37 @@ def test_techpowerup_cpu_specs_import_ignores_codename_and_released() -> None:
     }
     assert "codename" not in product.summary_specs
     assert "released" not in product.summary_specs
+
+
+@pytest.mark.parametrize(
+    ("name", "canonical_key"),
+    [
+        ("Core Ultra 7 270K Plus", "CPU|INTEL|CORE_ULTRA_7_270K_PLUS"),
+        ("Core Ultra X7 358H", "CPU|INTEL|CORE_ULTRA_X7_358H"),
+        ("Ryzen AI Max+ 395", "CPU|AMD|RYZEN_AI_MAX_395"),
+        ("Ryzen AI 9 HX 370", "CPU|AMD|RYZEN_AI_9_HX_370"),
+        ("Ryzen 5 PRO 4650G", "CPU|AMD|RYZEN_5_PRO_4650G"),
+        ("Ryzen Threadripper PRO 9995WX", "CPU|AMD|THREADRIPPER_9995WX"),
+        ("FX-8350", "CPU|AMD|FX_8350"),
+        ("Processor N100", "CPU|INTEL|PROCESSOR_N100"),
+        ("Core 2 Duo E8400", "CPU|INTEL|CORE_2_DUO_E8400"),
+    ],
+)
+def test_cpu_specs_import_supports_wider_cpu_names(name: str, canonical_key: str) -> None:
+    product = _cpu_specs_import_product(
+        CpuSpecsImportRow(
+            name=name,
+            cores_threads="8 / 16",
+            clock="3.4 to 4.6 GHz",
+            socket="Socket AM5",
+            process="5 nm",
+            l3_cache="32 MB",
+            tdp="65 W",
+        )
+    )
+
+    assert product is not None
+    assert product.canonical_key == canonical_key
 
 
 def test_saudi_trusted_local_listing_can_be_recommended_with_uncertainty() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import json
 import logging
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -65,6 +66,7 @@ async def lifespan(app: FastAPI):
     if manager.verify():
         pricing_repository = Neo4jPricingRepository(manager.driver)
         pricing_repository.apply_schema()
+        _seed_cpu_specs_safely(pricing_repository)
         Neo4jTelemetryRepository(manager.driver).apply_schema()
         Neo4jCognitionRepository(manager.driver).apply_schema()
         Neo4jGovernanceRepository(manager.driver).apply_schema()
@@ -104,6 +106,26 @@ async def lifespan(app: FastAPI):
     if app.state.autonomous_agent_worker:
         app.state.autonomous_agent_worker.stop()
     manager.close()
+
+
+def _seed_cpu_specs_safely(pricing_repository: Neo4jPricingRepository) -> None:
+    if os.getenv("CPU_SPECS_SEED_ON_START", "true").lower() not in {"1", "true", "yes"}:
+        return
+    try:
+        from scripts.import_pasted_cpu_specs import parse_rows
+
+        response = pricing_repository.import_cpu_specs(
+            rows=parse_rows(),
+            source_name="TechPowerUp CPU Database",
+            dry_run=False,
+        )
+        logger.info(
+            "cpu_specs_seed_complete imported_count=%s skipped_count=%s",
+            response.imported_count,
+            response.skipped_count,
+        )
+    except Exception:
+        logger.exception("cpu_specs_seed_failed")
 
 
 app = FastAPI(

@@ -331,20 +331,44 @@ def cpu_model_key_from_title(title: str) -> str | None:
     compact = compact_key(title)
     if "7800X3D" in compact:
         return "AMD_RYZEN_7_7800X3D"
+    ryzen_ai_max = re.search(r"RYZENAIMAX(\d{3,4})", compact)
+    if ryzen_ai_max:
+        return f"AMD_RYZEN_AI_MAX_{ryzen_ai_max.group(1)}"
+    ryzen_ai = re.search(r"RYZEN\s+AI\s+([3579])\s+(HX\s+)?(\d{3,4})", title, flags=re.IGNORECASE)
+    if ryzen_ai:
+        hx = "HX_" if ryzen_ai.group(2) else ""
+        return f"AMD_RYZEN_AI_{ryzen_ai.group(1)}_{hx}{ryzen_ai.group(3)}"
     r7_alias = re.search(r"\bR\s*7\s*[- ]?(\d{4})(X3D|XT|X)?\b", title, flags=re.IGNORECASE)
     if r7_alias:
         suffix = r7_alias.group(2) or ""
         return f"AMD_RYZEN_7_{r7_alias.group(1)}{suffix.upper()}"
-    ryzen = re.search(r"RYZEN([3579])(\d{4})(X3D|XT|X)?", compact)
+    ryzen_pro = re.search(r"RYZEN([3579])PRO(\d{4})(X3D|XT|X|G|U|H|HS|HX|F|GT)?", compact)
+    if ryzen_pro:
+        suffix = ryzen_pro.group(3) or ""
+        return f"AMD_RYZEN_{ryzen_pro.group(1)}_PRO_{ryzen_pro.group(2)}{suffix}"
+    ryzen = re.search(r"RYZEN([3579])(\d{3,4})(X3D|XT|X|G|U|H|HS|HX|F|GT)?", compact)
     if ryzen:
         suffix = ryzen.group(3) or ""
         return f"AMD_RYZEN_{ryzen.group(1)}_{ryzen.group(2)}{suffix}"
+    core_ultra = re.search(r"COREULTRA(X?[579])(\d{3}(?:HX|[A-Z])?)(PLUS)?", compact)
+    if core_ultra:
+        plus = "_PLUS" if core_ultra.group(3) else ""
+        return f"INTEL_CORE_ULTRA_{core_ultra.group(1)}_{core_ultra.group(2)}{plus}"
     intel = re.search(r"(?:CORE)?I([3579])(\d{4,5}[A-Z]*)", compact)
     if intel:
         return f"INTEL_CORE_I{intel.group(1)}_{intel.group(2)}"
-    threadripper = re.search(r"THREADRIPPER(\d{4,5}[A-Z]*)", compact)
+    core_2_duo = re.search(r"CORE2DUO([A-Z]\d{4})", compact)
+    if core_2_duo:
+        return f"INTEL_CORE_2_DUO_{core_2_duo.group(1)}"
+    processor_n = re.search(r"PROCESSORN(\d{3,4})", compact)
+    if processor_n:
+        return f"INTEL_PROCESSOR_N{processor_n.group(1)}"
+    threadripper = re.search(r"THREADRIPPER(?:PRO)?(\d{4,5}[A-Z]*)", compact)
     if threadripper:
         return f"AMD_THREADRIPPER_{threadripper.group(1)}"
+    fx = re.search(r"FX(\d{4})", compact)
+    if fx:
+        return f"AMD_FX_{fx.group(1)}"
     xeon = re.search(r"XEON([A-Z0-9]{4,})", compact)
     if xeon:
         return f"INTEL_XEON_{xeon.group(1)}"
