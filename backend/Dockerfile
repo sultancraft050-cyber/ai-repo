@@ -10,7 +10,7 @@ COPY app /app/app
 COPY scripts /app/scripts
 
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir .
+    && pip install --no-cache-dir ".[image]"
 
 EXPOSE 8000
 
