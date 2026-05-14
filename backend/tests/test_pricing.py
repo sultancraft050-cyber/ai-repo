@@ -1776,6 +1776,7 @@ def test_cpu_specs_import_links_brand_and_socket_nodes() -> None:
 
     assert response.imported_count == 1
     query, params = driver.calls[0]
+    assert "SET p:CPU" in query
     assert "MERGE (brand:Brand {name: $brand})" in query
     assert "MERGE (p)-[:MADE_BY]->(brand)" in query
     assert "MERGE (socket:Socket {name: $socket})" in query

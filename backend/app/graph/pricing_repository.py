@@ -1662,7 +1662,8 @@ class Neo4jPricingRepository:
                 MERGE (p:Product {canonical_key: $canonical_key})
                 ON CREATE SET p.id = $product_id,
                               p.created_at = datetime()
-                SET p.name = $name,
+                SET p:CPU,
+                    p.name = $name,
                     p.brand = $brand,
                     p.category = "CPU",
                     p.model = $model,
