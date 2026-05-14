@@ -68,6 +68,7 @@ def _product_properties(identity: ProductIdentity) -> dict[str, Any]:
         "data_origin": "live",
         "msrp": identity.msrp,
         "imageUrl": identity.image_url,
+        "processed_image_url": identity.processed_image_url,
         "updated_at": datetime.now(UTC),
     }
     for key, value in identity.specs.items():
@@ -185,6 +186,7 @@ def _search_result(data: dict[str, Any]) -> ProductSearchResult:
         model=data.get("model"),
         summary_specs=dict(data.get("summary_specs") or {}),
         image_url=data.get("image_url"),
+        processed_image_url=data.get("processed_image_url"),
         data_origin=data.get("data_origin") or "unknown",
         price_status=data.get("price_status") or "unavailable",
         flags=list(data.get("flags") or []),
@@ -769,6 +771,7 @@ def _cpu_product_first_results(products: list[ProductSearchResult]) -> list[Prod
 
 def _stable_cpu_product(key: str, group: list[ProductSearchResult]) -> ProductSearchResult:
     cheapest = min(group, key=_cpu_price_sort_value)
+    processed_image_source = next((product for product in group if product.processed_image_url), cheapest)
     image_source = next((product for product in group if product.image_url), cheapest)
     specs_source = max(group, key=lambda product: len(_present_specs(product.summary_specs)))
     brand, model = _cpu_brand_model_from_key(key)
@@ -780,6 +783,7 @@ def _stable_cpu_product(key: str, group: list[ProductSearchResult]) -> ProductSe
             "name": stable_name,
             "brand": brand,
             "model": model,
+            "processed_image_url": cheapest.processed_image_url or processed_image_source.processed_image_url,
             "image_url": cheapest.image_url or image_source.image_url,
             "summary_specs": summary_specs,
             "flags": list(dict.fromkeys([*cheapest.flags, "cpu_product_first_view"])),
@@ -1109,6 +1113,7 @@ class Neo4jPricingRepository:
                 "shipping_cost": offer.shipping_cost,
                 "product_url": offer.product_url,
                 "imageUrl": offer.image_url,
+                "processed_image_url": offer.processed_image_url,
                 "source_product_id": offer.source_product_id,
                 "seller": offer.seller,
                 "condition": offer.condition,
@@ -1783,6 +1788,7 @@ class Neo4jPricingRepository:
                      tdp_w: coalesce(p.spec_tdp_w, p.spec_tdp)
                    } AS summary_specs,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
+                   p.processed_image_url AS processed_image_url,
                    p.data_origin AS data_origin,
                    coalesce(p.stale, false) AS stale,
                    coalesce(p.best_value, false) AS best_value,
@@ -2044,6 +2050,7 @@ class Neo4jPricingRepository:
                    coalesce(p.category, head([label IN labels(p) WHERE label <> "Component" AND label <> "Product"])) AS category,
                    p.model AS model,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
+                   p.processed_image_url AS processed_image_url,
                    p.data_origin AS data_origin,
                    coalesce(p.stale, false) AS stale,
                    coalesce(p.best_value, false) AS best_value,

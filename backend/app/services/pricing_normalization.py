@@ -1507,6 +1507,7 @@ class CanonicalProductEngine:
             normalized_model=compact_model(model),
             specs=specs,
             image_url=record.image_url,
+            processed_image_url=record.processed_image_url,
         )
         vendor_id = re.sub(
             r"[^a-z0-9]+",
@@ -1534,6 +1535,8 @@ class CanonicalProductEngine:
         ]
         if identity.image_url:
             evidence.append(field_evidence(record, "image_url", identity.image_url))
+        if identity.processed_image_url:
+            evidence.append(field_evidence(record, "processed_image_url", identity.processed_image_url))
         return PriceOffer(
             product=identity,
             vendor=vendor,
@@ -1551,6 +1554,7 @@ class CanonicalProductEngine:
             shipping_cost=record.shipping_cost,
             product_url=record.product_url,
             image_url=record.image_url,
+            processed_image_url=record.processed_image_url,
             source_product_id=record.source_product_id,
             seller=record.seller,
             condition=record.condition,

@@ -720,6 +720,7 @@ export type ProductSearchResult = {
   model?: string;
   summary_specs?: Record<string, unknown>;
   image_url?: string;
+  processed_image_url?: string;
   data_origin: DataOrigin;
   price_status: PriceStatus;
   flags: string[];

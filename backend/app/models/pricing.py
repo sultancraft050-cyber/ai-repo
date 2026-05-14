@@ -119,6 +119,7 @@ class ProductIdentity(BaseModel):
     specs: dict[str, Any] = Field(default_factory=dict)
     msrp: float | None = Field(default=None, ge=0)
     image_url: str | None = None
+    processed_image_url: str | None = None
 
     @field_validator("name", "brand", "category", "model", "canonical_key")
     @classmethod
@@ -145,6 +146,7 @@ class SourceProductRecord(BaseModel):
     country_code: str | None = None
     product_url: str | None = None
     image_url: str | None = None
+    processed_image_url: str | None = None
     shipping_cost: float = Field(default=0, ge=0)
     seller: str | None = None
     condition: str | None = None
@@ -197,6 +199,7 @@ class PriceOffer(BaseModel):
     shipping_cost: float = Field(default=0, ge=0)
     product_url: str | None = None
     image_url: str | None = None
+    processed_image_url: str | None = None
     source_product_id: str | None = None
     seller: str | None = None
     condition: str | None = None
@@ -295,6 +298,7 @@ class DiscoveryPreviewItem(BaseModel):
     freshness_score: float = Field(ge=0, le=1)
     product_url: str | None = None
     image_url: str | None = None
+    processed_image_url: str | None = None
 
 
 class PriceSnapshotView(BaseModel):
@@ -368,6 +372,7 @@ class ProductSearchResult(BaseModel):
     model: str | None = None
     summary_specs: dict[str, Any] = Field(default_factory=dict)
     image_url: str | None = None
+    processed_image_url: str | None = None
     data_origin: DataOrigin = "unknown"
     price_status: PriceStatus = "unavailable"
     flags: list[str] = Field(default_factory=list)

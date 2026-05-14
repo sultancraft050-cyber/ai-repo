@@ -8,6 +8,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api import (
     alignment,
@@ -147,6 +148,13 @@ app.state.rate_limiter = RateLimiter(
     max_requests=settings.public_rate_limit_max_requests,
 )
 app.state.launch_analytics = LaunchAnalyticsStore()
+
+if settings.processed_image_storage_dir:
+    app.mount(
+        "/processed-images",
+        StaticFiles(directory=settings.processed_image_storage_dir, check_dir=False),
+        name="processed-images",
+    )
 
 
 @app.middleware("http")

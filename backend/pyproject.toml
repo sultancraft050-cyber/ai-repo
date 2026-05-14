@@ -13,6 +13,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+image = ["pillow>=10.0", "rembg>=2.0"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -20,4 +21,3 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-

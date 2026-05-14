@@ -621,32 +621,32 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
   const productName = displayProductName(product);
   const specs = productSummarySpecs(product);
   return (
-    <article className={`flex min-h-[360px] flex-col overflow-hidden rounded-lg border bg-panel ${selected ? "border-signal" : "border-line"}`}>
+    <article className={`flex min-h-[380px] flex-col overflow-hidden rounded-md border bg-[#1c1c1e] shadow-[0_18px_40px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:border-signal/70 ${selected ? "border-signal" : "border-[#2f3137]"}`}>
       <div className="grid aspect-[4/3] place-items-center bg-white p-4">
         <ProductArtwork product={product} productName={productName} />
       </div>
-      <div className="grid gap-3 p-3">
+      <div className="grid flex-1 gap-3 bg-[#1c1c1e] p-3.5">
         <div>
-          <h4 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-ink" title={productName}>
+          <h4 className="line-clamp-2 min-h-10 text-sm font-bold leading-5 text-white" title={productName}>
             {productName}
           </h4>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-[#a1a1aa]">
             {product.brand ? <span>{product.brand}</span> : null}
             <span>{product.region}</span>
           </div>
         </div>
         <div className="flex items-start justify-between gap-3">
-          <div className="text-base font-semibold text-signal">{price ? formatSar(price.amount) : "No SAR price"}</div>
-          <div className="max-w-[45%] truncate text-right text-xs font-semibold text-muted">
+          <div className="text-base font-bold text-[#4ade80]">{price ? formatSar(price.amount) : "No SAR price"}</div>
+          <div className="max-w-[45%] truncate text-right text-xs font-semibold text-[#b8beca]">
             {displayStoreName(price?.vendor ?? product.current_recommended_vendor ?? product.lowest_market_vendor)}
           </div>
         </div>
         {specs.length ? (
-          <dl className="grid gap-1 text-xs text-muted">
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-2.5 text-xs">
             {specs.map((spec) => (
-              <div key={spec.label} className="flex justify-between gap-3">
-                <dt>{spec.label}</dt>
-                <dd className="text-right text-ink">{spec.value}</dd>
+              <div key={spec.label}>
+                <dt className="text-[11px] font-medium text-[#8d929f]">{spec.label}</dt>
+                <dd className="mt-0.5 text-[13px] font-semibold text-[#e4e7ee]">{spec.value}</dd>
               </div>
             ))}
           </dl>
@@ -654,7 +654,7 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
         <button
           type="button"
           onClick={onSelect}
-          className="mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md border border-line bg-white text-sm font-semibold text-ink hover:border-signal"
+          className="mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#3a3d45] bg-[#2d2d30] text-sm font-bold text-white transition hover:border-signal hover:bg-[#36363a] focus:outline-none focus:ring-2 focus:ring-signal/70"
         >
           <Plus size={15} aria-hidden />
           {selected ? "Selected" : "Add to build"}
@@ -666,10 +666,11 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
 
 function ProductArtwork({ product, productName }: { product: ProductSearchResult; productName: string }) {
   const category = String(product.category);
-  if (product.image_url) {
+  const imageUrl = product.processed_image_url || product.image_url;
+  if (imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={product.image_url} alt={productName} className="h-full max-h-full w-full max-w-full object-contain" />
+      <img src={imageUrl} alt={productName} className="h-full max-h-full w-full max-w-full object-contain" />
     );
   }
 

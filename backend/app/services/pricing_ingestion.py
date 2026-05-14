@@ -29,6 +29,7 @@ from app.services.pricing_normalization import (
 )
 from app.services.pricing_quality import PriceQualityValidator
 from app.services.pricing_sources import SourceRegistry, SourceUnavailable
+from app.services.product_image_processing import attach_processed_image
 from app.services.region_config import (
     get_region_config,
     normalize_region,
@@ -248,6 +249,7 @@ class PricingIngestionService:
         return result
 
     def _persist_offer(self, offer: PriceOffer) -> None:
+        offer = attach_processed_image(offer)
         product_id = self.repository.upsert_offer(offer, accepted=True)
         logger.info(
             "pricing snapshot stored",
@@ -364,6 +366,7 @@ def _preview_item(
         freshness_score=offer.source.freshness_score,
         product_url=offer.product_url,
         image_url=offer.image_url,
+        processed_image_url=offer.processed_image_url,
     )
 
 

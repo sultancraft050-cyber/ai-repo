@@ -29,6 +29,7 @@ from app.services.pricing_classification import classify_product_type
 from app.services.pricing_ingestion import _apply_region_context, _preview_item, _target_model_rejections
 from app.services.pricing_normalization import CanonicalProductEngine
 from app.services.pricing_quality import PriceQualityValidator
+from app.services.product_image_processing import attach_processed_image
 from app.services.region_config import normalize_region
 
 
@@ -267,6 +268,7 @@ class ProductUrlIngestionService:
         record = self._record_from_preview(preview)
         offer = self.normalizer.normalize_record(record)
         offer = _apply_region_context(offer, region=preview.region)
+        offer = attach_processed_image(offer)
         product_id = self.repository.upsert_offer(offer, accepted=True)
         self.repository.upsert_product_url(
             normalized_url=preview.normalized_url,
@@ -356,6 +358,7 @@ class ProductUrlIngestionService:
                         )
                     )
                     continue
+                offer = attach_processed_image(offer)
                 product_id = self.repository.upsert_offer(offer, accepted=True)
                 self.repository.upsert_product_url(
                     normalized_url=view.normalized_url,
