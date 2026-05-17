@@ -677,6 +677,66 @@ export type CanonicalMergePreviewResponse = {
   approval_id?: string | null;
 };
 
+export type CanonicalImportSourceType =
+  | "canonical_specs"
+  | "benchmark_metadata"
+  | "community_repository"
+  | "kaggle_dataset";
+
+export type CanonicalImportReasonCount = {
+  reason: string;
+  count: number;
+};
+
+export type CanonicalImportStageRequest = {
+  source_name: string;
+  source_type: CanonicalImportSourceType;
+  dataset_path: string;
+  category: ProductCategory | string;
+  batch_limit: number;
+  license_note: string;
+  dry_run: boolean;
+};
+
+export type CanonicalImportStageResponse = {
+  run_id: string;
+  source_name: string;
+  source_type: CanonicalImportSourceType;
+  category: string;
+  dataset_path: string;
+  dry_run: boolean;
+  status: string;
+  total_records_seen: number;
+  staged_records: number;
+  rejected_records: number;
+  duplicate_candidates: number;
+  conflict_candidates: number;
+  categories: string[];
+  top_rejection_reasons: CanonicalImportReasonCount[];
+  top_warning_reasons: CanonicalImportReasonCount[];
+  recommended_next_action: string;
+};
+
+export type CanonicalStagedSummaryResponse = {
+  source_name?: string | null;
+  source_type?: CanonicalImportSourceType | null;
+  category?: string | null;
+  staged_count: number;
+  valid_count: number;
+  invalid_count: number;
+  duplicate_candidate_count: number;
+  conflict_candidate_count: number;
+  categories: string[];
+  readiness_for_commit: string;
+};
+
+export type CanonicalStagedClearResponse = {
+  source_name: string;
+  category: string;
+  deleted_count: number;
+  status: string;
+};
+
 export type SourceType =
   | "manufacturer"
   | "retailer_api"

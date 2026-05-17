@@ -8,6 +8,12 @@ from app.models.api import CatalogCompletenessResponse
 from app.models.catalog import (
     CanonicalEvidenceRequest,
     CanonicalEvidenceResponse,
+    CanonicalImportCommitRequest,
+    CanonicalImportCommitResponse,
+    CanonicalImportStageRequest,
+    CanonicalImportStageResponse,
+    CanonicalStagedClearResponse,
+    CanonicalStagedSummaryResponse,
     CatalogCoverageResponse,
     CatalogFeedImportRequest,
     CatalogFeedImportResponse,
@@ -55,6 +61,43 @@ def catalog_feed_runs(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> list[CatalogFeedRunView]:
     return repository.catalog_feed_runs(limit=limit)
+
+
+@router.post("/import/commit", response_model=CanonicalImportCommitResponse)
+def commit_canonical_import(
+    request_body: CanonicalImportCommitRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> CanonicalImportCommitResponse:
+    return repository.commit_canonical_import(request_body, region="SA")
+
+
+@router.post("/import/stage", response_model=CanonicalImportStageResponse)
+def stage_canonical_import(
+    request_body: CanonicalImportStageRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> CanonicalImportStageResponse:
+    try:
+        return repository.stage_canonical_import(request_body)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+
+@router.get("/import/staged", response_model=CanonicalStagedSummaryResponse)
+def staged_canonical_import_summary(
+    source_name: str | None = Query(default=None, min_length=2, max_length=120),
+    category: str | None = Query(default=None, min_length=2, max_length=80),
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> CanonicalStagedSummaryResponse:
+    return repository.staged_canonical_import_summary(source_name=source_name, category=category)
+
+
+@router.delete("/import/staged", response_model=CanonicalStagedClearResponse)
+def clear_staged_canonical_import(
+    source_name: str = Query(min_length=2, max_length=120),
+    category: str = Query(min_length=2, max_length=80),
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> CanonicalStagedClearResponse:
+    return repository.clear_staged_canonical_import(source_name=source_name, category=category)
 
 
 @router.get("/coverage", response_model=CatalogCoverageResponse)

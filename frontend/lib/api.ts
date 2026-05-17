@@ -15,6 +15,10 @@ import type {
   ComponentOption,
   CanonicalMergePreviewRequest,
   CanonicalMergePreviewResponse,
+  CanonicalImportStageRequest,
+  CanonicalImportStageResponse,
+  CanonicalStagedClearResponse,
+  CanonicalStagedSummaryResponse,
   CpuDuplicateReport,
   DailyFounderReport,
   DeploymentChecklist,
@@ -367,6 +371,43 @@ export async function previewCanonicalMerge(
     method: "POST",
     headers: authHeaders(apiKey),
     body: JSON.stringify(request)
+  });
+}
+
+export async function stageCanonicalDataset(
+  apiKey: string,
+  request: CanonicalImportStageRequest
+): Promise<CanonicalImportStageResponse> {
+  return requestJson<CanonicalImportStageResponse>("/catalog/import/stage", {
+    method: "POST",
+    headers: authHeaders(apiKey),
+    body: JSON.stringify(request)
+  });
+}
+
+export async function getStagedCanonicalSummary(
+  apiKey: string,
+  request: { source_name?: string; category?: string }
+): Promise<CanonicalStagedSummaryResponse> {
+  const params = new URLSearchParams();
+  if (request.source_name) params.set("source_name", request.source_name);
+  if (request.category) params.set("category", request.category);
+  return requestJson<CanonicalStagedSummaryResponse>(`/catalog/import/staged?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function clearStagedCanonicalRecords(
+  apiKey: string,
+  request: { source_name: string; category: string }
+): Promise<CanonicalStagedClearResponse> {
+  const params = new URLSearchParams({
+    source_name: request.source_name,
+    category: request.category
+  });
+  return requestJson<CanonicalStagedClearResponse>(`/catalog/import/staged?${params.toString()}`, {
+    method: "DELETE",
+    headers: authHeaders(apiKey)
   });
 }
 

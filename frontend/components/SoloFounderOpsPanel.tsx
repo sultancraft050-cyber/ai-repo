@@ -21,6 +21,7 @@ import {
 import type { ApprovalItem, AutonomyQueue as AutonomyQueueData, CanonicalMergePreviewResponse, CatalogGrowthWorkflowSummary, CpuDuplicateReport, DailyFounderReport, DeploymentChecklist, MvpHealthDashboard } from "@/types/builder";
 import { ApprovalCenter } from "@/components/ApprovalCenter";
 import { AutonomyQueue } from "@/components/AutonomyQueue";
+import { CanonicalImportStagingPanel } from "@/components/CanonicalImportStagingPanel";
 import { FounderDailyBrief } from "@/components/FounderDailyBrief";
 import { GraphIntegrityPanel } from "@/components/GraphIntegrityPanel";
 import { KnownUrlRefreshPanel } from "@/components/KnownUrlRefreshPanel";
@@ -293,6 +294,7 @@ export function SoloFounderOpsPanel() {
           />
 
           <div className="grid gap-3">
+            <CanonicalImportStagingPanel apiKey={apiKey} />
             <ProductUrlImportPanel apiKey={apiKey} region={region} onIngested={loadAll} />
             <KnownUrlRefreshPanel apiKey={apiKey} region={region} />
           </div>

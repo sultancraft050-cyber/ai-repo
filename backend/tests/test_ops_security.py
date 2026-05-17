@@ -83,11 +83,19 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     public = endpoint_rule("GET", "/products/search")
     hybrid_integrity = endpoint_rule("GET", "/catalog/hybrid/integrity")
     canonical_evidence = endpoint_rule("POST", "/catalog/canonical/evidence")
+    canonical_stage = endpoint_rule("POST", "/catalog/import/stage")
+    canonical_staged = endpoint_rule("GET", "/catalog/import/staged")
+    canonical_clear = endpoint_rule("DELETE", "/catalog/import/staged")
+    canonical_import = endpoint_rule("POST", "/catalog/import/commit")
 
     assert pricing and pricing.role == "analyst" and pricing.risk_level == "level_0"
     assert rollback and rollback.role == "super_admin" and rollback.approval_required
     assert hybrid_integrity and hybrid_integrity.role == "analyst"
     assert canonical_evidence and canonical_evidence.role == "admin" and canonical_evidence.risk_level == "level_1"
+    assert canonical_stage and canonical_stage.role == "admin" and canonical_stage.risk_level == "level_1"
+    assert canonical_staged and canonical_staged.role == "analyst"
+    assert canonical_clear and canonical_clear.role == "admin" and canonical_clear.risk_level == "level_1"
+    assert canonical_import and canonical_import.role == "admin" and canonical_import.risk_level == "level_1"
     assert public is None
 
 

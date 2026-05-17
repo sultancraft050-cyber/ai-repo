@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
 from datetime import UTC, datetime
 import json
+from pathlib import Path
 import re
 from typing import Any
 from uuid import uuid4
@@ -12,6 +14,14 @@ from app.core.config import settings
 from app.models.catalog import (
     CanonicalEvidenceRequest,
     CanonicalEvidenceResponse,
+    CanonicalImportCommitRequest,
+    CanonicalImportCommitResponse,
+    CanonicalImportConflictView,
+    CanonicalImportReasonCount,
+    CanonicalImportStageRequest,
+    CanonicalImportStageResponse,
+    CanonicalStagedClearResponse,
+    CanonicalStagedSummaryResponse,
     CatalogCategoryCoverage,
     CatalogCoverageResponse,
     CatalogFeedImportResponse,
@@ -59,6 +69,29 @@ CATALOG_CATEGORY_LABELS = {
     "Speaker": "Speaker",
     "Accessories": "Accessories",
 }
+APPROVED_CANONICAL_IMPORT_SOURCES = {
+    ("BuildCores/OpenDB", "canonical_specs"),
+    ("Kaggle PC Parts Dataset", "kaggle_dataset"),
+    ("Kaggle PC Parts Dataset", "benchmark_metadata"),
+    ("Kaggle PC parts datasets", "kaggle_dataset"),
+    ("Kaggle PC parts datasets", "benchmark_metadata"),
+    ("Community Hardware Repository", "community_repository"),
+    ("community hardware repositories", "community_repository"),
+    ("Community repositories", "community_repository"),
+}
+CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
+ALLOWED_CANONICAL_IMPORT_DIR = Path(__file__).resolve().parents[3] / "data" / "imports"
+SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
+BUNDLE_REJECTION_MARKERS = (
+    "bundle",
+    "combo",
+    "prebuilt",
+    "gaming pc",
+    "desktop pc",
+    "laptop",
+    "mini pc",
+    "accessory",
+)
 
 
 def _refresh_priority_for_category(category: str) -> int:
@@ -104,6 +137,211 @@ def _brand_from_name(name: str) -> str | None:
         flags=re.IGNORECASE,
     )
     return match.group(1) if match else None
+
+
+def _record_get(record: dict[str, Any], *keys: str) -> Any:
+    lowered = {re.sub(r"[^a-z0-9]+", "_", str(key).lower()).strip("_"): value for key, value in record.items()}
+    for key in keys:
+        normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+        if normalized in lowered and lowered[normalized] not in (None, "", []):
+            return lowered[normalized]
+    return None
+
+
+def _as_int(value: Any) -> int | None:
+    if value in (None, "", []):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    match = re.search(r"\d+", str(value).replace(",", ""))
+    return int(match.group(0)) if match else None
+
+
+def _as_float(value: Any) -> float | None:
+    if value in (None, "", []):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    match = re.search(r"\d+(?:\.\d+)?", str(value).replace(",", ""))
+    return float(match.group(0)) if match else None
+
+
+def _split_aliases(value: Any) -> list[str]:
+    if value in (None, "", []):
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in re.split(r"[,|;/]", str(value)) if item.strip()]
+
+
+def _normalize_socket(value: Any) -> str | None:
+    if value in (None, "", []):
+        return None
+    text = str(value).upper().replace("SOCKET", "").strip()
+    return re.sub(r"\s+", " ", text)
+
+
+def _normalize_memory_type(value: Any) -> str | None:
+    if value in (None, "", []):
+        return None
+    match = re.search(r"DDR[345]", str(value), flags=re.IGNORECASE)
+    return match.group(0).upper() if match else str(value).upper().strip()
+
+
+def _normalize_form_factor(value: Any) -> str | None:
+    if value in (None, "", []):
+        return None
+    text = str(value).strip().lower()
+    if text in {"micro-atx", "micro atx", "matx", "m-atx"}:
+        return "mATX"
+    if text in {"mini-itx", "mini itx", "itx"}:
+        return "ITX"
+    return str(value).upper().strip()
+
+
+def _normalize_canonical_stage_record(raw: dict[str, Any], category: str, license_note: str) -> dict[str, Any]:
+    name = str(_record_get(raw, "name", "product_name", "title", "model_name") or "").strip()
+    brand = str(_record_get(raw, "brand", "manufacturer", "chip_vendor") or _brand_from_name(name) or "").strip()
+    model = str(_record_get(raw, "model", "model_number") or name).strip()
+    specs = _normalize_stage_specs(raw, category)
+    canonical_key = str(_record_get(raw, "canonical_key", "key") or _catalog_canonical_key(category, name, brand, model)).strip()
+    confidence = _stage_identity_confidence(name=name, brand=brand, model=model, category=category, specs=specs)
+    aliases = _split_aliases(_record_get(raw, "aliases", "alias", "alternate_names"))
+    return _clean_properties(
+        {
+            "source_name": "",
+            "source_type": "",
+            "license_note": license_note,
+            "category": category,
+            "raw_name": name,
+            "name": name,
+            "normalized_name": name.upper(),
+            "canonical_key": canonical_key,
+            "brand": brand or None,
+            "model": model or None,
+            "specs": specs,
+            "aliases": aliases,
+            "identity_confidence": confidence,
+            "required_specs_present": _catalog_row_has_required_specs(category, specs),
+            "validation_status": "pending",
+            "rejected_reasons": [],
+            "warning_reasons": [],
+        }
+    )
+
+
+def _normalize_stage_specs(raw: dict[str, Any], category: str) -> dict[str, Any]:
+    if category == "CPU":
+        cores = _as_int(_record_get(raw, "cores", "core_count", "total_cores"))
+        threads = _as_int(_record_get(raw, "threads", "thread_count"))
+        cores_threads = _record_get(raw, "cores_threads", "cores / threads", "cores/threads")
+        if isinstance(cores_threads, str) and "/" in cores_threads:
+            parts = [part.strip() for part in cores_threads.split("/", 1)]
+            cores = cores or _as_int(parts[0])
+            threads = threads or _as_int(parts[1])
+        return _clean_properties(
+            {
+                "socket": _normalize_socket(_record_get(raw, "socket")),
+                "cores": cores,
+                "threads": threads,
+                "tdp_w": _as_int(_record_get(raw, "tdp_w", "tdp")),
+                "base_clock_ghz": _as_float(_record_get(raw, "base_clock_ghz", "clock", "base_clock")),
+                "boost_clock_ghz": _as_float(_record_get(raw, "boost_clock_ghz", "boost_clock")),
+                "generation": _record_get(raw, "generation", "family"),
+            }
+        )
+    if category == "GPU":
+        return _clean_properties(
+            {
+                "chip_vendor": _record_get(raw, "chip_vendor", "gpu_vendor", "brand"),
+                "vram_gb": _as_int(_record_get(raw, "vram_gb", "memory_gb", "vram")),
+                "tdp_w": _as_int(_record_get(raw, "tdp_w", "tdp", "board_power_w")),
+                "length_mm": _as_int(_record_get(raw, "length_mm", "card_length_mm")),
+                "pcie_generation": _record_get(raw, "pcie_generation", "pcie", "interface"),
+            }
+        )
+    if category == "Motherboard":
+        return _clean_properties(
+            {
+                "chipset": _record_get(raw, "chipset"),
+                "socket": _normalize_socket(_record_get(raw, "socket")),
+                "memory_type": _normalize_memory_type(_record_get(raw, "memory_type", "memory")),
+                "form_factor": _normalize_form_factor(_record_get(raw, "form_factor", "size")),
+                "m2_slots": _as_int(_record_get(raw, "m2_slots", "m.2_slots")),
+                "pcie_x16_slots": _as_int(_record_get(raw, "pcie_x16_slots", "pcie_slots")),
+            }
+        )
+    if category == "RAM":
+        return _clean_properties(
+            {
+                "memory_type": _normalize_memory_type(_record_get(raw, "memory_type", "type")),
+                "capacity_gb": _as_int(_record_get(raw, "capacity_gb", "capacity")),
+                "speed_mhz": _as_int(_record_get(raw, "speed_mhz", "speed_mt_s", "speed")),
+                "kit_config": _record_get(raw, "kit_config", "configuration"),
+                "cas_latency": _record_get(raw, "cas_latency", "cl"),
+            }
+        )
+    if category == "Storage":
+        return _clean_properties(
+            {
+                "capacity_tb": _as_float(_record_get(raw, "capacity_tb")),
+                "capacity_gb": _as_int(_record_get(raw, "capacity_gb", "capacity")),
+                "interface": _record_get(raw, "interface"),
+                "form_factor": _record_get(raw, "form_factor"),
+                "protocol": _record_get(raw, "protocol"),
+            }
+        )
+    if category == "PSU":
+        return _clean_properties(
+            {
+                "wattage_w": _as_int(_record_get(raw, "wattage_w", "wattage", "power_w")),
+                "efficiency_rating": _record_get(raw, "efficiency_rating", "efficiency", "80_plus"),
+                "modularity": _record_get(raw, "modularity", "modular"),
+            }
+        )
+    if category == "Case":
+        return _clean_properties(
+            {
+                "supported_motherboard_form_factors": _split_aliases(_record_get(raw, "form_factor_support", "supported_form_factors")),
+                "max_gpu_length_mm": _as_int(_record_get(raw, "max_gpu_length_mm", "gpu_clearance_mm")),
+                "max_cpu_cooler_height_mm": _as_int(_record_get(raw, "max_cpu_cooler_height_mm", "cpu_cooler_clearance_mm")),
+            }
+        )
+    if category == "Cooler":
+        return _clean_properties(
+            {
+                "cooler_type": _record_get(raw, "cooler_type", "type"),
+                "socket_support": _split_aliases(_record_get(raw, "socket_support", "supported_sockets")),
+                "radiator_size_mm": _as_int(_record_get(raw, "radiator_size_mm", "radiator")),
+                "height_mm": _as_int(_record_get(raw, "height_mm", "cooler_height_mm")),
+            }
+        )
+    return {}
+
+
+def _stage_identity_confidence(
+    *,
+    name: str,
+    brand: str,
+    model: str,
+    category: str,
+    specs: dict[str, Any],
+) -> float:
+    if not name:
+        return 0.0
+    if brand and model and _catalog_row_has_required_specs(category, specs):
+        return 0.92
+    if _catalog_row_has_required_specs(category, specs):
+        return 0.84
+    return 0.55
+
+
+def _component_bundle_rejection(name: str) -> str | None:
+    lowered = name.lower()
+    for marker in BUNDLE_REJECTION_MARKERS:
+        if marker in lowered:
+            return "record looks like a bundle/prebuilt/accessory"
+    return None
 
 
 def _product_properties(identity: ProductIdentity) -> dict[str, Any]:
@@ -865,6 +1103,155 @@ def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
     return all(props.get(key) not in (None, "", []) for key in required)
 
 
+def _catalog_row_has_required_specs(category: str, specs: dict[str, Any]) -> bool:
+    props = {f"spec_{key}": value for key, value in specs.items()}
+    return _catalog_has_required_specs(category, props)
+
+
+def _canonical_value_equal(left: Any, right: Any) -> bool:
+    if left in (None, "", []) or right in (None, "", []):
+        return True
+    return str(left).strip().lower() == str(right).strip().lower()
+
+
+def _canonical_conflict_fields(existing: dict[str, Any], incoming: dict[str, Any]) -> list[str]:
+    guarded_fields = {
+        "brand",
+        "model",
+        "category",
+        "spec_socket",
+        "spec_chipset",
+        "spec_memory_type",
+        "spec_form_factor",
+        "spec_capacity_gb",
+        "spec_wattage_w",
+        "spec_efficiency_rating",
+        "spec_cores",
+        "spec_threads",
+        "spec_tdp_w",
+    }
+    conflicts: list[str] = []
+    for key in sorted(guarded_fields):
+        if key not in incoming:
+            continue
+        if not _canonical_value_equal(existing.get(key), incoming.get(key)):
+            conflicts.append(key)
+    return conflicts
+
+
+def _extract_staged_specs(record: dict[str, Any]) -> dict[str, Any]:
+    specs: dict[str, Any] = {}
+    raw_specs = record.get("specs")
+    if isinstance(raw_specs, str):
+        try:
+            decoded = json.loads(raw_specs)
+        except json.JSONDecodeError:
+            decoded = {}
+        if isinstance(decoded, dict):
+            specs.update(decoded)
+    elif isinstance(raw_specs, dict):
+        specs.update(raw_specs)
+    for key, value in record.items():
+        if key.startswith("spec_") and value not in (None, "", []):
+            specs[key.removeprefix("spec_")] = value
+    return specs
+
+
+def _catalog_row_from_staged_record(record: dict[str, Any], category: str) -> CatalogFeedImportRow:
+    return CatalogFeedImportRow(
+        name=str(record.get("name") or record.get("product_name") or ""),
+        category=record.get("category") or category,
+        brand=record.get("brand"),
+        model=record.get("model"),
+        canonical_key=record.get("canonical_key"),
+        image_url=record.get("image_url") or record.get("imageUrl"),
+        processed_image_url=record.get("processed_image_url"),
+        specs=_extract_staged_specs(record),
+    )
+
+
+def _canonical_import_skip_reason(
+    *,
+    record: dict[str, Any],
+    row: CatalogFeedImportRow,
+    request: CanonicalImportCommitRequest,
+) -> str | None:
+    if (request.source_name, request.source_type) not in APPROVED_CANONICAL_IMPORT_SOURCES:
+        return "unsupported canonical source"
+    if str(record.get("source_name") or request.source_name) != request.source_name:
+        return "source attribution mismatch"
+    if str(record.get("source_type") or request.source_type) != request.source_type:
+        return "source type mismatch"
+    if not str(record.get("license_note") or "").strip():
+        return "missing license/usage note"
+    if row.category != request.category:
+        return "category mismatch"
+    try:
+        confidence = float(record.get("identity_confidence") or 0)
+    except (TypeError, ValueError):
+        return "invalid identity confidence"
+    if confidence < CANONICAL_IDENTITY_CONFIDENCE_MIN:
+        return "identity confidence below import threshold"
+    if not row.canonical_key:
+        return "missing canonical key"
+    if not _catalog_row_has_required_specs(request.category, row.specs):
+        return "missing required compatibility specs"
+    return None
+
+
+def _resolve_import_dataset_path(dataset_path: str) -> Path:
+    candidate = Path(dataset_path)
+    if candidate.is_absolute():
+        raise ValueError("dataset_path must be relative to data/imports")
+    if any(part == ".." for part in candidate.parts):
+        raise ValueError("dataset_path cannot contain path traversal")
+    allowed_root = ALLOWED_CANONICAL_IMPORT_DIR.resolve()
+    if candidate.parts[:2] == ("data", "imports"):
+        candidate = Path(*candidate.parts[2:]) if len(candidate.parts) > 2 else Path()
+    resolved = (allowed_root / candidate).resolve()
+    if allowed_root != resolved and allowed_root not in resolved.parents:
+        raise ValueError("dataset_path must stay under data/imports")
+    if resolved.suffix.lower() not in SUPPORTED_CANONICAL_IMPORT_EXTENSIONS:
+        raise ValueError("unsupported dataset file type")
+    if not resolved.exists() or not resolved.is_file():
+        raise ValueError("dataset file not found")
+    return resolved
+
+
+def _load_canonical_dataset_file(path: Path, limit: int) -> list[dict[str, Any]]:
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows = payload.get("records") if isinstance(payload, dict) else payload
+        if not isinstance(rows, list):
+            raise ValueError("JSON dataset must contain a list or a records list")
+        return [dict(row) for row in rows[:limit] if isinstance(row, dict)]
+    if suffix == ".ndjson":
+        rows: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if len(rows) >= limit:
+                break
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if isinstance(item, dict):
+                rows.append(dict(item))
+        return rows
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        return [dict(row) for index, row in enumerate(reader) if index < limit]
+
+
+def _count_reasons(rows: list[str]) -> list[CanonicalImportReasonCount]:
+    counts: dict[str, int] = {}
+    for reason in rows:
+        counts[reason] = counts.get(reason, 0) + 1
+    return [
+        CanonicalImportReasonCount(reason=reason, count=count)
+        for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8]
+    ]
+
+
 def _coverage_next_action(category: str, priced_count: int, missing_specs: int, stale_count: int) -> str:
     if priced_count == 0:
         return f"Add trusted Saudi product URLs or structured price rows for {category}."
@@ -1129,6 +1516,10 @@ class Neo4jPricingRepository:
             "CREATE CONSTRAINT efficiency_rating_name IF NOT EXISTS FOR (n:EfficiencyRating) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT product_family_key IF NOT EXISTS FOR (n:ProductFamily) REQUIRE n.family_key IS UNIQUE",
             "CREATE CONSTRAINT catalog_feed_run_id IF NOT EXISTS FOR (n:CatalogFeedRun) REQUIRE n.run_id IS UNIQUE",
+            "CREATE CONSTRAINT canonical_import_run_id IF NOT EXISTS "
+            "FOR (n:CanonicalImportRun) REQUIRE n.run_id IS UNIQUE",
+            "CREATE CONSTRAINT staged_canonical_record_id IF NOT EXISTS "
+            "FOR (n:StagedCanonicalRecord) REQUIRE n.staged_id IS UNIQUE",
             "CREATE CONSTRAINT canonical_source_name IF NOT EXISTS FOR (n:CanonicalSource) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT canonical_evidence_id IF NOT EXISTS FOR (n:CanonicalEvidence) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT community_evidence_id IF NOT EXISTS FOR (n:CommunityEvidence) REQUIRE n.id IS UNIQUE",
@@ -1175,6 +1566,8 @@ class Neo4jPricingRepository:
             "FOR (n:ProductURL) ON (n.region, n.category)",
             "CREATE INDEX canonical_evidence_source IF NOT EXISTS "
             "FOR (n:CanonicalEvidence) ON (n.source_name, n.evidence_type)",
+            "CREATE INDEX staged_canonical_record_lookup IF NOT EXISTS "
+            "FOR (n:StagedCanonicalRecord) ON (n.source_name, n.source_type, n.category)",
             "CREATE INDEX hardware_intelligence_generated_at IF NOT EXISTS "
             "FOR (n:HardwareIntelligence) ON (n.generated_at)",
         ]
@@ -2158,6 +2551,295 @@ class Neo4jPricingRepository:
             sanitized_error=sanitized_error,
         )
 
+    def stage_canonical_import(self, request: CanonicalImportStageRequest) -> CanonicalImportStageResponse:
+        if (request.source_name, request.source_type) not in APPROVED_CANONICAL_IMPORT_SOURCES:
+            raise ValueError("unsupported canonical source")
+        dataset_path = _resolve_import_dataset_path(request.dataset_path)
+        rows = _load_canonical_dataset_file(dataset_path, request.batch_limit)
+        run_id = f"canonical-stage-{uuid4()}"
+        staged = 0
+        rejected = 0
+        duplicate_candidates = 0
+        conflict_candidates = 0
+        categories: set[str] = set()
+        rejection_reasons: list[str] = []
+        warning_reasons: list[str] = []
+        seen_keys: set[str] = set()
+        prepared_records: list[dict[str, Any]] = []
+
+        for raw in rows:
+            record = _normalize_canonical_stage_record(raw, request.category, request.license_note)
+            record["source_name"] = request.source_name
+            record["source_type"] = request.source_type
+            record["stage_run_id"] = run_id
+            categories.add(str(record.get("category") or request.category))
+            reasons = self._stage_record_rejection_reasons(record, request)
+            warnings = self._stage_record_warning_reasons(record, request)
+            canonical_key = str(record.get("canonical_key") or "")
+            duplicates = []
+            if canonical_key in seen_keys:
+                duplicates.append(canonical_key)
+            if canonical_key and self._staged_duplicate_count(canonical_key, request) > 0:
+                duplicates.append(canonical_key)
+            conflict_fields: list[str] = []
+            existing = self._canonical_product_by_key(canonical_key) if canonical_key else None
+            if existing:
+                row = _catalog_row_from_staged_record(record, request.category)
+                props = _catalog_product_properties(row, request.category, request.source_name)
+                props["canonical_key"] = canonical_key
+                conflict_fields = _canonical_conflict_fields(dict(existing.get("properties") or {}), props)
+            if duplicates:
+                duplicate_candidates += 1
+                warnings.append("duplicate candidate")
+            if conflict_fields:
+                conflict_candidates += 1
+                warnings.append("canonical conflict candidate")
+            seen_keys.add(canonical_key)
+
+            record["validation_status"] = "valid" if not reasons else "rejected"
+            record["rejected_reasons"] = reasons
+            record["warning_reasons"] = warnings
+            record["duplicate_candidates"] = list(dict.fromkeys(duplicates))
+            record["conflict_candidates"] = conflict_fields
+            record["staged_id"] = f"staged:{request.source_name}:{request.category}:{canonical_key or uuid4()}"
+            prepared_records.append(record)
+
+            if reasons:
+                rejected += 1
+                rejection_reasons.extend(reasons)
+            else:
+                staged += 1
+            warning_reasons.extend(warnings)
+
+        if not request.dry_run:
+            self._record_canonical_stage_run(
+                run_id=run_id,
+                request=request,
+                status="running",
+                staged=0,
+                rejected=0,
+                duplicate_candidates=0,
+                conflict_candidates=0,
+                warning_summary=None,
+                finished=False,
+            )
+            for record in prepared_records:
+                self._upsert_staged_canonical_record(record)
+            top_warnings = _count_reasons(warning_reasons)
+            self._record_canonical_stage_run(
+                run_id=run_id,
+                request=request,
+                status="completed",
+                staged=staged,
+                rejected=rejected,
+                duplicate_candidates=duplicate_candidates,
+                conflict_candidates=conflict_candidates,
+                warning_summary="; ".join(item.reason for item in top_warnings[:3]) if top_warnings else None,
+                finished=True,
+            )
+
+        return CanonicalImportStageResponse(
+            run_id=run_id,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            category=request.category,
+            dataset_path=request.dataset_path,
+            dry_run=request.dry_run,
+            status="dry_run" if request.dry_run else "completed",
+            total_records_seen=len(rows),
+            staged_records=staged,
+            rejected_records=rejected,
+            duplicate_candidates=duplicate_candidates,
+            conflict_candidates=conflict_candidates,
+            categories=sorted(categories),
+            top_rejection_reasons=_count_reasons(rejection_reasons),
+            top_warning_reasons=_count_reasons(warning_reasons),
+            recommended_next_action=self._stage_recommended_next_action(staged, rejected, conflict_candidates),
+        )
+
+    def commit_canonical_import(
+        self,
+        request: CanonicalImportCommitRequest,
+        *,
+        region: str = "SA",
+    ) -> CanonicalImportCommitResponse:
+        region = normalize_region(region)
+        run_id = f"canonical-import-{uuid4()}"
+        warnings: list[str] = []
+        conflicts: list[CanonicalImportConflictView] = []
+        imported = 0
+        updated = 0
+        skipped = 0
+        approvals_created = 0
+        duplicate_risk = 0
+
+        if (request.source_name, request.source_type) not in APPROVED_CANONICAL_IMPORT_SOURCES:
+            warnings.append("Source is not approved for controlled canonical import.")
+            integrity = self.hybrid_graph_integrity(region=region)
+            return CanonicalImportCommitResponse(
+                run_id=run_id,
+                source_name=request.source_name,
+                source_type=request.source_type,
+                category=request.category,
+                commit=request.commit,
+                batch_limit=request.batch_limit,
+                status="blocked",
+                imported_count=0,
+                updated_count=0,
+                skipped_count=0,
+                conflict_count=0,
+                approvals_created=0,
+                duplicate_risk=0,
+                categories_improved=[],
+                graph_integrity_status=self._overall_integrity_status(integrity),
+                conflicts=[],
+                warnings=warnings,
+            )
+
+        staged_records = self._staged_canonical_records(request)
+        if not staged_records:
+            warnings.append("No staged canonical records matched this controlled import request.")
+        canonical_keys = [str(record.get("canonical_key") or "") for record in staged_records if record.get("canonical_key")]
+        duplicate_risk = len(canonical_keys) - len(set(canonical_keys))
+
+        if request.commit:
+            self._record_canonical_import_run(
+                run_id=run_id,
+                request=request,
+                status="running",
+                imported=0,
+                updated=0,
+                skipped=0,
+                conflicts=0,
+                approvals=0,
+                warnings=warnings,
+                finished=False,
+            )
+
+        for staged in staged_records:
+            try:
+                row = _catalog_row_from_staged_record(staged, request.category)
+            except Exception:
+                skipped += 1
+                warnings.append("Skipped one staged record because it could not be parsed safely.")
+                continue
+
+            skip_reason = _canonical_import_skip_reason(record=staged, row=row, request=request)
+            if skip_reason:
+                skipped += 1
+                warnings.append(f"Skipped {row.name}: {skip_reason}.")
+                if request.commit:
+                    self._mark_staged_canonical_record(staged, "skipped", skip_reason)
+                continue
+
+            canonical_key = str(row.canonical_key)
+            props = _catalog_product_properties(row, request.category, request.source_name)
+            props.update(
+                _clean_properties(
+                    {
+                        "canonical_key": canonical_key,
+                        "data_origin": "canonical_import",
+                        "spec_source_type": request.source_type,
+                        "spec_license_note": staged.get("license_note"),
+                        "identity_confidence": staged.get("identity_confidence"),
+                    }
+                )
+            )
+            existing = self._canonical_product_by_key(canonical_key)
+            conflict_fields = _canonical_conflict_fields(existing.get("properties", {}) if existing else {}, props)
+            if existing and conflict_fields and request.approval_required_for_conflicts:
+                evidence_id = approval_id = None
+                if request.commit:
+                    evidence_id, approval_id = self._create_canonical_conflict_approval(
+                        product_id=str(existing["id"]),
+                        request=request,
+                        canonical_key=canonical_key,
+                        incoming_name=row.name,
+                        conflict_fields=conflict_fields,
+                        incoming_properties=props,
+                        existing_properties=dict(existing.get("properties") or {}),
+                    )
+                    self._mark_staged_canonical_record(staged, "conflict", ",".join(conflict_fields))
+                    approvals_created += 1
+                conflicts.append(
+                    CanonicalImportConflictView(
+                        canonical_key=canonical_key,
+                        incoming_name=row.name,
+                        existing_product_id=str(existing["id"]),
+                        conflict_fields=conflict_fields,
+                        evidence_id=evidence_id,
+                        approval_id=approval_id,
+                    )
+                )
+                continue
+
+            if not request.commit:
+                continue
+
+            product_id, created = self._upsert_canonical_product_from_import(
+                canonical_key=canonical_key,
+                category=request.category,
+                properties=props,
+            )
+            if created:
+                imported += 1
+            else:
+                updated += 1
+            self._apply_catalog_shape(
+                product_id=product_id,
+                category=request.category,
+                brand=row.brand or _brand_from_name(row.name),
+                specs=row.specs,
+            )
+            self._upsert_product_family(product_id, request.category, row.specs, canonical_key)
+            self._attach_import_canonical_evidence(
+                product_id=product_id,
+                request=request,
+                field="canonical_record",
+                value={"canonical_key": canonical_key, "name": row.name, "specs": row.specs},
+                trust_score=float(staged.get("identity_confidence") or CANONICAL_IDENTITY_CONFIDENCE_MIN),
+                approval_state="approved",
+                note=str(staged.get("license_note") or ""),
+            )
+            self._mark_staged_canonical_record(staged, "imported", None)
+
+        status = "preview" if not request.commit else "completed"
+        if request.commit and conflicts:
+            status = "completed_with_conflicts"
+        if request.commit:
+            self._record_canonical_import_run(
+                run_id=run_id,
+                request=request,
+                status=status,
+                imported=imported,
+                updated=updated,
+                skipped=skipped,
+                conflicts=len(conflicts),
+                approvals=approvals_created,
+                warnings=warnings,
+                finished=True,
+            )
+        integrity = self.hybrid_graph_integrity(region=region)
+        return CanonicalImportCommitResponse(
+            run_id=run_id,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            category=request.category,
+            commit=request.commit,
+            batch_limit=request.batch_limit,
+            status=status,
+            imported_count=imported,
+            updated_count=updated,
+            skipped_count=skipped,
+            conflict_count=len(conflicts),
+            approvals_created=approvals_created,
+            duplicate_risk=max(0, duplicate_risk),
+            categories_improved=[request.category] if request.commit and (imported or updated) else [],
+            graph_integrity_status=self._overall_integrity_status(integrity),
+            conflicts=conflicts,
+            warnings=list(dict.fromkeys(warnings))[:25],
+        )
+
     def catalog_feed_runs(self, *, limit: int = 50) -> list[CatalogFeedRunView]:
         records, _, _ = self.driver.execute_query(
             """
@@ -2234,6 +2916,430 @@ class Neo4jPricingRepository:
             sanitized_error=sanitized_error,
             finished=finished,
             database_=settings.neo4j_database,
+        )
+
+    def _stage_record_rejection_reasons(
+        self,
+        record: dict[str, Any],
+        request: CanonicalImportStageRequest,
+    ) -> list[str]:
+        reasons: list[str] = []
+        if not str(request.license_note or "").strip():
+            reasons.append("missing license/usage note")
+        if not str(record.get("raw_name") or record.get("name") or "").strip():
+            reasons.append("missing product name")
+        if not str(record.get("canonical_key") or "").strip():
+            reasons.append("missing canonical key")
+        if record.get("category") != request.category:
+            reasons.append("category mismatch")
+        if float(record.get("identity_confidence") or 0) < CANONICAL_IDENTITY_CONFIDENCE_MIN:
+            reasons.append("identity confidence below import threshold")
+        if not bool(record.get("required_specs_present")):
+            reasons.append("missing required compatibility specs")
+        bundle_reason = _component_bundle_rejection(str(record.get("raw_name") or record.get("name") or ""))
+        if bundle_reason:
+            reasons.append(bundle_reason)
+        return reasons
+
+    def _stage_record_warning_reasons(
+        self,
+        record: dict[str, Any],
+        request: CanonicalImportStageRequest,
+    ) -> list[str]:
+        specs = _extract_staged_specs(record)
+        warnings: list[str] = []
+        optional_fields = {
+            "CPU": ("tdp_w", "base_clock_ghz", "boost_clock_ghz"),
+            "GPU": ("vram_gb", "tdp_w", "length_mm"),
+            "Motherboard": ("m2_slots", "pcie_x16_slots"),
+            "RAM": ("speed_mhz", "kit_config", "cas_latency"),
+            "Storage": ("form_factor", "protocol"),
+            "PSU": ("modularity",),
+            "Case": ("max_gpu_length_mm", "max_cpu_cooler_height_mm"),
+            "Cooler": ("socket_support",),
+        }.get(request.category, ())
+        for field in optional_fields:
+            if specs.get(field) in (None, "", []):
+                warnings.append(f"optional {field} missing")
+        return warnings
+
+    def _staged_duplicate_count(self, canonical_key: str, request: CanonicalImportStageRequest) -> int:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+            WHERE record.source_name = $source_name
+              AND record.source_type = $source_type
+              AND record.category = $category
+            RETURN count(record) AS count
+            """,
+            canonical_key=canonical_key,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            category=request.category,
+            database_=settings.neo4j_database,
+        )
+        return int(records[0]["count"] or 0) if records else 0
+
+    def _upsert_staged_canonical_record(self, record: dict[str, Any]) -> None:
+        properties = _clean_properties(record)
+        self.driver.execute_query(
+            """
+            MERGE (record:StagedCanonicalRecord {staged_id: $staged_id})
+            ON CREATE SET record.created_at = datetime()
+            SET record += $properties,
+                record.updated_at = datetime(),
+                record.import_status = "pending"
+            """,
+            staged_id=str(record["staged_id"]),
+            properties=properties,
+            database_=settings.neo4j_database,
+        )
+
+    def _record_canonical_stage_run(
+        self,
+        *,
+        run_id: str,
+        request: CanonicalImportStageRequest,
+        status: str,
+        staged: int,
+        rejected: int,
+        duplicate_candidates: int,
+        conflict_candidates: int,
+        warning_summary: str | None,
+        finished: bool,
+    ) -> None:
+        self.driver.execute_query(
+            """
+            MERGE (run:CanonicalStageRun {run_id: $run_id})
+            ON CREATE SET run.started_at = datetime()
+            SET run.source_name = $source_name,
+                run.source_type = $source_type,
+                run.category = $category,
+                run.dataset_path = $dataset_path,
+                run.dry_run = $dry_run,
+                run.status = $status,
+                run.staged_records = $staged,
+                run.rejected_records = $rejected,
+                run.duplicate_candidates = $duplicate_candidates,
+                run.conflict_candidates = $conflict_candidates,
+                run.warning_summary = $warning_summary,
+                run.finished_at = CASE WHEN $finished THEN datetime() ELSE run.finished_at END
+            """,
+            run_id=run_id,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            category=request.category,
+            dataset_path=request.dataset_path,
+            dry_run=request.dry_run,
+            status=status,
+            staged=staged,
+            rejected=rejected,
+            duplicate_candidates=duplicate_candidates,
+            conflict_candidates=conflict_candidates,
+            warning_summary=warning_summary,
+            finished=finished,
+            database_=settings.neo4j_database,
+        )
+
+    def _stage_recommended_next_action(self, staged: int, rejected: int, conflicts: int) -> str:
+        if staged == 0 and rejected > 0:
+            return "Fix rejected dataset rows, then run staging again before commit."
+        if conflicts:
+            return "Review conflict candidates; clean records can be committed, conflicts require founder approval."
+        if staged:
+            return "Run /catalog/import/commit for this source/category to import clean staged records."
+        return "No staged records were created. Check dataset path, source, category, and required specs."
+
+    def _staged_canonical_records(self, request: CanonicalImportCommitRequest) -> list[dict[str, Any]]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord)
+            WHERE record.source_name = $source_name
+              AND record.source_type = $source_type
+              AND record.category = $category
+              AND coalesce(record.import_status, "pending") <> "imported"
+              AND record.validation_status = "valid"
+            RETURN properties(record) AS record
+            ORDER BY coalesce(record.created_at, datetime("1970-01-01T00:00:00Z")) ASC,
+                     record.canonical_key ASC
+            LIMIT $limit
+            """,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            category=request.category,
+            limit=request.batch_limit,
+            database_=settings.neo4j_database,
+        )
+        return [dict(record.data().get("record") or {}) for record in records]
+
+    def _canonical_product_by_key(self, canonical_key: str) -> dict[str, Any] | None:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product {canonical_key: $canonical_key})
+            RETURN p.id AS id, properties(p) AS properties
+            LIMIT 1
+            """,
+            canonical_key=canonical_key,
+            database_=settings.neo4j_database,
+        )
+        if not records:
+            return None
+        data = records[0].data()
+        return {"id": data.get("id"), "properties": dict(data.get("properties") or {})}
+
+    def _upsert_canonical_product_from_import(
+        self,
+        *,
+        canonical_key: str,
+        category: str,
+        properties: dict[str, Any],
+    ) -> tuple[str, bool]:
+        label = _category_label(category)
+        records, _, _ = self.driver.execute_query(
+            f"""
+            MERGE (p:Product:CanonicalProduct {{canonical_key: $canonical_key}})
+            ON CREATE SET p.id = $product_id,
+                          p.created_at = datetime(),
+                          p._canonical_import_created = true
+            ON MATCH SET p._canonical_import_created = false
+            SET p:{label},
+                p += $properties,
+                p.updated_at = datetime()
+            WITH p, coalesce(p._canonical_import_created, false) AS created
+            REMOVE p._canonical_import_created
+            RETURN p.id AS id, created
+            """,
+            canonical_key=canonical_key,
+            product_id=f"canonical:{canonical_key}",
+            properties=properties,
+            database_=settings.neo4j_database,
+        )
+        data = records[0].data()
+        return str(data["id"]), bool(data["created"])
+
+    def _attach_import_canonical_evidence(
+        self,
+        *,
+        product_id: str,
+        request: CanonicalImportCommitRequest,
+        field: str,
+        value: Any,
+        trust_score: float,
+        approval_state: str,
+        note: str | None,
+    ) -> tuple[str, str]:
+        evidence_id = f"evidence:{uuid4()}"
+        approval_id = f"approval:{evidence_id}"
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (source:CanonicalSource {name: $source_name})
+            SET source.source_type = $source_type,
+                source.updated_at = datetime()
+            CREATE (e:CanonicalEvidence)
+            SET e.id = $evidence_id,
+                e.source_name = $source_name,
+                e.source_type = $source_type,
+                e.evidence_type = "canonical_spec",
+                e.field = $field,
+                e.value_json = $value_json,
+                e.trust_score = $trust_score,
+                e.note = $note,
+                e.created_at = datetime()
+            MERGE (p)-[:HAS_CANONICAL_EVIDENCE]->(e)
+            MERGE (e)-[:FROM_SOURCE]->(source)
+            MERGE (approval:FounderApprovalState {id: $approval_id})
+            SET approval.status = $approval_state,
+                approval.source_name = $source_name,
+                approval.updated_at = datetime()
+            MERGE (e)-[:HAS_APPROVAL_STATE]->(approval)
+            """,
+            product_id=product_id,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            evidence_id=evidence_id,
+            field=field,
+            value_json=json.dumps(value, sort_keys=True, default=str),
+            trust_score=min(max(trust_score, 0), 1),
+            note=note,
+            approval_id=approval_id,
+            approval_state=approval_state,
+            database_=settings.neo4j_database,
+        )
+        return evidence_id, approval_id
+
+    def _create_canonical_conflict_approval(
+        self,
+        *,
+        product_id: str,
+        request: CanonicalImportCommitRequest,
+        canonical_key: str,
+        incoming_name: str,
+        conflict_fields: list[str],
+        incoming_properties: dict[str, Any],
+        existing_properties: dict[str, Any],
+    ) -> tuple[str, str]:
+        return self._attach_import_canonical_evidence(
+            product_id=product_id,
+            request=request,
+            field="canonical_conflict",
+            value={
+                "canonical_key": canonical_key,
+                "incoming_name": incoming_name,
+                "conflict_fields": conflict_fields,
+                "incoming": {field: incoming_properties.get(field) for field in conflict_fields},
+                "existing": {field: existing_properties.get(field) for field in conflict_fields},
+            },
+            trust_score=0.5,
+            approval_state="pending_review",
+            note="Canonical import conflict requires founder approval before merge.",
+        )
+
+    def _mark_staged_canonical_record(
+        self,
+        record: dict[str, Any],
+        status: str,
+        sanitized_error: str | None,
+    ) -> None:
+        canonical_key = record.get("canonical_key")
+        if not canonical_key:
+            return
+        self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+            WHERE record.source_name = $source_name
+              AND record.source_type = $source_type
+              AND record.category = $category
+            SET record.import_status = $status,
+                record.last_import_attempt_at = datetime(),
+                record.last_error_sanitized = $sanitized_error
+            """,
+            canonical_key=canonical_key,
+            source_name=record.get("source_name"),
+            source_type=record.get("source_type"),
+            category=record.get("category"),
+            status=status,
+            sanitized_error=sanitized_error,
+            database_=settings.neo4j_database,
+        )
+
+    def _record_canonical_import_run(
+        self,
+        *,
+        run_id: str,
+        request: CanonicalImportCommitRequest,
+        status: str,
+        imported: int,
+        updated: int,
+        skipped: int,
+        conflicts: int,
+        approvals: int,
+        warnings: list[str],
+        finished: bool,
+    ) -> None:
+        self.driver.execute_query(
+            """
+            MERGE (run:CanonicalImportRun {run_id: $run_id})
+            ON CREATE SET run.started_at = datetime()
+            SET run.source_name = $source_name,
+                run.source_type = $source_type,
+                run.category = $category,
+                run.commit = $commit,
+                run.batch_limit = $batch_limit,
+                run.status = $status,
+                run.imported_count = $imported,
+                run.updated_count = $updated,
+                run.skipped_count = $skipped,
+                run.conflict_count = $conflicts,
+                run.approvals_created = $approvals,
+                run.warning_summary = $warning_summary,
+                run.finished_at = CASE WHEN $finished THEN datetime() ELSE run.finished_at END
+            """,
+            run_id=run_id,
+            source_name=request.source_name,
+            source_type=request.source_type,
+            category=request.category,
+            commit=request.commit,
+            batch_limit=request.batch_limit,
+            status=status,
+            imported=imported,
+            updated=updated,
+            skipped=skipped,
+            conflicts=conflicts,
+            approvals=approvals,
+            warning_summary="; ".join(warnings[:5]) if warnings else None,
+            finished=finished,
+            database_=settings.neo4j_database,
+        )
+
+    def staged_canonical_import_summary(
+        self,
+        *,
+        source_name: str | None = None,
+        category: str | None = None,
+    ) -> CanonicalStagedSummaryResponse:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord)
+            WHERE ($source_name IS NULL OR record.source_name = $source_name)
+              AND ($category IS NULL OR record.category = $category)
+            WITH collect(record) AS records,
+                 collect(DISTINCT record.category) AS category_values,
+                 collect(DISTINCT record.source_type) AS source_type_values
+            RETURN size(records) AS staged_count,
+                   size([item IN records WHERE item.validation_status = "valid"]) AS valid_count,
+                   size([item IN records WHERE item.validation_status <> "valid"]) AS invalid_count,
+                   size([item IN records WHERE size(coalesce(item.duplicate_candidates, [])) > 0]) AS duplicate_candidate_count,
+                   size([item IN records WHERE size(coalesce(item.conflict_candidates, [])) > 0]) AS conflict_candidate_count,
+                   [category IN category_values WHERE category IS NOT NULL] AS categories,
+                   [source_type IN source_type_values WHERE source_type IS NOT NULL][0] AS source_type
+            """,
+            source_name=source_name,
+            category=category,
+            database_=settings.neo4j_database,
+        )
+        data = records[0].data() if records else {}
+        valid_count = int(data.get("valid_count") or 0)
+        conflict_count = int(data.get("conflict_candidate_count") or 0)
+        if valid_count == 0:
+            readiness = "not_ready"
+        elif conflict_count:
+            readiness = "ready_with_conflicts"
+        else:
+            readiness = "ready_for_commit"
+        return CanonicalStagedSummaryResponse(
+            source_name=source_name,
+            source_type=data.get("source_type"),
+            category=category,
+            staged_count=int(data.get("staged_count") or 0),
+            valid_count=valid_count,
+            invalid_count=int(data.get("invalid_count") or 0),
+            duplicate_candidate_count=int(data.get("duplicate_candidate_count") or 0),
+            conflict_candidate_count=conflict_count,
+            categories=[str(item) for item in data.get("categories") or []],
+            readiness_for_commit=readiness,
+        )
+
+    def clear_staged_canonical_import(self, *, source_name: str, category: str) -> CanonicalStagedClearResponse:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord)
+            WHERE record.source_name = $source_name
+              AND record.category = $category
+            WITH collect(record) AS records, count(record) AS deleted_count
+            FOREACH (record IN records | DETACH DELETE record)
+            RETURN deleted_count
+            """,
+            source_name=source_name,
+            category=category,
+            database_=settings.neo4j_database,
+        )
+        deleted = int(records[0]["deleted_count"] or 0) if records else 0
+        return CanonicalStagedClearResponse(
+            source_name=source_name,
+            category=category,
+            deleted_count=deleted,
+            status="cleared",
         )
 
     def _upsert_product_family(self, product_id: str, category: str, specs: dict[str, Any], canonical_key: str) -> None:
@@ -2470,6 +3576,14 @@ class Neo4jPricingRepository:
             database_=settings.neo4j_database,
         )
         return int(records[0]["count"] or 0) if records else 0
+
+    def _overall_integrity_status(self, integrity: HybridGraphIntegrityResponse) -> str:
+        statuses = {check.status for check in integrity.checks}
+        if "fail" in statuses:
+            return "fail"
+        if "warn" in statuses:
+            return "warn"
+        return "pass"
 
     def _integrity_check(
         self,

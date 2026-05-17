@@ -1,0 +1,24 @@
+[
+  {
+    "name": "AMD Ryzen 7 7800X3D",
+    "brand": "AMD",
+    "model": "Ryzen 7 7800X3D",
+    "socket": "AM5",
+    "cores": 8,
+    "threads": 16,
+    "tdp_w": 120,
+    "base_clock_ghz": 4.2,
+    "boost_clock_ghz": 5.0
+  },
+  {
+    "name": "AMD Ryzen 5 7600",
+    "brand": "AMD",
+    "model": "Ryzen 5 7600",
+    "socket": "AM5",
+    "cores": 6,
+    "threads": 12,
+    "tdp_w": 65,
+    "base_clock_ghz": 3.8,
+    "boost_clock_ghz": 5.1
+  }
+]
