@@ -7,6 +7,7 @@ WORKDIR /app
 
 COPY pyproject.toml /app/pyproject.toml
 COPY app /app/app
+COPY data /app/data
 COPY scripts /app/scripts
 
 RUN pip install --no-cache-dir --upgrade pip \

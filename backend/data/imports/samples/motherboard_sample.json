@@ -1,0 +1,13 @@
+[
+  {
+    "name": "ASUS PRIME B650M-A WIFI II",
+    "brand": "ASUS",
+    "model": "PRIME B650M-A WIFI II",
+    "chipset": "B650",
+    "socket": "AM5",
+    "memory_type": "DDR5",
+    "form_factor": "Micro-ATX",
+    "m2_slots": 2,
+    "pcie_x16_slots": 1
+  }
+]
