@@ -10,11 +10,15 @@ from neo4j import Driver
 
 from app.core.config import settings
 from app.models.catalog import (
+    CanonicalEvidenceRequest,
+    CanonicalEvidenceResponse,
     CatalogCategoryCoverage,
     CatalogCoverageResponse,
     CatalogFeedImportResponse,
     CatalogFeedImportRow,
     CatalogFeedRunView,
+    HybridGraphIntegrityResponse,
+    HybridIntegrityCheck,
 )
 from app.models.pricing import (
     CpuSpecsImportResponse,
@@ -1115,6 +1119,8 @@ class Neo4jPricingRepository:
         statements = [
             "CREATE CONSTRAINT product_canonical_key IF NOT EXISTS "
             "FOR (n:Product) REQUIRE n.canonical_key IS UNIQUE",
+            "CREATE CONSTRAINT canonical_product_key IF NOT EXISTS "
+            "FOR (n:CanonicalProduct) REQUIRE n.canonical_key IS UNIQUE",
             "CREATE CONSTRAINT brand_name IF NOT EXISTS FOR (n:Brand) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT socket_name IF NOT EXISTS FOR (n:Socket) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT memory_type_name IF NOT EXISTS FOR (n:MemoryType) REQUIRE n.name IS UNIQUE",
@@ -1123,9 +1129,16 @@ class Neo4jPricingRepository:
             "CREATE CONSTRAINT efficiency_rating_name IF NOT EXISTS FOR (n:EfficiencyRating) REQUIRE n.name IS UNIQUE",
             "CREATE CONSTRAINT product_family_key IF NOT EXISTS FOR (n:ProductFamily) REQUIRE n.family_key IS UNIQUE",
             "CREATE CONSTRAINT catalog_feed_run_id IF NOT EXISTS FOR (n:CatalogFeedRun) REQUIRE n.run_id IS UNIQUE",
+            "CREATE CONSTRAINT canonical_source_name IF NOT EXISTS FOR (n:CanonicalSource) REQUIRE n.name IS UNIQUE",
+            "CREATE CONSTRAINT canonical_evidence_id IF NOT EXISTS FOR (n:CanonicalEvidence) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT community_evidence_id IF NOT EXISTS FOR (n:CommunityEvidence) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT founder_approval_state_id IF NOT EXISTS "
+            "FOR (n:FounderApprovalState) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT vendor_id IF NOT EXISTS FOR (n:Vendor) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT price_snapshot_id IF NOT EXISTS "
             "FOR (n:PriceSnapshot) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT regional_price_snapshot_id IF NOT EXISTS "
+            "FOR (n:RegionalPriceSnapshot) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT pricing_job_id IF NOT EXISTS "
             "FOR (n:PricingJob) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT product_url_normalized IF NOT EXISTS "
@@ -1156,8 +1169,12 @@ class Neo4jPricingRepository:
             "FOR (n:PriceSnapshot) ON (n.vendor_id)",
             "CREATE INDEX price_snapshot_region IF NOT EXISTS "
             "FOR (n:PriceSnapshot) ON (n.region)",
+            "CREATE INDEX regional_price_snapshot_region IF NOT EXISTS "
+            "FOR (n:RegionalPriceSnapshot) ON (n.region)",
             "CREATE INDEX product_url_region IF NOT EXISTS "
             "FOR (n:ProductURL) ON (n.region, n.category)",
+            "CREATE INDEX canonical_evidence_source IF NOT EXISTS "
+            "FOR (n:CanonicalEvidence) ON (n.source_name, n.evidence_type)",
             "CREATE INDEX hardware_intelligence_generated_at IF NOT EXISTS "
             "FOR (n:HardwareIntelligence) ON (n.generated_at)",
         ]
@@ -1218,7 +1235,7 @@ class Neo4jPricingRepository:
             records, _, _ = self.driver.execute_query(
                 """
                 MATCH (p {id: $target_id})
-                SET p:Product
+                SET p:Product:CanonicalProduct
                 SET p += $product_properties
                 RETURN p.id AS id
                 """,
@@ -1231,7 +1248,7 @@ class Neo4jPricingRepository:
             product_id = f"product-{uuid4()}"
             records, _, _ = self.driver.execute_query(
                 """
-                MERGE (p:Product {canonical_key: $canonical_key})
+                MERGE (p:Product:CanonicalProduct {canonical_key: $canonical_key})
                 ON CREATE SET p.id = $product_id,
                               p.created_at = datetime()
                 SET p += $product_properties
@@ -1342,7 +1359,7 @@ class Neo4jPricingRepository:
                   WHEN $region IN coalesce(p.region_availability, []) THEN p.region_availability
                   ELSE coalesce(p.region_availability, []) + $region
                 END
-            CREATE (snapshot:PriceSnapshot)
+            CREATE (snapshot:PriceSnapshot:RegionalPriceSnapshot)
             SET snapshot += $snapshot
             MERGE (p)-[:HAS_PRICE]->(snapshot)
             MERGE (snapshot)-[:FROM_VENDOR]->(vendor)
@@ -1942,10 +1959,10 @@ class Neo4jPricingRepository:
                 continue
             self.driver.execute_query(
                 """
-                MERGE (p:Product {canonical_key: $canonical_key})
+                MERGE (p:Product:CanonicalProduct {canonical_key: $canonical_key})
                 ON CREATE SET p.id = $product_id,
                               p.created_at = datetime()
-                SET p:CPU,
+                SET p:CPU:CanonicalProduct,
                     p.name = $name,
                     p.brand = $brand,
                     p.category = "CPU",
@@ -2080,7 +2097,7 @@ class Neo4jPricingRepository:
                 label = _category_label(row_category)
                 records, _, _ = self.driver.execute_query(
                     f"""
-                    MERGE (p:Product {{canonical_key: $canonical_key}})
+                    MERGE (p:Product:CanonicalProduct {{canonical_key: $canonical_key}})
                     ON CREATE SET p.id = $product_id,
                                   p.created_at = datetime(),
                                   p._catalog_feed_created = true
@@ -2307,6 +2324,166 @@ class Neo4jPricingRepository:
             priced_product_count=sum(item.priced_product_count for item in coverage),
             stale_listing_count=sum(item.stale_listing_count for item in coverage),
             categories=coverage,
+        )
+
+    def hybrid_graph_integrity(self, *, region: str = "SA") -> HybridGraphIntegrityResponse:
+        region = normalize_region(region)
+        canonical_count = self._count_query("MATCH (p:CanonicalProduct) RETURN count(p) AS count")
+        regional_count = self._count_query(
+            "MATCH (s:RegionalPriceSnapshot) WHERE s.region = $region RETURN count(s) AS count",
+            region=region,
+        )
+        telemetry_count = self._count_query("MATCH (e) WHERE e:TelemetryEvidence OR e:TelemetrySnapshot RETURN count(e) AS count")
+        community_count = self._count_query("MATCH (e:CommunityEvidence) RETURN count(e) AS count")
+        approval_count = self._count_query("MATCH (s:FounderApprovalState) RETURN count(s) AS count")
+        checks = [
+            self._integrity_check(
+                name="regional_price_snapshots_are_region_labeled",
+                count=self._count_query(
+                    "MATCH (s:PriceSnapshot) WHERE s.region = $region AND NOT s:RegionalPriceSnapshot RETURN count(s) AS count",
+                    region=region,
+                ),
+                pass_detail="Regional price snapshots carry the RegionalPriceSnapshot label.",
+                fail_detail="Some regional PriceSnapshot nodes are missing the RegionalPriceSnapshot label.",
+            ),
+            self._integrity_check(
+                name="saudi_prices_are_sar",
+                count=self._count_query(
+                    """
+                    MATCH (s:PriceSnapshot)
+                    WHERE s.region = $region AND coalesce(s.currency, s.final_landed_currency) <> "SAR"
+                    RETURN count(s) AS count
+                    """,
+                    region=region,
+                ),
+                pass_detail="Saudi price snapshots use SAR currency.",
+                fail_detail="Some Saudi price snapshots are not SAR and must be reviewed.",
+            ),
+            self._integrity_check(
+                name="product_urls_map_to_products",
+                count=self._count_query(
+                    """
+                    MATCH (url:ProductURL)
+                    WHERE url.region = $region AND NOT (url)-[:FOR_PRODUCT]->(:Product)
+                    RETURN count(url) AS count
+                    """,
+                    region=region,
+                ),
+                pass_detail="Known Saudi product URLs map into canonical products.",
+                fail_detail="Some Saudi ProductURL nodes are orphaned and may create duplicate imports.",
+            ),
+            self._integrity_check(
+                name="canonical_products_have_keys",
+                count=self._count_query(
+                    "MATCH (p:CanonicalProduct) WHERE p.canonical_key IS NULL OR p.canonical_key = '' RETURN count(p) AS count"
+                ),
+                pass_detail="Canonical products have stable canonical keys.",
+                fail_detail="Canonical products without keys weaken duplicate control.",
+            ),
+        ]
+        if canonical_count == 0:
+            checks.append(
+                HybridIntegrityCheck(
+                    name="canonical_product_seed",
+                    status="warn",
+                    detail="No CanonicalProduct nodes exist yet; import approved specs before relying on catalog-scale filtering.",
+                    count=0,
+                )
+            )
+        return HybridGraphIntegrityResponse(
+            region=region,
+            canonical_product_count=canonical_count,
+            regional_price_snapshot_count=regional_count,
+            telemetry_evidence_count=telemetry_count,
+            community_evidence_count=community_count,
+            founder_approval_state_count=approval_count,
+            checks=checks,
+        )
+
+    def attach_canonical_evidence(self, request: CanonicalEvidenceRequest) -> CanonicalEvidenceResponse:
+        evidence_id = f"evidence:{uuid4()}"
+        approval_state = "approved" if request.approved_by_founder else "pending_review"
+        labels = ":CanonicalEvidence"
+        if request.evidence_type == "community_hint":
+            labels += ":CommunityEvidence"
+        if request.evidence_type == "performance_hint":
+            labels += ":TelemetryEvidence"
+        records, _, _ = self.driver.execute_query(
+            f"""
+            MATCH (p:Product)
+            WHERE p.id = $product_id OR p.canonical_key = $product_id
+            WITH p LIMIT 1
+            MERGE (source:CanonicalSource {{name: $source_name}})
+            SET source.updated_at = datetime()
+            CREATE (e{labels})
+            SET e.id = $evidence_id,
+                e.source_name = $source_name,
+                e.evidence_type = $evidence_type,
+                e.field = $field,
+                e.value_json = $value_json,
+                e.trust_score = $trust_score,
+                e.note = $note,
+                e.created_at = datetime()
+            MERGE (p)-[:HAS_CANONICAL_EVIDENCE]->(e)
+            MERGE (e)-[:FROM_SOURCE]->(source)
+            MERGE (approval:FounderApprovalState {{id: $approval_id}})
+            SET approval.status = $approval_state,
+                approval.source_name = $source_name,
+                approval.updated_at = datetime()
+            MERGE (e)-[:HAS_APPROVAL_STATE]->(approval)
+            RETURN p.id AS product_id
+            """,
+            product_id=request.product_id,
+            source_name=request.source_name,
+            evidence_id=evidence_id,
+            evidence_type=request.evidence_type,
+            field=request.field,
+            value_json=json.dumps(request.value, sort_keys=True),
+            trust_score=request.trust_score,
+            note=request.note,
+            approval_id=f"approval:{evidence_id}",
+            approval_state=approval_state,
+            database_=settings.neo4j_database,
+        )
+        if not records:
+            return CanonicalEvidenceResponse(
+                product_id=request.product_id,
+                evidence_id=evidence_id,
+                evidence_type=request.evidence_type,
+                source_name=request.source_name,
+                attached=False,
+                approval_state="product_not_found",
+            )
+        return CanonicalEvidenceResponse(
+            product_id=str(records[0]["product_id"]),
+            evidence_id=evidence_id,
+            evidence_type=request.evidence_type,
+            source_name=request.source_name,
+            attached=True,
+            approval_state=approval_state,
+        )
+
+    def _count_query(self, statement: str, **parameters: Any) -> int:
+        records, _, _ = self.driver.execute_query(
+            statement,
+            **parameters,
+            database_=settings.neo4j_database,
+        )
+        return int(records[0]["count"] or 0) if records else 0
+
+    def _integrity_check(
+        self,
+        *,
+        name: str,
+        count: int,
+        pass_detail: str,
+        fail_detail: str,
+    ) -> HybridIntegrityCheck:
+        return HybridIntegrityCheck(
+            name=name,
+            status="pass" if count == 0 else "fail",
+            detail=pass_detail if count == 0 else fail_detail,
+            count=count,
         )
 
     def search_products(

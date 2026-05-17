@@ -99,3 +99,74 @@ class CatalogCoverageResponse(BaseModel):
     priced_product_count: int
     stale_listing_count: int
     categories: list[CatalogCategoryCoverage]
+
+
+class HybridDataLayerView(BaseModel):
+    layer: str
+    graph_labels: list[str]
+    owns: list[str]
+    must_not_own: list[str]
+    trusted_sources: list[str]
+
+
+class HybridSourceView(BaseModel):
+    source_name: str
+    layer: str
+    allowed_use: list[str]
+    disallowed_use: list[str]
+    trust_weight: float = Field(ge=0, le=1)
+    requires_founder_approval: bool
+
+
+class HybridGraphStrategyResponse(BaseModel):
+    objective: str
+    canonicalization_policy: list[str]
+    data_layers: list[HybridDataLayerView]
+    source_strategy: list[HybridSourceView]
+    safety_rules: list[str]
+
+
+class HybridIntegrityCheck(BaseModel):
+    name: str
+    status: Literal["pass", "warn", "fail"]
+    detail: str
+    count: int = 0
+
+
+class HybridGraphIntegrityResponse(BaseModel):
+    region: str
+    canonical_product_count: int
+    regional_price_snapshot_count: int
+    telemetry_evidence_count: int
+    community_evidence_count: int
+    founder_approval_state_count: int
+    checks: list[HybridIntegrityCheck]
+
+
+CanonicalEvidenceType = Literal[
+    "canonical_spec",
+    "compatibility_hint",
+    "community_hint",
+    "founder_note",
+    "performance_hint",
+]
+
+
+class CanonicalEvidenceRequest(BaseModel):
+    product_id: str = Field(min_length=2, max_length=240)
+    source_name: str = Field(min_length=2, max_length=120)
+    evidence_type: CanonicalEvidenceType
+    field: str = Field(min_length=2, max_length=120)
+    value: Any
+    trust_score: float = Field(default=0.5, ge=0, le=1)
+    note: str | None = Field(default=None, max_length=500)
+    approved_by_founder: bool = False
+
+
+class CanonicalEvidenceResponse(BaseModel):
+    product_id: str
+    evidence_id: str
+    evidence_type: CanonicalEvidenceType
+    source_name: str
+    attached: bool
+    approval_state: str
