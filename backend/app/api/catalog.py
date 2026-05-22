@@ -31,6 +31,13 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 logger = logging.getLogger("pc_builder.catalog_api")
 
 
+def _safe_stage_error_detail(error: Exception) -> str:
+    code = str(getattr(error, "code", "") or getattr(error, "neo4j_code", "") or type(error).__name__)
+    message = " ".join(str(error).split())
+    safe_message = message[:240] if message else type(error).__name__
+    return f"canonical staging failed safely: {code}: {safe_message}"
+
+
 @router.get("/completeness", response_model=CatalogCompletenessResponse)
 def catalog_completeness(
     region: str | None = "SA",
@@ -90,7 +97,7 @@ def stage_canonical_import(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"canonical staging failed safely: {type(error).__name__}",
+            detail=_safe_stage_error_detail(error),
         ) from error
 
 
