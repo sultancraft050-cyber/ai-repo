@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.dependencies import get_pricing_repository, resolve_market_region
@@ -26,6 +28,7 @@ from app.models.catalog import (
 from app.services.saudi_build_generator import SaudiLocalBuildService
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+logger = logging.getLogger("pc_builder.catalog_api")
 
 
 @router.get("/completeness", response_model=CatalogCompletenessResponse)
@@ -80,6 +83,15 @@ def stage_canonical_import(
         return repository.stage_canonical_import(request_body)
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+    except Exception as error:
+        logger.exception(
+            "canonical_stage_failed",
+            extra={"source_name": request_body.source_name, "category": request_body.category},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"canonical staging failed safely: {type(error).__name__}",
+        ) from error
 
 
 @router.get("/import/staged", response_model=CanonicalStagedSummaryResponse)
