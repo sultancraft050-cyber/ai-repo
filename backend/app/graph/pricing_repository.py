@@ -3004,6 +3004,25 @@ class Neo4jPricingRepository:
 
     def _upsert_staged_canonical_record(self, record: dict[str, Any]) -> None:
         properties = _clean_properties(record)
+        canonical_key = str(record.get("canonical_key") or "").strip()
+        if canonical_key:
+            canonical_properties = dict(properties)
+            canonical_properties.pop("staged_id", None)
+            self.driver.execute_query(
+                """
+                MERGE (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+                ON CREATE SET record.created_at = datetime()
+                SET record += $properties,
+                    record.staged_id = coalesce(record.staged_id, $staged_id),
+                    record.updated_at = datetime(),
+                    record.import_status = "pending"
+                """,
+                canonical_key=canonical_key,
+                staged_id=str(record["staged_id"]),
+                properties=canonical_properties,
+                database_=settings.neo4j_database,
+            )
+            return
         self.driver.execute_query(
             """
             MERGE (record:StagedCanonicalRecord {staged_id: $staged_id})

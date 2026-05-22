@@ -21,9 +21,11 @@ class FakeRecord(dict):
 class FakeDriver:
     def __init__(self) -> None:
         self.queries: list[str] = []
+        self.calls: list[dict[str, Any]] = []
 
     def execute_query(self, query: str, **_: Any) -> tuple[list[FakeRecord], None, None]:
         self.queries.append(query)
+        self.calls.append({"query": query, **_})
         if "MATCH (record:StagedCanonicalRecord {canonical_key:" in query:
             return [FakeRecord(count=0)], None, None
         if "MATCH (p:Product {canonical_key:" in query:
@@ -111,6 +113,22 @@ def test_stage_valid_cpu_json_fixture() -> None:
     assert response.rejected_records == 0
     assert response.categories == ["CPU"]
     assert "commit" in response.recommended_next_action.lower()
+    assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
+def test_stage_commit_path_uses_canonical_key_merge_without_price_mutation() -> None:
+    driver = FakeDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.stage_canonical_import(_stage_request(dry_run=False))
+
+    assert response.status == "completed"
+    staged_writes = [
+        call for call in driver.calls if "MERGE (record:StagedCanonicalRecord {canonical_key:" in call["query"]
+    ]
+    assert len(staged_writes) == 2
+    assert all(call["canonical_key"] for call in staged_writes)
+    assert all("staged_id" not in call["properties"] for call in staged_writes)
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 
 
