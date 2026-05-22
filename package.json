@@ -1,0 +1,9 @@
+{
+  "name": "saudi-pc-buying-platform",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "ui:check": "npm --prefix frontend run ui:check"
+  }
+}

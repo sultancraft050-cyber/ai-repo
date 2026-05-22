@@ -66,9 +66,26 @@ def test_stage_rejects_path_traversal() -> None:
         _resolve_import_dataset_path("../secrets.csv")
 
 
+def test_stage_rejects_absolute_path() -> None:
+    with pytest.raises(ValueError, match="absolute paths are not allowed"):
+        _resolve_import_dataset_path(str((Path.cwd() / "secrets" / "cpu_sample.json").resolve()))
+
+
 def test_stage_rejects_unsupported_file_type() -> None:
     with pytest.raises(ValueError):
         _resolve_import_dataset_path("samples/not-supported.xlsx")
+
+
+def test_stage_missing_file_has_deployment_hint() -> None:
+    with pytest.raises(ValueError, match="Railway images must include backend/data fixtures"):
+        _resolve_import_dataset_path("samples/missing_cpu_sample.json")
+
+
+def test_stage_resolves_documented_data_imports_path() -> None:
+    path = _resolve_import_dataset_path("data/imports/samples/cpu_sample.json")
+
+    assert path.name == "cpu_sample.json"
+    assert path.exists()
 
 
 def test_stage_rejects_unsupported_source() -> None:
@@ -84,7 +101,8 @@ def test_stage_requires_license_note() -> None:
 
 
 def test_stage_valid_cpu_json_fixture() -> None:
-    repository = Neo4jPricingRepository(FakeDriver())  # type: ignore[arg-type]
+    driver = FakeDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
 
     response = repository.stage_canonical_import(_stage_request())
 
@@ -93,6 +111,7 @@ def test_stage_valid_cpu_json_fixture() -> None:
     assert response.rejected_records == 0
     assert response.categories == ["CPU"]
     assert "commit" in response.recommended_next_action.lower()
+    assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 
 
 def test_stage_valid_gpu_csv_fixture() -> None:

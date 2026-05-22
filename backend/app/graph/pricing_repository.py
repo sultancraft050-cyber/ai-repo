@@ -80,7 +80,6 @@ APPROVED_CANONICAL_IMPORT_SOURCES = {
     ("Community repositories", "community_repository"),
 }
 CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
-ALLOWED_CANONICAL_IMPORT_DIR = Path(__file__).resolve().parents[3] / "data" / "imports"
 SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
 BUNDLE_REJECTION_MARKERS = (
     "bundle",
@@ -92,6 +91,24 @@ BUNDLE_REJECTION_MARKERS = (
     "mini pc",
     "accessory",
 )
+
+
+def _default_canonical_import_dir() -> Path:
+    """Resolve the local-only import root for both Docker and source checkouts."""
+    module_path = Path(__file__).resolve()
+    candidates = (
+        # Docker/Railway backend image: /app/app/graph/pricing_repository.py -> /app/data/imports
+        module_path.parents[2] / "data" / "imports",
+        # Source checkout root used by earlier local workflows: <repo>/data/imports
+        module_path.parents[3] / "data" / "imports",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+ALLOWED_CANONICAL_IMPORT_DIR = _default_canonical_import_dir()
 
 
 def _refresh_priority_for_category(category: str) -> int:
@@ -1202,7 +1219,7 @@ def _canonical_import_skip_reason(
 def _resolve_import_dataset_path(dataset_path: str) -> Path:
     candidate = Path(dataset_path)
     if candidate.is_absolute():
-        raise ValueError("dataset_path must be relative to data/imports")
+        raise ValueError("dataset_path must be relative to data/imports; absolute paths are not allowed")
     if any(part == ".." for part in candidate.parts):
         raise ValueError("dataset_path cannot contain path traversal")
     allowed_root = ALLOWED_CANONICAL_IMPORT_DIR.resolve()
@@ -1214,7 +1231,12 @@ def _resolve_import_dataset_path(dataset_path: str) -> Path:
     if resolved.suffix.lower() not in SUPPORTED_CANONICAL_IMPORT_EXTENSIONS:
         raise ValueError("unsupported dataset file type")
     if not resolved.exists() or not resolved.is_file():
-        raise ValueError("dataset file not found")
+        raise ValueError(
+            "dataset file not found: "
+            f"requested dataset_path='{dataset_path}', "
+            f"allowed_base_directory='{allowed_root}', "
+            "hint='Railway images must include backend/data fixtures copied to /app/data.'"
+        )
     return resolved
 
 

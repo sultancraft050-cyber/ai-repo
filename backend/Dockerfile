@@ -10,9 +10,10 @@ COPY app /app/app
 COPY data /app/data
 COPY scripts /app/scripts
 
-RUN pip install --no-cache-dir --upgrade pip \
+RUN test -f /app/data/imports/samples/cpu_sample.json \
+    && pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir ".[image]"
 
-EXPOSE 8000
+EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
