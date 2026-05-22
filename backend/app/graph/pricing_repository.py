@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from datetime import UTC, datetime
 import json
+import logging
 from pathlib import Path
 import re
 from typing import Any
@@ -51,6 +52,8 @@ from app.services.pricing_classification import infer_listing_market
 from app.services.pricing_normalization import cpu_model_key_from_title
 from app.services.region_config import get_region_config, normalize_region, vendor_region_type, vendor_trust_profile
 
+
+logger = logging.getLogger("pc_builder.pricing_repository")
 
 ACTIVE_PRICE_AVAILABILITY = {"in_stock", "preorder", "backorder"}
 ACTIVE_BUILD_CATEGORIES = {"CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"}
@@ -3049,38 +3052,44 @@ class Neo4jPricingRepository:
         warning_summary: str | None,
         finished: bool,
     ) -> None:
-        self.driver.execute_query(
-            """
-            MERGE (run:CanonicalStageRun {run_id: $run_id})
-            ON CREATE SET run.started_at = datetime()
-            SET run.source_name = $source_name,
-                run.source_type = $source_type,
-                run.category = $category,
-                run.dataset_path = $dataset_path,
-                run.dry_run = $dry_run,
-                run.status = $status,
-                run.staged_records = $staged,
-                run.rejected_records = $rejected,
-                run.duplicate_candidates = $duplicate_candidates,
-                run.conflict_candidates = $conflict_candidates,
-                run.warning_summary = $warning_summary,
-                run.finished_at = CASE WHEN $finished THEN datetime() ELSE run.finished_at END
-            """,
-            run_id=run_id,
-            source_name=request.source_name,
-            source_type=request.source_type,
-            category=request.category,
-            dataset_path=request.dataset_path,
-            dry_run=request.dry_run,
-            status=status,
-            staged=staged,
-            rejected=rejected,
-            duplicate_candidates=duplicate_candidates,
-            conflict_candidates=conflict_candidates,
-            warning_summary=warning_summary,
-            finished=finished,
-            database_=settings.neo4j_database,
-        )
+        try:
+            self.driver.execute_query(
+                """
+                MERGE (run:CanonicalStageRun {run_id: $run_id})
+                ON CREATE SET run.started_at = datetime()
+                SET run.source_name = $source_name,
+                    run.source_type = $source_type,
+                    run.category = $category,
+                    run.dataset_path = $dataset_path,
+                    run.dry_run = $dry_run,
+                    run.status = $status,
+                    run.staged_records = $staged,
+                    run.rejected_records = $rejected,
+                    run.duplicate_candidates = $duplicate_candidates,
+                    run.conflict_candidates = $conflict_candidates,
+                    run.warning_summary = $warning_summary,
+                    run.finished_at = CASE WHEN $finished THEN datetime() ELSE run.finished_at END
+                """,
+                run_id=run_id,
+                source_name=request.source_name,
+                source_type=request.source_type,
+                category=request.category,
+                dataset_path=request.dataset_path,
+                dry_run=request.dry_run,
+                status=status,
+                staged=staged,
+                rejected=rejected,
+                duplicate_candidates=duplicate_candidates,
+                conflict_candidates=conflict_candidates,
+                warning_summary=warning_summary,
+                finished=finished,
+                database_=settings.neo4j_database,
+            )
+        except Exception as error:  # noqa: BLE001 - audit/run summaries must not block staging.
+            logger.warning(
+                "canonical_stage_run_record_failed",
+                extra={"run_id": run_id, "error_type": type(error).__name__},
+            )
 
     def _stage_recommended_next_action(self, staged: int, rejected: int, conflicts: int) -> str:
         if staged == 0 and rejected > 0:

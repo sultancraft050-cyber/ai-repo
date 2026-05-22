@@ -51,6 +51,13 @@ class FakeDriver:
         return [], None, None
 
 
+class StageRunFailingDriver(FakeDriver):
+    def execute_query(self, query: str, **kwargs: Any) -> tuple[list[FakeRecord], None, None]:
+        if "MERGE (run:CanonicalStageRun" in query:
+            raise RuntimeError("stage run write failed")
+        return super().execute_query(query, **kwargs)
+
+
 def _stage_request(**overrides: Any) -> CanonicalImportStageRequest:
     return CanonicalImportStageRequest(
         source_name=overrides.get("source_name", "BuildCores/OpenDB"),
@@ -130,6 +137,17 @@ def test_stage_commit_path_uses_canonical_key_merge_without_price_mutation() -> 
     assert all(call["canonical_key"] for call in staged_writes)
     assert all("staged_id" not in call["properties"] for call in staged_writes)
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
+def test_stage_run_record_failure_does_not_block_staged_records() -> None:
+    driver = StageRunFailingDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.stage_canonical_import(_stage_request(dry_run=False))
+
+    assert response.status == "completed"
+    assert response.staged_records == 2
+    assert any("MERGE (record:StagedCanonicalRecord {canonical_key:" in query for query in driver.queries)
 
 
 def test_stage_valid_gpu_csv_fixture() -> None:
