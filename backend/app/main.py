@@ -246,7 +246,11 @@ async def security_audit_middleware(request: Request, call_next):
             status_code=500,
             content={
                 "error": "internal_error",
-                "detail": "Request failed. Check trace ID.",
+                "detail": (
+                    f"Request failed safely: {type(error).__name__}."
+                    if request.url.path == "/catalog/import/stage"
+                    else "Request failed. Check trace ID."
+                ),
                 "trace_id": current_trace_id,
             },
             headers={"X-Trace-ID": current_trace_id},
