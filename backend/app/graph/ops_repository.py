@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import base64
+from datetime import UTC, datetime, timedelta
+import hashlib
+import hmac
 import json
 from typing import Any
 
@@ -8,7 +11,48 @@ from neo4j import Driver
 
 from app.core.config import settings
 from app.models.launch import AnalyticsEventView, FeedbackSubmissionView
-from app.models.ops import ApprovalItem, AuditEvent, AutonomyJob, DailyFounderReport, JobMonitorItem
+from app.models.ops import (
+    ApprovalItem,
+    AuditEvent,
+    AutonomyJob,
+    DailyFounderReport,
+    JobMonitorItem,
+    Neo4jCapacityReport,
+    Neo4jCountItem,
+    Neo4jOrphanFinding,
+    Neo4jOrphansResponse,
+    Neo4jPruneExecuteRequest,
+    Neo4jPruneExecuteResponse,
+    Neo4jPrunePreviewRequest,
+    Neo4jPrunePreviewResponse,
+)
+
+
+NEO4J_AURA_FREE_NODE_LIMIT = 200_000
+PRODUCTION_CRITICAL_LABELS = {
+    "Product",
+    "CanonicalProduct",
+    "Vendor",
+    "PriceSnapshot",
+    "RegionalPriceSnapshot",
+    "ProductURL",
+    "SavedBuild",
+    "User",
+    "WatchlistItem",
+    "FeedbackSubmission",
+    "DealSubmission",
+    "ApprovalItem",
+    "ApprovalRequest",
+}
+DEFAULT_SAFE_PRUNE_LABELS = {
+    "StagedCanonicalRecord",
+    "CanonicalImportRun",
+    "CanonicalStageRun",
+    "OperationalSignal",
+    "AutonomyJob",
+    "AnalyticsEvent",
+    "FounderDailyReport",
+}
 
 
 def _json_default(value: Any) -> str:
@@ -39,6 +83,47 @@ def _to_datetime(value: Any) -> datetime | None:
     if hasattr(value, "to_native"):
         return value.to_native()
     return None
+
+
+def _count_items(rows: list[Any], name_key: str = "name") -> list[Neo4jCountItem]:
+    return [
+        Neo4jCountItem(name=str(record[name_key] or "unknown"), count=int(record["count"] or 0))
+        for record in rows
+    ]
+
+
+def _prune_token_secret() -> bytes:
+    secret = settings.admin_api_key or settings.super_admin_api_key or "local-dev-prune-preview"
+    return secret.encode("utf-8")
+
+
+def _encode_prune_preview(payload: dict[str, Any]) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=_json_default).encode("utf-8")
+    body = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    signature = hmac.new(_prune_token_secret(), body.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{body}.{signature}"
+
+
+def _decode_prune_preview(preview_id: str) -> dict[str, Any]:
+    try:
+        body, signature = preview_id.rsplit(".", 1)
+    except ValueError as error:
+        raise ValueError("invalid prune preview id") from error
+    expected = hmac.new(_prune_token_secret(), body.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise ValueError("invalid prune preview signature")
+    padded = body + "=" * (-len(body) % 4)
+    payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("invalid prune preview payload")
+    return payload
+
+
+def _safe_prune_labels(include_labels: list[str]) -> tuple[list[str], list[str]]:
+    requested = [str(label).strip() for label in include_labels if str(label).strip()]
+    labels = requested or sorted(DEFAULT_SAFE_PRUNE_LABELS)
+    protected = sorted(label for label in labels if label in PRODUCTION_CRITICAL_LABELS)
+    return [label for label in labels if label not in PRODUCTION_CRITICAL_LABELS], protected
 
 
 class Neo4jOpsRepository:
@@ -222,6 +307,277 @@ class Neo4jOpsRepository:
                 "recent_audit_count": 0,
             }
         return {key: int(records[0][key] or 0) for key in records[0].keys()}
+
+    def neo4j_capacity_report(self) -> Neo4jCapacityReport:
+        node_records, _, _ = self.driver.execute_query(
+            "MATCH (n) RETURN count(n) AS count",
+            database_=settings.neo4j_database,
+        )
+        rel_records, _, _ = self.driver.execute_query(
+            "MATCH ()-[r]->() RETURN count(r) AS count",
+            database_=settings.neo4j_database,
+        )
+        label_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (n)
+            UNWIND labels(n) AS name
+            RETURN name, count(*) AS count
+            ORDER BY count DESC, name ASC
+            """,
+            database_=settings.neo4j_database,
+        )
+        rel_type_records, _, _ = self.driver.execute_query(
+            """
+            MATCH ()-[r]->()
+            RETURN type(r) AS name, count(*) AS count
+            ORDER BY count DESC, name ASC
+            """,
+            database_=settings.neo4j_database,
+        )
+        total_nodes = int(node_records[0]["count"] or 0) if node_records else 0
+        total_relationships = int(rel_records[0]["count"] or 0) if rel_records else 0
+        count_by_label = _count_items(label_records)
+        safe_labels = [
+            item.name
+            for item in count_by_label
+            if item.name in DEFAULT_SAFE_PRUNE_LABELS and item.name not in PRODUCTION_CRITICAL_LABELS
+        ]
+        near_limit = total_nodes >= int(NEO4J_AURA_FREE_NODE_LIMIT * 0.9)
+        over_limit = total_nodes >= NEO4J_AURA_FREE_NODE_LIMIT
+        return Neo4jCapacityReport(
+            total_node_count=total_nodes,
+            total_relationship_count=total_relationships,
+            count_by_label=count_by_label,
+            count_by_relationship_type=_count_items(rel_type_records),
+            largest_labels=count_by_label[:12],
+            estimated_safe_to_prune_labels=safe_labels,
+            production_critical_labels=sorted(PRODUCTION_CRITICAL_LABELS),
+            near_limit=near_limit,
+            over_limit=over_limit,
+            hard_blocker=(
+                f"Neo4j Aura free logical node limit reached ({NEO4J_AURA_FREE_NODE_LIMIT})."
+                if over_limit
+                else None
+            ),
+            warning=(
+                "Neo4j is near the Aura free logical node limit; run a prune preview before imports."
+                if near_limit and not over_limit
+                else None
+            ),
+        )
+
+    def neo4j_prune_preview(self, request: Neo4jPrunePreviewRequest) -> Neo4jPrunePreviewResponse:
+        labels, protected = _safe_prune_labels(request.include_labels)
+        cutoff = datetime.now(UTC) - timedelta(days=request.retention_days)
+        total_nodes = self.neo4j_capacity_report().total_node_count
+        if not labels:
+            preview_id = _encode_prune_preview(
+                {"labels": [], "retention_days": request.retention_days, "region": request.region}
+            )
+            return Neo4jPrunePreviewResponse(
+                preview_id=preview_id,
+                dry_run=True,
+                would_delete_node_count=0,
+                would_delete_relationship_count=0,
+                labels_affected=[],
+                sample_node_ids=[],
+                safety_warnings=["No safe prune labels selected.", *[f"Protected label skipped: {label}" for label in protected]],
+                protected_nodes_skipped=0,
+                expected_remaining_nodes=total_nodes,
+            )
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (n)
+            WHERE any(label IN labels(n) WHERE label IN $labels)
+              AND none(label IN labels(n) WHERE label IN $protected_labels)
+              AND NOT (n)--(:Product)
+              AND NOT (n)--(:PriceSnapshot)
+              AND NOT (n)--(:RegionalPriceSnapshot)
+              AND NOT (n)--(:SavedBuild)
+            WITH n, coalesce(n.created_at, n.timestamp, n.started_at, n.updated_at, n.finished_at) AS raw_age
+            WITH n, CASE WHEN raw_age IS NULL THEN NULL ELSE datetime(toString(raw_age)) END AS age_value
+            WHERE age_value IS NULL OR age_value < $cutoff
+            OPTIONAL MATCH (n)-[rel]-()
+            WITH collect(DISTINCT n) AS nodes, count(rel) AS relationship_count
+            RETURN size(nodes) AS node_count,
+                   relationship_count,
+                   [node IN nodes[0..12] | coalesce(node.id, node.event_id, node.job_id, node.run_id, node.staged_id, elementId(node))] AS sample_node_ids
+            """,
+            labels=labels,
+            protected_labels=sorted(PRODUCTION_CRITICAL_LABELS),
+            cutoff=cutoff,
+            database_=settings.neo4j_database,
+        )
+        label_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (n)
+            WHERE any(label IN labels(n) WHERE label IN $labels)
+              AND none(label IN labels(n) WHERE label IN $protected_labels)
+              AND NOT (n)--(:Product)
+              AND NOT (n)--(:PriceSnapshot)
+              AND NOT (n)--(:RegionalPriceSnapshot)
+              AND NOT (n)--(:SavedBuild)
+            WITH n, coalesce(n.created_at, n.timestamp, n.started_at, n.updated_at, n.finished_at) AS raw_age
+            WITH n, CASE WHEN raw_age IS NULL THEN NULL ELSE datetime(toString(raw_age)) END AS age_value
+            WHERE age_value IS NULL OR age_value < $cutoff
+            UNWIND labels(n) AS name
+            WITH name, n
+            WHERE name IN $labels
+            RETURN name, count(DISTINCT n) AS count
+            ORDER BY count DESC, name ASC
+            """,
+            labels=labels,
+            protected_labels=sorted(PRODUCTION_CRITICAL_LABELS),
+            cutoff=cutoff,
+            database_=settings.neo4j_database,
+        )
+        protected_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (n)
+            WHERE any(label IN labels(n) WHERE label IN $requested_labels)
+              AND any(label IN labels(n) WHERE label IN $protected_labels)
+            RETURN count(n) AS count
+            """,
+            requested_labels=request.include_labels,
+            protected_labels=sorted(PRODUCTION_CRITICAL_LABELS),
+            database_=settings.neo4j_database,
+        )
+        data = records[0].data() if records else {}
+        would_delete = int(data.get("node_count") or 0)
+        preview_payload = {
+            "labels": labels,
+            "retention_days": request.retention_days,
+            "region": request.region,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        warnings = [
+            "Preview only; no nodes were deleted.",
+            "Product, price, vendor, URL, saved-build, user, and approval labels are protected.",
+            "Nodes connected to Product, PriceSnapshot, RegionalPriceSnapshot, or SavedBuild are skipped.",
+        ]
+        warnings.extend(f"Protected label skipped: {label}" for label in protected)
+        return Neo4jPrunePreviewResponse(
+            preview_id=_encode_prune_preview(preview_payload),
+            dry_run=True,
+            would_delete_node_count=would_delete,
+            would_delete_relationship_count=int(data.get("relationship_count") or 0),
+            labels_affected=_count_items(label_records),
+            sample_node_ids=[str(item) for item in data.get("sample_node_ids") or []],
+            safety_warnings=warnings,
+            protected_nodes_skipped=int(protected_records[0]["count"] or 0) if protected_records else 0,
+            expected_remaining_nodes=max(total_nodes - would_delete, 0),
+        )
+
+    def neo4j_prune_execute(self, request: Neo4jPruneExecuteRequest) -> Neo4jPruneExecuteResponse:
+        if not request.approved:
+            raise ValueError("approved=true is required")
+        payload = _decode_prune_preview(request.preview_id)
+        labels = [str(label) for label in payload.get("labels") or []]
+        retention_days = int(payload.get("retention_days") or 30)
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+        if not labels or any(label in PRODUCTION_CRITICAL_LABELS for label in labels):
+            raise ValueError("preview does not contain safe prune labels")
+        preview = self.neo4j_prune_preview(
+            Neo4jPrunePreviewRequest(region=str(payload.get("region") or "SA"), retention_days=retention_days, include_labels=labels)
+        )
+        deleted_total = 0
+        batch_size = 500
+        while True:
+            records, _, _ = self.driver.execute_query(
+                """
+                MATCH (n)
+                WHERE any(label IN labels(n) WHERE label IN $labels)
+                  AND none(label IN labels(n) WHERE label IN $protected_labels)
+                  AND NOT (n)--(:Product)
+                  AND NOT (n)--(:PriceSnapshot)
+                  AND NOT (n)--(:RegionalPriceSnapshot)
+                  AND NOT (n)--(:SavedBuild)
+                WITH n, coalesce(n.created_at, n.timestamp, n.started_at, n.updated_at, n.finished_at) AS raw_age
+                WITH n, CASE WHEN raw_age IS NULL THEN NULL ELSE datetime(toString(raw_age)) END AS age_value
+                WHERE age_value IS NULL OR age_value < $cutoff
+                WITH n LIMIT $batch_size
+                WITH collect(n) AS nodes
+                FOREACH (node IN nodes | DETACH DELETE node)
+                RETURN size(nodes) AS deleted
+                """,
+                labels=labels,
+                protected_labels=sorted(PRODUCTION_CRITICAL_LABELS),
+                cutoff=cutoff,
+                batch_size=batch_size,
+                database_=settings.neo4j_database,
+            )
+            deleted = int(records[0]["deleted"] or 0) if records else 0
+            deleted_total += deleted
+            if deleted == 0 or deleted_total >= preview.would_delete_node_count:
+                break
+        return Neo4jPruneExecuteResponse(
+            preview_id=request.preview_id,
+            approved=True,
+            deleted_node_count=deleted_total,
+            deleted_relationship_count_estimate=preview.would_delete_relationship_count,
+            labels_affected=preview.labels_affected,
+            stopped_safely=True,
+            status="completed",
+            warnings=[
+                "Deleted only nodes matching the signed preview scope.",
+                "Protected production labels and nodes connected to live products/prices/builds were skipped.",
+            ],
+        )
+
+    def neo4j_orphans(self) -> Neo4jOrphansResponse:
+        checks = [
+            (
+                "orphan_field_evidence",
+                """
+                MATCH (n:FieldEvidence)
+                WHERE NOT (n)--(:Product) AND NOT (n)--(:PriceSnapshot)
+                RETURN count(n) AS count, collect(coalesce(n.id, elementId(n)))[0..10] AS sample_node_ids
+                """,
+                "Review and prune orphan FieldEvidence if it is not linked to product or price evidence.",
+            ),
+            (
+                "orphan_price_snapshot",
+                """
+                MATCH (n:PriceSnapshot)
+                WHERE NOT (:Product)--(n) OR NOT (n)--(:Vendor)
+                RETURN count(n) AS count, collect(coalesce(n.id, elementId(n)))[0..10] AS sample_node_ids
+                """,
+                "Inspect carefully before deletion; Saudi price snapshots are production-critical.",
+            ),
+            (
+                "orphan_product_url",
+                """
+                MATCH (n:ProductURL)
+                WHERE NOT (n)--(:Product)
+                RETURN count(n) AS count, collect(coalesce(n.id, n.normalized_url, elementId(n)))[0..10] AS sample_node_ids
+                """,
+                "Review ProductURL nodes without mapped products; do not delete active approved URLs blindly.",
+            ),
+            (
+                "old_staged_canonical_record",
+                """
+                MATCH (n:StagedCanonicalRecord)
+                WITH n, coalesce(n.created_at, n.updated_at, datetime({epochMillis: 0})) AS raw_age
+                WITH n, CASE WHEN raw_age IS NULL THEN NULL ELSE datetime(toString(raw_age)) END AS age_value
+                WHERE age_value IS NULL OR age_value < datetime() - duration({days: 7})
+                RETURN count(n) AS count, collect(coalesce(n.staged_id, n.canonical_key, elementId(n)))[0..10] AS sample_node_ids
+                """,
+                "Safe prune candidate after preview if not needed for active import review.",
+            ),
+        ]
+        findings: list[Neo4jOrphanFinding] = []
+        for kind, query, action in checks:
+            records, _, _ = self.driver.execute_query(query, database_=settings.neo4j_database)
+            data = records[0].data() if records else {}
+            findings.append(
+                Neo4jOrphanFinding(
+                    kind=kind,
+                    count=int(data.get("count") or 0),
+                    sample_node_ids=[str(item) for item in data.get("sample_node_ids") or []],
+                    recommended_action=action,
+                )
+            )
+        return Neo4jOrphansResponse(findings=findings)
 
     def recent_jobs(self, limit: int = 30) -> list[JobMonitorItem]:
         records, _, _ = self.driver.execute_query(

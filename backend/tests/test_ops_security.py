@@ -87,9 +87,15 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     canonical_staged = endpoint_rule("GET", "/catalog/import/staged")
     canonical_clear = endpoint_rule("DELETE", "/catalog/import/staged")
     canonical_import = endpoint_rule("POST", "/catalog/import/commit")
+    capacity_report = endpoint_rule("GET", "/ops/neo4j-capacity-report")
+    prune_preview = endpoint_rule("POST", "/ops/neo4j-prune-preview")
+    prune_execute = endpoint_rule("POST", "/ops/neo4j-prune-execute")
 
     assert pricing and pricing.role == "analyst" and pricing.risk_level == "level_0"
     assert rollback and rollback.role == "super_admin" and rollback.approval_required
+    assert capacity_report and capacity_report.role == "analyst"
+    assert prune_preview and prune_preview.role == "admin" and not prune_preview.approval_required
+    assert prune_execute and prune_execute.role == "admin" and prune_execute.approval_required
     assert hybrid_integrity and hybrid_integrity.role == "analyst"
     assert canonical_evidence and canonical_evidence.role == "admin" and canonical_evidence.risk_level == "level_1"
     assert canonical_stage and canonical_stage.role == "admin" and canonical_stage.risk_level == "level_1"

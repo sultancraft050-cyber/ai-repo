@@ -29,6 +29,8 @@ class EndpointRule:
 
 ENDPOINT_RULES: tuple[EndpointRule, ...] = (
     EndpointRule("GET", "/ops", "analyst", "level_0"),
+    EndpointRule("POST", "/ops/neo4j-prune-preview", "admin", "level_1"),
+    EndpointRule("POST", "/ops/neo4j-prune-execute", "admin", "level_2", True),
     EndpointRule("POST", "/products/canonical-merge-preview", "analyst", "level_0"),
     EndpointRule("POST", "/products/", "admin", "level_1"),
     EndpointRule("POST", "/catalog/feeds/import", "admin", "level_1"),

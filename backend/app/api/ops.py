@@ -7,7 +7,22 @@ from app.graph.ops_repository import Neo4jOpsRepository
 from app.graph.pricing_repository import Neo4jPricingRepository
 from app.core.config import settings
 from app.models.launch import BuildFailureSummary, CatalogGrowthWorkflowSummary, DeploymentChecklist, FounderInsightsSummary, MarketCoverageSummary, MvpHealthDashboard, RuntimeHealthSummary
-from app.models.ops import AuthPrincipal, AutonomyJob, AutonomyQueue, DailyFounderReport, OpsRunbook, SourceConfigStatus, SourceHealth, WorkerHealth
+from app.models.ops import (
+    AuthPrincipal,
+    AutonomyJob,
+    AutonomyQueue,
+    DailyFounderReport,
+    Neo4jCapacityReport,
+    Neo4jOrphansResponse,
+    Neo4jPruneExecuteRequest,
+    Neo4jPruneExecuteResponse,
+    Neo4jPrunePreviewRequest,
+    Neo4jPrunePreviewResponse,
+    OpsRunbook,
+    SourceConfigStatus,
+    SourceHealth,
+    WorkerHealth,
+)
 from app.models.pricing import CPUDuplicateReport
 from app.models.source_url import SourceMatrixEntry
 from app.services.graph_integrity import GraphIntegrityService
@@ -60,6 +75,30 @@ def query_performance() -> dict:
 @router.get("/performance-summary")
 def performance_summary() -> dict:
     return performance_observer.performance_summary()
+
+
+@router.get("/neo4j-capacity-report", response_model=Neo4jCapacityReport)
+def neo4j_capacity_report(request: Request) -> Neo4jCapacityReport:
+    return Neo4jOpsRepository(request.app.state.neo4j.driver).neo4j_capacity_report()
+
+
+@router.post("/neo4j-prune-preview", response_model=Neo4jPrunePreviewResponse)
+def neo4j_prune_preview(request_body: Neo4jPrunePreviewRequest, request: Request) -> Neo4jPrunePreviewResponse:
+    if not request_body.dry_run:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Prune preview must use dry_run=true.")
+    return Neo4jOpsRepository(request.app.state.neo4j.driver).neo4j_prune_preview(request_body)
+
+
+@router.post("/neo4j-prune-execute", response_model=Neo4jPruneExecuteResponse)
+def neo4j_prune_execute(request_body: Neo4jPruneExecuteRequest, request: Request) -> Neo4jPruneExecuteResponse:
+    if not request_body.approved:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approved=true is required.")
+    return Neo4jOpsRepository(request.app.state.neo4j.driver).neo4j_prune_execute(request_body)
+
+
+@router.get("/neo4j-orphans", response_model=Neo4jOrphansResponse)
+def neo4j_orphans(request: Request) -> Neo4jOrphansResponse:
+    return Neo4jOpsRepository(request.app.state.neo4j.driver).neo4j_orphans()
 
 
 @router.get("/build-failure-summary", response_model=BuildFailureSummary)

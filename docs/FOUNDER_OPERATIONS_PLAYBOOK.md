@@ -42,6 +42,20 @@ Weekly priority order:
 4. Audit deployment health and secrets rotation needs.
 5. Decide whether the next market/category expansion is justified by usage.
 
+## Neo4j Capacity Recovery
+
+Use this when Neo4j Aura reports the free-tier logical node limit or canonical imports stop with a capacity error.
+
+1. Run `GET /ops/neo4j-capacity-report`.
+2. Review `largest_labels`, `estimated_safe_to_prune_labels`, and `production_critical_labels`.
+3. Run `POST /ops/neo4j-prune-preview` with only safe temporary labels such as `StagedCanonicalRecord`, `CanonicalStageRun`, `CanonicalImportRun`, `OperationalSignal`, `AutonomyJob`, or `AnalyticsEvent`.
+4. Confirm the preview does not include `Product`, `CanonicalProduct`, `Vendor`, `PriceSnapshot`, `RegionalPriceSnapshot`, `ProductURL`, `SavedBuild`, `User`, `WatchlistItem`, feedback, deal, approval, or live linked evidence nodes.
+5. Execute `POST /ops/neo4j-prune-execute` only after reviewing the signed preview id and setting `approved=true`.
+6. Rerun `GET /ops/neo4j-capacity-report`.
+7. Retry the canonical import stage after node count drops below the Aura free-tier limit.
+
+If safe pruning does not recover enough space, upgrade Neo4j Aura instead of deleting useful Saudi product, price, build, user, or URL data.
+
 ## Support And Feedback Workflow
 
 1. Triage feedback as wrong price, expired listing, wrong compatibility, suspicious recommendation, bad vendor listing, or broken URL.

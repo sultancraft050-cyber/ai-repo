@@ -290,6 +290,73 @@ class SourceHealthSummary(BaseModel):
     last_successful_sync_by_source: dict[str, datetime | None] = Field(default_factory=dict)
 
 
+class Neo4jCountItem(BaseModel):
+    name: str
+    count: int = Field(ge=0)
+
+
+class Neo4jCapacityReport(BaseModel):
+    total_node_count: int = Field(ge=0)
+    total_relationship_count: int = Field(ge=0)
+    count_by_label: list[Neo4jCountItem] = Field(default_factory=list)
+    count_by_relationship_type: list[Neo4jCountItem] = Field(default_factory=list)
+    largest_labels: list[Neo4jCountItem] = Field(default_factory=list)
+    estimated_safe_to_prune_labels: list[str] = Field(default_factory=list)
+    production_critical_labels: list[str] = Field(default_factory=list)
+    near_limit: bool = False
+    over_limit: bool = False
+    hard_blocker: str | None = None
+    warning: str | None = None
+
+
+class Neo4jPrunePreviewRequest(BaseModel):
+    region: str = Field(default="SA", min_length=2, max_length=8)
+    retention_days: int = Field(default=30, ge=1, le=365)
+    include_labels: list[str] = Field(default_factory=list, max_length=25)
+    dry_run: bool = True
+
+
+class Neo4jPrunePreviewResponse(BaseModel):
+    preview_id: str
+    dry_run: bool
+    would_delete_node_count: int = Field(ge=0)
+    would_delete_relationship_count: int = Field(ge=0)
+    labels_affected: list[Neo4jCountItem] = Field(default_factory=list)
+    sample_node_ids: list[str] = Field(default_factory=list)
+    safety_warnings: list[str] = Field(default_factory=list)
+    protected_nodes_skipped: int = Field(ge=0)
+    expected_remaining_nodes: int = Field(ge=0)
+    approval_required: bool = True
+
+
+class Neo4jPruneExecuteRequest(BaseModel):
+    preview_id: str = Field(min_length=20, max_length=4000)
+    approved: bool = False
+
+
+class Neo4jPruneExecuteResponse(BaseModel):
+    preview_id: str
+    approved: bool
+    deleted_node_count: int = Field(ge=0)
+    deleted_relationship_count_estimate: int = Field(ge=0)
+    labels_affected: list[Neo4jCountItem] = Field(default_factory=list)
+    stopped_safely: bool = True
+    status: str
+    warnings: list[str] = Field(default_factory=list)
+
+
+class Neo4jOrphanFinding(BaseModel):
+    kind: str
+    count: int = Field(ge=0)
+    sample_node_ids: list[str] = Field(default_factory=list)
+    recommended_action: str
+
+
+class Neo4jOrphansResponse(BaseModel):
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    findings: list[Neo4jOrphanFinding] = Field(default_factory=list)
+
+
 class DailyFounderReport(BaseModel):
     id: str = Field(default_factory=lambda: f"daily-founder-report-{uuid4()}")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
