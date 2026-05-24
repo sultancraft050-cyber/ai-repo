@@ -25,6 +25,9 @@ from app.models.ops import (
     Neo4jPruneExecuteResponse,
     Neo4jPrunePreviewRequest,
     Neo4jPrunePreviewResponse,
+    RegionalPriceSnapshotLabelExecuteRequest,
+    RegionalPriceSnapshotLabelExecuteResponse,
+    RegionalPriceSnapshotLabelPreview,
 )
 
 
@@ -523,6 +526,126 @@ class Neo4jOpsRepository:
                 "Protected production labels and nodes connected to live products/prices/builds were skipped.",
             ],
         )
+
+    def regional_price_snapshot_label_preview(self) -> RegionalPriceSnapshotLabelPreview:
+        totals = self._price_snapshot_totals()
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (snapshot:PriceSnapshot)
+            WHERE NOT snapshot:RegionalPriceSnapshot
+              AND (snapshot.region = "SA" OR snapshot.currency = "SAR")
+            RETURN count(snapshot) AS would_label_count,
+                   collect(coalesce(snapshot.id, snapshot.snapshot_id, snapshot.price_snapshot_id, elementId(snapshot)))[0..10] AS sample_snapshot_ids,
+                   [region IN collect(DISTINCT snapshot.region) WHERE region IS NOT NULL] AS regions,
+                   [currency IN collect(DISTINCT snapshot.currency) WHERE currency IS NOT NULL] AS currencies
+            """,
+            database_=settings.neo4j_database,
+        )
+        data = records[0].data() if records else {}
+        would_label_count = int(data.get("would_label_count") or 0)
+        warnings = [
+            "Preview only; no prices, vendors, relationships, or URLs were changed.",
+            "Execution only adds the RegionalPriceSnapshot label to existing PriceSnapshot nodes with region=SA or currency=SAR.",
+        ]
+        regions = [str(item) for item in data.get("regions") or []]
+        currencies = [str(item) for item in data.get("currencies") or []]
+        unsafe_regions = sorted(region for region in regions if region != "SA")
+        unsafe_currencies = sorted(currency for currency in currencies if currency != "SAR")
+        if unsafe_regions:
+            warnings.append(f"Some candidates are selected by SAR currency with non-SA region values: {', '.join(unsafe_regions)}.")
+        if unsafe_currencies:
+            warnings.append(f"Some candidates are selected by SA region with non-SAR currency values: {', '.join(unsafe_currencies)}.")
+        return RegionalPriceSnapshotLabelPreview(
+            dry_run=True,
+            would_label_count=would_label_count,
+            sample_snapshot_ids=[str(item) for item in data.get("sample_snapshot_ids") or []],
+            regions=regions,
+            currencies=currencies,
+            price_snapshot_count=int(totals["price_snapshot_count"]),
+            price_checksum=float(totals["price_checksum"]),
+            item_price_sar_checksum=float(totals["item_price_sar_checksum"]),
+            final_landed_price_sar_checksum=float(totals["final_landed_price_sar_checksum"]),
+            safe_to_execute=True,
+            safety_warnings=warnings,
+        )
+
+    def regional_price_snapshot_label_execute(
+        self,
+        request: RegionalPriceSnapshotLabelExecuteRequest,
+    ) -> RegionalPriceSnapshotLabelExecuteResponse:
+        if not request.approved:
+            raise ValueError("approved=true is required")
+        preview = self.regional_price_snapshot_label_preview()
+        if request.preview_count is not None and request.preview_count != preview.would_label_count:
+            raise ValueError("preview_count no longer matches the current candidate count")
+        before = self._price_snapshot_totals()
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (snapshot:PriceSnapshot)
+            WHERE NOT snapshot:RegionalPriceSnapshot
+              AND (snapshot.region = "SA" OR snapshot.currency = "SAR")
+            SET snapshot:RegionalPriceSnapshot
+            RETURN count(snapshot) AS labeled_count
+            """,
+            database_=settings.neo4j_database,
+        )
+        labeled_count = int(records[0]["labeled_count"] or 0) if records else 0
+        remaining_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (snapshot:PriceSnapshot)
+            WHERE NOT snapshot:RegionalPriceSnapshot
+              AND (snapshot.region = "SA" OR snapshot.currency = "SAR")
+            RETURN count(snapshot) AS remaining_unlabeled_count
+            """,
+            database_=settings.neo4j_database,
+        )
+        remaining = int(remaining_records[0]["remaining_unlabeled_count"] or 0) if remaining_records else 0
+        after = self._price_snapshot_totals()
+        price_values_unchanged = (
+            before["price_snapshot_count"] == after["price_snapshot_count"]
+            and before["price_checksum"] == after["price_checksum"]
+            and before["item_price_sar_checksum"] == after["item_price_sar_checksum"]
+            and before["final_landed_price_sar_checksum"] == after["final_landed_price_sar_checksum"]
+        )
+        return RegionalPriceSnapshotLabelExecuteResponse(
+            approved=True,
+            labeled_count=labeled_count,
+            remaining_unlabeled_count=remaining,
+            price_snapshot_count_before=int(before["price_snapshot_count"]),
+            price_snapshot_count_after=int(after["price_snapshot_count"]),
+            price_checksum_before=float(before["price_checksum"]),
+            price_checksum_after=float(after["price_checksum"]),
+            item_price_sar_checksum_before=float(before["item_price_sar_checksum"]),
+            item_price_sar_checksum_after=float(after["item_price_sar_checksum"]),
+            final_landed_price_sar_checksum_before=float(before["final_landed_price_sar_checksum"]),
+            final_landed_price_sar_checksum_after=float(after["final_landed_price_sar_checksum"]),
+            price_values_unchanged=price_values_unchanged,
+            status="completed" if price_values_unchanged else "completed_with_checksum_warning",
+            warnings=[
+                "Only the RegionalPriceSnapshot label was added to existing Saudi/SAR PriceSnapshot nodes.",
+                "No price values, vendors, URLs, or relationships were changed.",
+                *([] if price_values_unchanged else ["Price snapshot checksums changed; inspect immediately."]),
+            ],
+        )
+
+    def _price_snapshot_totals(self) -> dict[str, float | int]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (snapshot:PriceSnapshot)
+            RETURN count(snapshot) AS price_snapshot_count,
+                   round(sum(coalesce(toFloat(snapshot.price), 0.0)) * 1000000) / 1000000 AS price_checksum,
+                   round(sum(coalesce(toFloat(snapshot.item_price_sar), 0.0)) * 1000000) / 1000000 AS item_price_sar_checksum,
+                   round(sum(coalesce(toFloat(snapshot.final_landed_price_sar), 0.0)) * 1000000) / 1000000 AS final_landed_price_sar_checksum
+            """,
+            database_=settings.neo4j_database,
+        )
+        data = records[0].data() if records else {}
+        return {
+            "price_snapshot_count": int(data.get("price_snapshot_count") or 0),
+            "price_checksum": float(data.get("price_checksum") or 0.0),
+            "item_price_sar_checksum": float(data.get("item_price_sar_checksum") or 0.0),
+            "final_landed_price_sar_checksum": float(data.get("final_landed_price_sar_checksum") or 0.0),
+        }
 
     def neo4j_orphans(self) -> Neo4jOrphansResponse:
         checks = [

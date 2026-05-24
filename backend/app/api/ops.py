@@ -19,6 +19,9 @@ from app.models.ops import (
     Neo4jPrunePreviewRequest,
     Neo4jPrunePreviewResponse,
     OpsRunbook,
+    RegionalPriceSnapshotLabelExecuteRequest,
+    RegionalPriceSnapshotLabelExecuteResponse,
+    RegionalPriceSnapshotLabelPreview,
     SourceConfigStatus,
     SourceHealth,
     WorkerHealth,
@@ -94,6 +97,24 @@ def neo4j_prune_execute(request_body: Neo4jPruneExecuteRequest, request: Request
     if not request_body.approved:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approved=true is required.")
     return Neo4jOpsRepository(request.app.state.neo4j.driver).neo4j_prune_execute(request_body)
+
+
+@router.get("/regional-price-snapshot-labels/preview", response_model=RegionalPriceSnapshotLabelPreview)
+def regional_price_snapshot_label_preview(request: Request) -> RegionalPriceSnapshotLabelPreview:
+    return Neo4jOpsRepository(request.app.state.neo4j.driver).regional_price_snapshot_label_preview()
+
+
+@router.post("/regional-price-snapshot-labels/execute", response_model=RegionalPriceSnapshotLabelExecuteResponse)
+def regional_price_snapshot_label_execute(
+    request_body: RegionalPriceSnapshotLabelExecuteRequest,
+    request: Request,
+) -> RegionalPriceSnapshotLabelExecuteResponse:
+    if not request_body.approved:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="approved=true is required.")
+    try:
+        return Neo4jOpsRepository(request.app.state.neo4j.driver).regional_price_snapshot_label_execute(request_body)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
 
 @router.get("/neo4j-orphans", response_model=Neo4jOrphansResponse)

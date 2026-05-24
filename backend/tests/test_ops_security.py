@@ -94,12 +94,16 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     capacity_report = endpoint_rule("GET", "/ops/neo4j-capacity-report")
     prune_preview = endpoint_rule("POST", "/ops/neo4j-prune-preview")
     prune_execute = endpoint_rule("POST", "/ops/neo4j-prune-execute")
+    label_fix_preview = endpoint_rule("GET", "/ops/regional-price-snapshot-labels/preview")
+    label_fix_execute = endpoint_rule("POST", "/ops/regional-price-snapshot-labels/execute")
 
     assert pricing and pricing.role == "analyst" and pricing.risk_level == "level_0"
     assert rollback and rollback.role == "super_admin" and rollback.approval_required
     assert capacity_report and capacity_report.role == "analyst"
     assert prune_preview and prune_preview.role == "admin" and not prune_preview.approval_required
     assert prune_execute and prune_execute.role == "admin" and prune_execute.approval_required
+    assert label_fix_preview and label_fix_preview.role == "admin" and label_fix_preview.risk_level == "level_1"
+    assert label_fix_execute and label_fix_execute.role == "admin" and label_fix_execute.risk_level == "level_1"
     assert hybrid_integrity and hybrid_integrity.role == "analyst"
     assert canonical_evidence and canonical_evidence.role == "admin" and canonical_evidence.risk_level == "level_1"
     assert canonical_cpu_enrich and canonical_cpu_enrich.role == "admin" and canonical_cpu_enrich.risk_level == "level_1"

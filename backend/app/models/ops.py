@@ -345,6 +345,42 @@ class Neo4jPruneExecuteResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class RegionalPriceSnapshotLabelPreview(BaseModel):
+    dry_run: bool = True
+    would_label_count: int = Field(ge=0)
+    sample_snapshot_ids: list[str] = Field(default_factory=list)
+    regions: list[str] = Field(default_factory=list)
+    currencies: list[str] = Field(default_factory=list)
+    price_snapshot_count: int = Field(ge=0)
+    price_checksum: float
+    item_price_sar_checksum: float
+    final_landed_price_sar_checksum: float
+    safe_to_execute: bool
+    safety_warnings: list[str] = Field(default_factory=list)
+
+
+class RegionalPriceSnapshotLabelExecuteRequest(BaseModel):
+    approved: bool = False
+    preview_count: int | None = Field(default=None, ge=0)
+
+
+class RegionalPriceSnapshotLabelExecuteResponse(BaseModel):
+    approved: bool
+    labeled_count: int = Field(ge=0)
+    remaining_unlabeled_count: int = Field(ge=0)
+    price_snapshot_count_before: int = Field(ge=0)
+    price_snapshot_count_after: int = Field(ge=0)
+    price_checksum_before: float
+    price_checksum_after: float
+    item_price_sar_checksum_before: float
+    item_price_sar_checksum_after: float
+    final_landed_price_sar_checksum_before: float
+    final_landed_price_sar_checksum_after: float
+    price_values_unchanged: bool
+    status: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class Neo4jOrphanFinding(BaseModel):
     kind: str
     count: int = Field(ge=0)
