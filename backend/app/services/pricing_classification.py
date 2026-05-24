@@ -139,14 +139,14 @@ CPU_BUNDLE_PATTERNS: tuple[str, ...] = (
     r"\bcombo\b",
     r"\bbundle\b",
     r"\bkit\b",
-    r"\bddr[45]\b",
-    r"\bmemory\b",
-    r"\bram\b",
+    r"\b\d+\s?gb\s+ddr[45]\b",
+    r"\bddr[45]\s+\d+\s?gb\b",
+    r"\b(?:ram|memory)\s+(?:kit|module|stick)\b",
+    r"\b\d+\s?gb\s+(?:ram|memory)\b",
     r"\bssd\b",
     r"\bgraphics\s+card\b",
     r"\bgpu\b",
     r"\brtx\s?\d{3,5}\b",
-    r"\bradeon\b",
 )
 
 STORAGE_POSITIVE_PATTERNS: tuple[tuple[str, str], ...] = (
@@ -595,7 +595,20 @@ def _classify_cpu_product_type(record: SourceProductRecord) -> ProductTypeClassi
     motherboard_matches = _matched_patterns(text, CPU_MOTHERBOARD_PATTERNS)
     cooler_matches = _matched_patterns(text, CPU_COOLER_PATTERNS)
     tray_unclear_matches = _matched_patterns(text, CPU_TRAY_UNCLEAR_PATTERNS)
-    if bundle_matches and (motherboard_matches or cooler_matches or len(bundle_matches) >= 2):
+    explicit_bundle = bool(re.search(r"\b(?:combo|bundle|kit)\b", text))
+    benign_cooler_spec = bool(
+        re.search(
+            r"\b(?:includes?|included|with)\s+(?:amd\s+)?(?:wraith\s+)?(?:stealth\s+)?cooler\b"
+            r"|\bwraith\s+stealth\s+cooler\b"
+            r"|\b(?:cooler|heatsink|fan)\s+not\s+included\b"
+            r"|\bno\s+(?:heatsink|fan|cooler)\b",
+            text,
+        )
+    )
+    if cooler_matches and benign_cooler_spec and not re.search(r"\b(?:aio|liquid\s+cool|water\s+block|thermal\s+paste)\b", text):
+        cooler_matches = []
+        positive_signals = [*positive_signals, "retail_cpu_cooler_note"]
+    if bundle_matches and (explicit_bundle or motherboard_matches or cooler_matches or len(bundle_matches) >= 2):
         return ProductTypeClassification(
             product_type="bundle",
             confidence=0.9,

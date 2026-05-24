@@ -621,6 +621,20 @@ def test_cpu_positive_matching_accepts_standalone_7800x3d_processor() -> None:
     assert classification.confidence >= 0.7
 
 
+def test_cpu_positive_matching_accepts_retail_cpu_spec_phrases_without_false_bundle() -> None:
+    accepted_titles = [
+        "AMD Ryzen 7 7800X3D AM5 Desktop Processor with AMD Radeon Graphics, 8 Cores & 16 Threads, 5 GHz Max Boost Clock, DDR5 Memory & 128GB Max Capacity",
+        "AMD Ryzen 5 7600 AM5 Gaming Processor, 6 Cores & 12 Threads, DDR5-5200 Memory, Includes Wraith Stealth Cooler",
+        "AMD Ryzen 7 7800X3D CPU AM5 4.2GHz NO HEATSINK/FAN - 100-100000910WOF",
+    ]
+
+    for title in accepted_titles:
+        classification = classify_product_type(_cpu_record_with_title(title), "CPU")
+
+        assert classification.accepted, title
+        assert classification.product_type == "standalone_cpu"
+
+
 def test_cpu_tray_or_engineering_sample_rejected_when_condition_unclear() -> None:
     for title in ("AMD Ryzen 7 7800X3D Tray CPU", "Ryzen 7 7800X3D engineering sample"):
         classification = classify_product_type(_cpu_record_with_title(title), "CPU")
