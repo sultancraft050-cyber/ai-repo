@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, KeyRound, RefreshCw, ServerCog } from "lucide-react";
+import { AlertTriangle, ClipboardList, KeyRound, Link2, RefreshCw, ServerCog, Target, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import {
@@ -19,7 +19,19 @@ import {
   previewCanonicalMerge,
   rejectRequest
 } from "@/lib/api";
-import type { ApprovalItem, AutonomyQueue as AutonomyQueueData, CanonicalMergePreviewResponse, CatalogExpansionTargetsResponse, CatalogGrowthWorkflowSummary, CpuDuplicateReport, DailyFounderReport, DeploymentChecklist, MvpHealthDashboard } from "@/types/builder";
+import type {
+  ApprovalItem,
+  AutonomyQueue as AutonomyQueueData,
+  CanonicalMergePreviewResponse,
+  CatalogExpansionCategorySummary,
+  CatalogExpansionTargetFamily,
+  CatalogExpansionTargetsResponse,
+  CatalogGrowthWorkflowSummary,
+  CpuDuplicateReport,
+  DailyFounderReport,
+  DeploymentChecklist,
+  MvpHealthDashboard
+} from "@/types/builder";
 import { ApprovalCenter } from "@/components/ApprovalCenter";
 import { AutonomyQueue } from "@/components/AutonomyQueue";
 import { CanonicalImportStagingPanel } from "@/components/CanonicalImportStagingPanel";
@@ -270,6 +282,7 @@ export function SoloFounderOpsPanel() {
           <DeploymentChecklistPanel data={deployment.data} loading={deployment.loading} error={deployment.error} />
           <MvpHealthPanel data={mvpHealth.data} loading={mvpHealth.loading} error={mvpHealth.error} />
           <CatalogGrowthPanel data={catalogGrowth.data} loading={catalogGrowth.loading} error={catalogGrowth.error} />
+          <CatalogNextActionsPanel data={catalogExpansion.data} loading={catalogExpansion.loading} error={catalogExpansion.error} />
           <CatalogExpansionPanel data={catalogExpansion.data} loading={catalogExpansion.loading} error={catalogExpansion.error} />
 
           <div className="grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
@@ -540,6 +553,62 @@ function CatalogGrowthPanel({ data, loading, error }: { data: CatalogGrowthWorkf
   );
 }
 
+type CatalogActionKind = "url" | "specs" | "conflict" | "coverage";
+type CatalogAction = {
+  key: string;
+  kind: CatalogActionKind;
+  category: string;
+  title: string;
+  detail: string;
+  metric: string;
+  priority: number;
+};
+
+function CatalogNextActionsPanel({ data, loading, error }: { data: CatalogExpansionTargetsResponse | null; loading: boolean; error: string | null }) {
+  const actions = useMemo(() => buildCatalogActions(data), [data]);
+  const iconByKind: Record<CatalogActionKind, ReactNode> = {
+    url: <Link2 size={16} aria-hidden />,
+    specs: <Wrench size={16} aria-hidden />,
+    conflict: <AlertTriangle size={16} aria-hidden />,
+    coverage: <Target size={16} aria-hidden />
+  };
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold uppercase text-slate-300">Next Catalog Actions</h3>
+          <p className="mt-1 text-xs text-slate-500">Founder-only queue for Core 500 growth, specs, prices, and review blockers.</p>
+        </div>
+        {loading ? <span className="text-xs text-slate-500">Checking...</span> : null}
+      </div>
+      {error ? <p className="rounded border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{error}</p> : null}
+      {data ? (
+        <div className="grid gap-3 lg:grid-cols-4">
+          {actions.length ? (
+            actions.slice(0, 8).map((action) => (
+              <div key={action.key} className="rounded border border-slate-800 bg-slate-950 px-3 py-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className={`grid h-8 w-8 place-items-center rounded-md ${catalogActionTone(action.kind)}`}>{iconByKind[action.kind]}</span>
+                  <span className="text-xs font-semibold uppercase text-slate-500">{action.category}</span>
+                </div>
+                <p className="text-sm font-semibold text-white">{action.title}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{action.detail}</p>
+                <p className="mt-2 text-xs font-semibold text-teal-200">{action.metric}</p>
+              </div>
+            ))
+          ) : (
+            <div className="rounded border border-teal-400/30 bg-teal-400/10 px-3 py-3 text-sm text-teal-100 lg:col-span-4">
+              No immediate catalog blockers found in the loaded target manifest.
+            </div>
+          )}
+        </div>
+      ) : !loading ? (
+        <p className="text-sm text-slate-500">Load the command center to see products needing Saudi URLs, exact specs, metadata enrichment, and conflict review.</p>
+      ) : null}
+    </div>
+  );
+}
+
 function CatalogExpansionPanel({ data, loading, error }: { data: CatalogExpansionTargetsResponse | null; loading: boolean; error: string | null }) {
   const categories = data?.categories ?? [];
   return (
@@ -646,6 +715,86 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <p className="mt-1 text-lg font-semibold text-white">{value}</p>
     </div>
   );
+}
+
+function buildCatalogActions(data: CatalogExpansionTargetsResponse | null): CatalogAction[] {
+  if (!data) return [];
+  const actions: CatalogAction[] = [];
+  data.categories.forEach((category) => {
+    if (category.conflict_count > 0) actions.push(categoryAction(category, "conflict"));
+    if (category.canonical_count < category.target_min) actions.push(categoryAction(category, "coverage"));
+    category.families.forEach((family) => {
+      if (family.conflict_count > 0) actions.push(familyAction(family, "conflict"));
+      if (family.metadata_only_count > 0 || family.missing_required_specs.length > 0) actions.push(familyAction(family, "specs"));
+      if (family.compatibility_ready_count > 0 && family.saudi_priced_count === 0) actions.push(familyAction(family, "url"));
+    });
+  });
+  return actions.sort((left, right) => left.priority - right.priority || left.category.localeCompare(right.category)).slice(0, 12);
+}
+
+function categoryAction(category: CatalogExpansionCategorySummary, kind: Extract<CatalogActionKind, "conflict" | "coverage">): CatalogAction {
+  if (kind === "conflict") {
+    return {
+      key: `${category.category}-category-conflict`,
+      kind,
+      category: category.category,
+      title: "Review category conflicts",
+      detail: "Resolve blocked canonical rows before committing more products in this category.",
+      metric: `${category.conflict_count} conflict${category.conflict_count === 1 ? "" : "s"}`,
+      priority: 10 + category.priority_order
+    };
+  }
+  return {
+    key: `${category.category}-category-coverage`,
+    kind,
+    category: category.category,
+    title: "Grow target coverage",
+    detail: category.next_action,
+    metric: `${category.canonical_count}/${category.target_min} minimum canonical products`,
+    priority: 60 + category.priority_order
+  };
+}
+
+function familyAction(family: CatalogExpansionTargetFamily, kind: Exclude<CatalogActionKind, "coverage">): CatalogAction {
+  if (kind === "conflict") {
+    return {
+      key: `${family.family_key}-conflict`,
+      kind,
+      category: family.category,
+      title: `${family.family_name}: review conflicts`,
+      detail: "Keep records blocked until founder review decides the safe merge path.",
+      metric: `${family.conflict_count} conflict${family.conflict_count === 1 ? "" : "s"}`,
+      priority: 1 + family.priority
+    };
+  }
+  if (kind === "specs") {
+    const missing = family.missing_required_specs.length ? family.missing_required_specs.slice(0, 3).join(", ") : "required specs";
+    return {
+      key: `${family.family_key}-specs`,
+      kind,
+      category: family.category,
+      title: `${family.family_name}: confirm specs`,
+      detail: family.next_action || `Add source-attributed evidence for ${missing}.`,
+      metric: `${family.metadata_only_count} metadata-only row${family.metadata_only_count === 1 ? "" : "s"}`,
+      priority: 20 + family.priority
+    };
+  }
+  return {
+    key: `${family.family_key}-url`,
+    kind,
+    category: family.category,
+    title: `${family.family_name}: add Saudi URL`,
+    detail: "Add an exact approved product URL through preview and ingest when the founder is ready.",
+    metric: `${family.compatibility_ready_count} ready, 0 Saudi priced`,
+    priority: 40 + family.priority
+  };
+}
+
+function catalogActionTone(kind: CatalogActionKind) {
+  if (kind === "conflict") return "bg-amber-300/15 text-amber-100";
+  if (kind === "url") return "bg-teal-300/15 text-teal-100";
+  if (kind === "specs") return "bg-sky-300/15 text-sky-100";
+  return "bg-slate-700 text-slate-200";
 }
 
 function FooterPanel({ title, children }: { title: string; children: ReactNode }) {

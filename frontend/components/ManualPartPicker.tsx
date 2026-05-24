@@ -102,6 +102,13 @@ export function ManualPartPicker() {
     ...missingPrices.map((category) => `${category}: no SAR price available, so it is not included in the total.`),
     ...(compatibility?.checks.filter((check) => check.status !== "pass").map((check) => check.details) ?? [])
   ];
+  const missingSpecCount = selectedRows.filter((product) => hasSpecGap(product)).length;
+  const exactReadyCount = selectedRows.filter((product) => product.compatibility_ready_exact).length;
+  const familyReadyCount = selectedRows.filter((product) => product.compatibility_ready_family && !product.compatibility_ready_exact).length;
+  const pricedCount = selectedRows.filter((product) => bestSarPrice(product)).length;
+  const manualOnlyWarning =
+    selectedCount === componentOrder.length &&
+    (missingSpecCount > 0 || Boolean(compatibility && !compatibility.valid) || missingPrices.length > 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,36 +218,36 @@ export function ManualPartPicker() {
   }
 
   return (
-    <section id="manual-builder" className="scroll-mt-20 rounded-lg border border-line bg-white shadow-tight">
-      <div className="border-b border-line p-4">
+    <section id="manual-builder" className="scroll-mt-20 overflow-hidden rounded-lg border border-slate-800 bg-[#070b14] shadow-[0_24px_80px_rgba(0,0,0,0.36)]">
+      <div className="border-b border-slate-800 bg-[#080d18] p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="mb-1 text-xs font-semibold uppercase text-signal">Manual builder</div>
-            <h2 className="text-xl font-semibold text-ink">Pick every part yourself</h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-              Click Add on any row to open the market browser. It shows the Saudi catalog for that part type with search,
-              sorting, filters, and Saudi prices.
+            <h2 className="text-xl font-semibold text-white">Pick every part yourself</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
+              Browse the Saudi catalog by category, pick one product per row, and keep the build summary visible as price,
+              wattage, FPS, and compatibility evidence change.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="text-xs font-semibold uppercase text-muted">
+            <label className="text-xs font-semibold uppercase text-slate-500">
               Resolution
               <select
                 value={resolution}
                 onChange={(event) => setResolution(event.target.value as Resolution)}
-                className="mt-1 h-10 w-full rounded-md border border-line bg-panel px-3 text-sm font-semibold normal-case text-ink"
+                className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#111827] px-3 text-sm font-semibold normal-case text-white"
               >
                 <option value="1080p">1080p</option>
                 <option value="1440p">1440p</option>
                 <option value="4K">4K</option>
               </select>
             </label>
-            <label className="text-xs font-semibold uppercase text-muted">
+            <label className="text-xs font-semibold uppercase text-slate-500">
               Refresh
               <select
                 value={refreshRate}
                 onChange={(event) => setRefreshRate(Number(event.target.value) as (typeof refreshOptions)[number])}
-                className="mt-1 h-10 w-full rounded-md border border-line bg-panel px-3 text-sm font-semibold normal-case text-ink"
+                className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#111827] px-3 text-sm font-semibold normal-case text-white"
               >
                 {refreshOptions.map((rate) => (
                   <option key={rate} value={rate}>
@@ -253,14 +260,14 @@ export function ManualPartPicker() {
         </div>
       </div>
 
-      <div className="grid gap-4 p-4 xl:grid-cols-[1fr_340px]">
-        <div className="overflow-hidden rounded-lg border border-line">
-          <div className="flex items-center gap-2 border-b border-line bg-[#0b101d] px-3 py-3 text-sm font-semibold text-ink">
-            <span className="border-b-2 border-ink pb-2">Parts List</span>
-            <span className="pb-2 text-muted">Price History</span>
+      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-[#0c1220]">
+          <div className="flex items-center gap-2 border-b border-slate-800 bg-[#0a0f1b] px-3 py-3 text-sm font-semibold text-white">
+            <span className="border-b-2 border-white pb-2">Parts List</span>
+            <span className="pb-2 text-slate-500">Saudi Market</span>
           </div>
-          <div className="border-b border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
-            Saudi market catalog, compatible checks after selection
+          <div className="border-b border-slate-800 bg-[#111827] px-3 py-2 text-sm font-semibold text-slate-300">
+            One product per category, with state badges for price and spec readiness.
           </div>
           {componentOrder.map((kind) => (
             <PartRow
@@ -276,15 +283,16 @@ export function ManualPartPicker() {
           ))}
         </div>
 
-        <aside className="grid content-start gap-3">
-          <div className="rounded-lg border border-line bg-panel p-4">
+        <aside className="grid content-start gap-3 xl:sticky xl:top-4">
+          <div className="rounded-lg border border-slate-800 bg-[#111827] p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-ink">Build summary</h3>
+              <h3 className="text-base font-semibold text-white">Build summary</h3>
               {validating ? <Loader2 size={18} className="animate-spin text-signal" aria-label="Calculating build" /> : null}
             </div>
             <div className="grid gap-2">
               <SummaryMetric label="Selected" value={`${selectedCount}/8 parts`} />
               <SummaryMetric label="Known SAR total" value={knownPriceTotal ? formatSar(knownPriceTotal) : "No prices yet"} />
+              <SummaryMetric label="Missing prices" value={`${missingPrices.length} part${missingPrices.length === 1 ? "" : "s"}`} />
               <SummaryMetric
                 label="Estimated wattage"
                 value={
@@ -309,11 +317,17 @@ export function ManualPartPicker() {
               />
               <SummaryMetric label="1% low" value={performance ? `${Math.round(performance.one_percent_low_fps)} FPS` : "Not ready"} />
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <BuildStatePill label="Saudi priced" value={pricedCount} />
+              <BuildStatePill label="Exact ready" value={exactReadyCount} />
+              <BuildStatePill label="Family ready" value={familyReadyCount} />
+              <BuildStatePill label="Needs specs" value={missingSpecCount} tone={missingSpecCount ? "warn" : "muted"} />
+            </div>
           </div>
 
-          <div className="rounded-lg border border-line bg-panel p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
-              {selectedCount === 8 && compatibility?.valid ? (
+          <div className="rounded-lg border border-slate-800 bg-[#111827] p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+              {selectedCount === 8 && compatibility?.valid && !manualOnlyWarning ? (
                 <CheckCircle2 size={16} className="text-signal" aria-hidden />
               ) : (
                 <AlertTriangle size={16} className="text-caution" aria-hidden />
@@ -321,31 +335,31 @@ export function ManualPartPicker() {
               Final check
             </div>
             {selectedCount < 8 ? (
-              <p className="text-sm leading-6 text-muted">
+              <p className="text-sm leading-6 text-slate-400">
                 Missing: {missingCategories.join(", ")}. Pick every required part to finish the manual build.
               </p>
-            ) : compatibility?.valid ? (
-              <p className="text-sm leading-6 text-muted">
-                All core parts are selected and compatibility checks passed. Verify store pages before buying.
+            ) : compatibility?.valid && !manualOnlyWarning ? (
+              <p className="text-sm leading-6 text-slate-400">
+                Can be used for build generation: all core parts are selected, compatibility checks passed, and required pricing/spec evidence is present.
               </p>
             ) : (
-              <p className="text-sm leading-6 text-muted">
-                All parts are selected, but compatibility or data warnings still need review.
+              <p className="text-sm leading-6 text-slate-400">
+                Manual-only warning: all parts can be reviewed here, but missing prices or exact specs should be fixed before trusting automated recommendations.
               </p>
             )}
             {validationError ? <p className="mt-2 text-sm leading-6 text-danger">{validationError}</p> : null}
           </div>
 
-          <div className="rounded-lg border border-line bg-panel p-4">
-            <div className="mb-2 text-sm font-semibold text-ink">Build notes</div>
+          <div className="rounded-lg border border-slate-800 bg-[#111827] p-4">
+            <div className="mb-2 text-sm font-semibold text-white">Build notes</div>
             {visibleWarnings.length ? (
-              <ul className="grid gap-2 text-sm leading-5 text-muted">
+              <ul className="grid gap-2 text-sm leading-5 text-slate-400">
                 {visibleWarnings.slice(0, 6).map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm leading-6 text-muted">
+              <p className="text-sm leading-6 text-slate-400">
                 Pick all required parts to see compatibility, wattage, and FPS estimates.
               </p>
             )}
@@ -362,13 +376,13 @@ export function ManualPartPicker() {
           buildWattage={compatibility?.total_power_draw_w ?? 0}
           loading={loading}
           failure={failures[activeKind]}
-            onClose={() => setActiveKind(null)}
-            onSelect={(product) => chooseProduct(activeKind, product)}
-            onLoadMore={() => loadMoreProducts(activeKind)}
-            loadingMore={Boolean(loadingMore[activeKind])}
-            hasMore={Boolean(hasMore[activeKind])}
-          />
-        ) : null}
+          onClose={() => setActiveKind(null)}
+          onSelect={(product) => chooseProduct(activeKind, product)}
+          onLoadMore={() => loadMoreProducts(activeKind)}
+          loadingMore={Boolean(loadingMore[activeKind])}
+          hasMore={Boolean(hasMore[activeKind])}
+        />
+      ) : null}
     </section>
   );
 }
@@ -391,11 +405,13 @@ function PartRow({
   onRemove: () => void;
 }) {
   const price = selected ? bestSarPrice(selected) : null;
+  const state = selected ? productCatalogState(selected) : null;
+  const imageUrl = selected?.processed_image_url || selected?.image_url;
 
   return (
-    <div className="grid min-h-[64px] grid-cols-[128px_1fr_auto] items-center gap-3 border-b border-line px-3 py-3 last:border-b-0">
+    <div className="grid min-h-[70px] grid-cols-1 items-center gap-3 border-b border-slate-800 px-3 py-3 last:border-b-0 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
       <div>
-        <span className="inline-flex rounded-full border border-line bg-panel px-2 py-1 text-sm font-semibold text-muted">
+        <span className="inline-flex rounded-full border border-slate-700 bg-[#171d2c] px-2 py-1 text-sm font-semibold text-slate-300">
           {categoryCopy[kind]}
         </span>
       </div>
@@ -403,32 +419,32 @@ function PartRow({
       <div className="min-w-0">
         {selected ? (
           <div className="flex min-w-0 items-center gap-3">
-            {selected.image_url ? (
+            {imageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={selected.image_url} alt="" className="hidden h-11 w-14 rounded border border-line bg-white object-contain sm:block" />
+              <img src={imageUrl} alt="" className="hidden h-12 w-16 rounded border border-slate-700 bg-white object-contain sm:block" />
             ) : null}
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-ink">{displayProductName(selected)}</div>
+              <div className="truncate text-sm font-semibold text-white">{displayProductName(selected)}</div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
                 <span>{price ? formatSar(price.amount) : "No SAR price"}</span>
                 <span>{displayStoreName(price?.vendor ?? selected.current_recommended_vendor ?? selected.lowest_market_vendor)}</span>
-                <span className="text-signal">Selected</span>
+                {state ? <span className={`rounded-full px-2 py-0.5 font-semibold ${state.className}`}>{state.label}</span> : null}
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-sm text-muted">
+          <div className="text-sm text-slate-400">
             {failure ?? (loading ? "Loading market products..." : `${count} market product${count === 1 ? "" : "s"} available`)}
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 sm:justify-end">
         {selected ? (
           <button
             type="button"
             onClick={onRemove}
-            className="grid h-8 w-8 place-items-center rounded-md border border-line bg-panel text-muted hover:text-danger"
+            className="grid h-8 w-8 place-items-center rounded-md border border-slate-700 bg-[#111827] text-slate-400 hover:text-danger"
             aria-label={`Remove ${kind}`}
             title={`Remove ${kind}`}
           >
@@ -439,7 +455,7 @@ function PartRow({
           type="button"
           onClick={onAdd}
           disabled={loading || Boolean(failure)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink hover:border-signal disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-[#202633] px-3 text-sm font-semibold text-white hover:border-signal disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Plus size={15} aria-hidden />
           {selected ? `Change ${kind}` : `Add ${kind}`}
@@ -780,6 +796,7 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
   const productName = displayProductName(product);
   const specs = productSummarySpecs(product);
   const state = productCatalogState(product);
+  const missingExactFields = product.missing_exact_card_fields ?? [];
   return (
     <article className={`flex min-h-[380px] flex-col overflow-hidden rounded-md border bg-[#1c1c1e] shadow-[0_18px_40px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:border-signal/70 ${selected ? "border-signal" : "border-[#2f3137]"}`}>
       <div className="grid aspect-[4/3] place-items-center bg-white p-4">
@@ -811,6 +828,11 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
               </div>
             ))}
           </dl>
+        ) : null}
+        {missingExactFields.length ? (
+          <p className="rounded-md border border-amber-300/20 bg-amber-300/10 px-2.5 py-2 text-xs leading-5 text-amber-100">
+            Needs exact card specs: {missingExactFields.slice(0, 3).join(", ")}
+          </p>
         ) : null}
         <button
           type="button"
@@ -891,13 +913,27 @@ function FacetFilter({
 
 function SummaryMetric({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
   return (
-    <div className="rounded-md border border-line bg-white px-3 py-2">
-      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase text-muted">
+    <div className="rounded-md border border-slate-700 bg-[#070b14] px-3 py-2">
+      <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase text-slate-500">
         {icon}
         {label}
       </div>
-      <div className="text-sm font-semibold text-ink">{value}</div>
+      <div className="text-sm font-semibold text-white">{value}</div>
     </div>
+  );
+}
+
+function BuildStatePill({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "warn" | "muted" }) {
+  const toneClass =
+    tone === "warn"
+      ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+      : tone === "muted"
+        ? "border-slate-700 bg-slate-900/80 text-slate-400"
+        : "border-teal-300/30 bg-teal-300/10 text-teal-100";
+  return (
+    <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${toneClass}`}>
+      {value} {label}
+    </span>
   );
 }
 
@@ -921,10 +957,14 @@ function cheapestProducts(products: ProductSearchResult[]): ProductSearchResult[
       return;
     }
     const cheapest = productSort(product, current, "cheapest") < 0 ? product : current;
-    const imageCarrier = cheapest.image_url ? cheapest : product.image_url ? product : current;
-    if (cheapest !== current || (!current.image_url && imageCarrier.image_url)) {
+    const cheapestImage = cheapest.processed_image_url || cheapest.image_url;
+    const productImage = product.processed_image_url || product.image_url;
+    const currentImage = current.processed_image_url || current.image_url;
+    const imageCarrier = cheapestImage ? cheapest : productImage ? product : current;
+    if (cheapest !== current || (!currentImage && (imageCarrier.processed_image_url || imageCarrier.image_url))) {
       grouped.set(key, {
         ...cheapest,
+        processed_image_url: cheapest.processed_image_url ?? imageCarrier.processed_image_url,
         image_url: cheapest.image_url ?? imageCarrier.image_url
       });
     }
@@ -1005,7 +1045,9 @@ function productSummarySpecs(product: ProductSearchResult): Array<{ label: strin
     GPU: [
       { label: "VRAM", value: gbSpec(specs.vram_gb) },
       { label: "Length", value: mmSpec(specs.length_mm) },
-      { label: "TDP", value: wattSpec(specs.tdp_w) }
+      { label: "Board power", value: wattSpec(specs.board_power_w ?? specs.tdp_w) },
+      { label: "Family power", value: wattSpec(specs.reference_tdp_w) },
+      { label: "PCIe", value: stringSpec(specs.pcie_generation) }
     ],
     RAM: [
       { label: "Type", value: stringSpec(specs.memory_type) },
@@ -1159,16 +1201,26 @@ function productCatalogState(product: ProductSearchResult): { label: string; cla
   if (product.catalog_state === "saudi_priced" || bestSarPrice(product)) {
     return { label: "Saudi priced", className: "bg-emerald-400/15 text-emerald-300" };
   }
-  if (product.readiness_state === "compatibility_ready_family" || product.compatibility_ready_family) {
-    return { label: "Family ready", className: "bg-sky-400/15 text-sky-200" };
-  }
   if (product.readiness_state === "compatibility_ready_exact" || product.compatibility_ready_exact) {
     return { label: "Exact ready", className: "bg-teal-400/15 text-teal-200" };
+  }
+  if (product.readiness_state === "compatibility_ready_family" || product.compatibility_ready_family) {
+    return { label: "Family ready", className: "bg-sky-400/15 text-sky-200" };
   }
   if (product.catalog_state === "needs_spec_confirmation" || product.compatibility_ready === false) {
     return { label: "Needs specs", className: "bg-amber-300/15 text-amber-200" };
   }
   return { label: "Catalog only", className: "bg-slate-400/15 text-slate-200" };
+}
+
+function hasSpecGap(product: ProductSearchResult): boolean {
+  return (
+    product.readiness_state === "metadata_only" ||
+    product.catalog_state === "needs_spec_confirmation" ||
+    product.compatibility_ready === false ||
+    Boolean(product.missing_exact_card_fields?.length) ||
+    Boolean(product.missing_compatibility_fields?.length)
+  );
 }
 
 function formatSar(value?: number | null) {
