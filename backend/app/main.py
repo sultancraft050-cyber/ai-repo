@@ -33,6 +33,7 @@ from app.api import (
 )
 from app.core.config import settings
 from app.core.security import RateLimiter, authenticate_api_key, endpoint_rule, has_role, payload_hash, trace_id
+from app.core.version import BACKEND_VERSION, CURRENT_GEN_ENRICHMENT_VERSION, deployment_version_info
 from app.graph.driver import Neo4jSessionManager
 from app.graph.alignment_repository import Neo4jAlignmentRepository
 from app.graph.autonomy_repository import Neo4jAutonomyRepository
@@ -345,13 +346,21 @@ app.include_router(user_builds.router)
 def health() -> dict[str, str | bool | None]:
     manager = app.state.neo4j
     manager.verify()
+    version_info = deployment_version_info(
+        environment=settings.environment,
+        backend_url=settings.backend_url,
+        frontend_url=settings.frontend_url,
+    )
     return {
         "ok": manager.unavailable_reason is None,
         "neo4j": "connected" if manager.unavailable_reason is None else "unavailable",
         "detail": manager.unavailable_reason,
         "environment": settings.environment,
         "market_data_mode": settings.market_data_mode,
-        "backend_version": "0.1.0",
+        "backend_version": version_info.get("backend_version") or BACKEND_VERSION,
+        "git_sha": version_info.get("git_sha"),
+        "current_gen_enrichment_version": version_info.get("current_gen_enrichment_version")
+        or CURRENT_GEN_ENRICHMENT_VERSION,
     }
 
 

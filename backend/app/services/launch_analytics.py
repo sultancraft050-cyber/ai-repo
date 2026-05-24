@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import Counter, deque
 from datetime import UTC, datetime, timedelta
-import os
 from threading import Lock
 from typing import Any
 
@@ -25,6 +24,7 @@ from app.models.launch import (
     RuntimeHealthSummary,
     StoreCoverageQuality,
 )
+from app.core.version import deployment_version_info
 from app.services.performance_observer import performance_observer
 
 
@@ -719,21 +719,11 @@ def _deployment_value_configured(name: str, value: Any, settings) -> bool:
 
 
 def _deployment_version_info(settings) -> dict[str, str | None]:
-    git_sha = (
-        os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("RENDER_GIT_COMMIT")
-        or os.getenv("FLY_MACHINE_VERSION")
-        or os.getenv("VERCEL_GIT_COMMIT_SHA")
-        or os.getenv("GIT_SHA")
+    return deployment_version_info(
+        environment=getattr(settings, "environment", "development"),
+        backend_url=getattr(settings, "backend_url", None),
+        frontend_url=getattr(settings, "frontend_url", None),
     )
-    return {
-        "backend_version": os.getenv("BACKEND_VERSION", "0.1.0"),
-        "frontend_version": os.getenv("FRONTEND_VERSION"),
-        "git_sha": git_sha[:12] if git_sha else None,
-        "environment": getattr(settings, "environment", "development"),
-        "backend_url": getattr(settings, "backend_url", None),
-        "frontend_url": getattr(settings, "frontend_url", None),
-    }
 
 
 def _string_list(value: Any) -> list[str]:
