@@ -116,6 +116,8 @@ CONFIRMED_SPEC_REQUIRED_FIELDS = {
     "Case": ("supported_motherboard_form_factors", "max_gpu_length_mm", "max_cpu_cooler_height_mm"),
     "Cooler": ("socket_support", "radiator_size_mm", "height_mm"),
 }
+GPU_FAMILY_REQUIRED_FIELDS = ("chip_family", "vram_gb", "pcie_generation", "reference_tdp_w")
+GPU_EXACT_CARD_REQUIRED_FIELDS = ("vram_gb", "pcie_generation", "length_mm", "slots", "power_connectors")
 CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
 SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
 BUNDLE_REJECTION_MARKERS = (
@@ -261,6 +263,26 @@ def _normalize_canonical_stage_record(raw: dict[str, Any], category: str, licens
     canonical_key = str(_record_get(raw, "canonical_key", "key") or _catalog_canonical_key(category, name, brand, model)).strip()
     confidence = _stage_identity_confidence(name=name, brand=brand, model=model, category=category, specs=specs)
     aliases = _split_aliases(_record_get(raw, "aliases", "alias", "alternate_names"))
+    inferred_field_names = {
+        str(item.get("field"))
+        for item in (raw.get("inferred_fields") or [])
+        if isinstance(item, dict) and item.get("field")
+    }
+    gpu_exact_ready = _gpu_exact_ready(specs) if category == "GPU" else bool(raw.get("compatibility_ready"))
+    gpu_family_ready = _gpu_family_ready(specs) if category == "GPU" else False
+    if category == "GPU" and inferred_field_names.intersection({"tdp_w", "board_power_w", "pcie_generation", "reference_tdp_w"}):
+        gpu_exact_ready = False
+        gpu_family_ready = False
+    gpu_missing_exact = _gpu_exact_missing_fields(specs) if category == "GPU" else []
+    readiness_state = _gpu_readiness_state(
+        category=category,
+        specs=specs,
+        record={
+            "compatibility_ready": raw.get("compatibility_ready"),
+            "compatibility_ready_exact": raw.get("compatibility_ready_exact") or gpu_exact_ready,
+            "compatibility_ready_family": raw.get("compatibility_ready_family") or gpu_family_ready,
+        },
+    )
     return _clean_properties(
         {
             "source_name": "",
@@ -278,8 +300,12 @@ def _normalize_canonical_stage_record(raw: dict[str, Any], category: str, licens
             "identity_confidence": confidence,
             "required_specs_present": _catalog_row_has_required_specs(category, specs),
             "compatibility_ready": raw.get("compatibility_ready"),
+            "compatibility_ready_exact": (raw.get("compatibility_ready_exact") or gpu_exact_ready) if category == "GPU" else raw.get("compatibility_ready"),
+            "compatibility_ready_family": (raw.get("compatibility_ready_family") or gpu_family_ready) if category == "GPU" else False,
+            "readiness_state": raw.get("readiness_state") or readiness_state,
             "compatibility_completeness_score": raw.get("compatibility_completeness_score"),
             "missing_compatibility_fields": raw.get("missing_compatibility_fields"),
+            "missing_exact_card_fields": raw.get("missing_exact_card_fields") or gpu_missing_exact,
             "inferred_fields": raw.get("inferred_fields"),
             "validation_status": "pending",
             "rejected_reasons": [],
@@ -312,12 +338,18 @@ def _normalize_stage_specs(raw: dict[str, Any], category: str) -> dict[str, Any]
             }
         )
     if category == "GPU":
+        chip_family = _record_get(raw, "chip_family", "gpu_family", "chipset", "model")
         return _clean_properties(
             {
                 "chip_vendor": _record_get(raw, "chip_vendor", "gpu_vendor", "brand"),
+                "chip_family": chip_family,
                 "vram_gb": _as_int(_record_get(raw, "vram_gb", "memory_gb", "vram")),
+                "reference_tdp_w": _as_int(_record_get(raw, "reference_tdp_w")),
+                "board_power_w": _as_int(_record_get(raw, "board_power_w")),
                 "tdp_w": _as_int(_record_get(raw, "tdp_w", "tdp", "board_power_w")),
                 "length_mm": _as_int(_record_get(raw, "length_mm", "card_length_mm")),
+                "slots": _as_float(_record_get(raw, "slots", "slot_width")),
+                "power_connectors": _record_get(raw, "power_connectors", "connectors"),
                 "pcie_generation": _record_get(raw, "pcie_generation", "pcie", "interface"),
             }
         )
@@ -543,6 +575,10 @@ def _search_result(data: dict[str, Any]) -> ProductSearchResult:
         compatibility_tags=list(data.get("compatibility_tags") or []),
         catalog_state=data.get("catalog_state"),
         compatibility_ready=data.get("compatibility_ready"),
+        compatibility_ready_exact=data.get("compatibility_ready_exact"),
+        compatibility_ready_family=data.get("compatibility_ready_family"),
+        readiness_state=data.get("readiness_state"),
+        missing_exact_card_fields=_staged_string_list(data.get("missing_exact_card_fields")),
         missing_compatibility_fields=_staged_string_list(data.get("missing_compatibility_fields")),
         inferred_fields=_staged_string_list(data.get("inferred_fields")),
         market_linked_count=int(data.get("market_linked_count") or 0),
@@ -1093,11 +1129,27 @@ def _price_confidence(price: PriceSnapshotView | None) -> float | None:
 def _finalize_search_data(data: dict[str, Any], rollups: dict[str, Any]) -> dict[str, Any]:
     data = {**data, **rollups}
     data["compatibility_tags"] = _compatibility_tags(data.get("category"), data.get("summary_specs") or {})
+    if data.get("category") == "GPU":
+        exact_ready = bool(data.get("compatibility_ready_exact") or data.get("compatibility_ready"))
+        family_ready = bool(data.get("compatibility_ready_family"))
+        data["readiness_state"] = (
+            "compatibility_ready_exact"
+            if exact_ready
+            else "compatibility_ready_family"
+            if family_ready
+            else data.get("readiness_state") or "metadata_only"
+        )
+        data["compatibility_ready"] = exact_ready or family_ready
+    else:
+        data["readiness_state"] = "compatibility_ready_exact" if data.get("compatibility_ready") else data.get("readiness_state")
     seed_without_price = not data.get("canonical_key") and data["price_status"] == "unavailable"
     data["data_origin"] = data.get("data_origin") or ("seed" if seed_without_price else "live")
     if data["price_status"] != "unavailable" and data.get("cheapest_price_sar"):
         data["catalog_state"] = "saudi_priced"
-    elif data.get("compatibility_ready") is False or _staged_string_list(data.get("missing_compatibility_fields")):
+    elif (
+        data.get("readiness_state") in {"metadata_only", None}
+        and (data.get("compatibility_ready") is False or _staged_string_list(data.get("missing_compatibility_fields")))
+    ):
         data["catalog_state"] = "needs_spec_confirmation"
     else:
         data["catalog_state"] = "catalog_only"
@@ -1171,6 +1223,8 @@ def _catalog_product_properties(row: CatalogFeedImportRow, category: str, source
 
 
 def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
+    if category == "GPU":
+        return _gpu_exact_ready({key.removeprefix("spec_"): value for key, value in props.items()})
     required = {
         "CPU": ("spec_socket", "spec_cores", "spec_threads", "spec_tdp_w"),
         "Motherboard": ("spec_socket", "spec_memory_type", "spec_form_factor", "spec_m2_slots", "spec_pcie_x16_slots"),
@@ -1179,7 +1233,6 @@ def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
         "PSU": ("spec_wattage_w", "spec_efficiency_rating", "spec_modularity"),
         "Case": ("spec_supported_motherboard_form_factors", "spec_max_gpu_length_mm", "spec_max_cpu_cooler_height_mm"),
         "Cooler": ("spec_socket_support", "spec_radiator_size_mm", "spec_height_mm"),
-        "GPU": ("spec_vram_gb", "spec_tdp_w", "spec_length_mm", "spec_pcie_generation"),
     }.get(category, ())
     return all(props.get(key) not in (None, "", []) for key in required)
 
@@ -1187,6 +1240,47 @@ def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
 def _catalog_row_has_required_specs(category: str, specs: dict[str, Any]) -> bool:
     props = {f"spec_{key}": value for key, value in specs.items()}
     return _catalog_has_required_specs(category, props)
+
+
+def _gpu_exact_missing_fields(specs: dict[str, Any]) -> list[str]:
+    missing = [field for field in GPU_EXACT_CARD_REQUIRED_FIELDS if specs.get(field) in (None, "", [])]
+    if specs.get("board_power_w") in (None, "", []) and specs.get("tdp_w") in (None, "", []):
+        missing.append("board_power_w")
+    return list(dict.fromkeys(missing))
+
+
+def _gpu_family_missing_fields(specs: dict[str, Any]) -> list[str]:
+    return [field for field in GPU_FAMILY_REQUIRED_FIELDS if specs.get(field) in (None, "", [])]
+
+
+def _gpu_exact_ready(specs: dict[str, Any]) -> bool:
+    return not _gpu_exact_missing_fields(specs)
+
+
+def _gpu_family_ready(specs: dict[str, Any]) -> bool:
+    return not _gpu_family_missing_fields(specs)
+
+
+def _gpu_readiness_state(*, category: str, specs: dict[str, Any], record: dict[str, Any] | None = None) -> str:
+    record = record or {}
+    if category != "GPU":
+        if bool(record.get("compatibility_ready")) or _catalog_row_has_required_specs(category, specs):
+            return "compatibility_ready_exact"
+        return "metadata_only"
+    if bool(record.get("compatibility_ready_exact")) or _gpu_exact_ready(specs):
+        return "compatibility_ready_exact"
+    if bool(record.get("compatibility_ready_family")) or _gpu_family_ready(specs):
+        return "compatibility_ready_family"
+    return "metadata_only"
+
+
+def _confirmed_spec_evidence_field(category: str, specs: dict[str, Any]) -> str:
+    if category == "GPU":
+        if _gpu_exact_ready(specs):
+            return "confirmed_gpu_card_specs"
+        if _gpu_family_ready(specs):
+            return "confirmed_gpu_family_specs"
+    return f"confirmed_{category.lower()}_specs"
 
 
 def _canonical_value_equal(left: Any, right: Any) -> bool:
@@ -1275,6 +1369,26 @@ def _canonical_import_skip_reason(
         return "identity confidence below import threshold"
     if not row.canonical_key:
         return "missing canonical key"
+    if request.category == "GPU":
+        specs = dict(row.specs)
+        exact_ready = bool(record.get("compatibility_ready_exact")) or _gpu_exact_ready(specs)
+        family_ready = bool(record.get("compatibility_ready_family")) or _gpu_family_ready(specs)
+        if _staged_inferred_field_names(record.get("inferred_fields")).intersection(
+            {"tdp_w", "board_power_w", "pcie_generation", "reference_tdp_w"}
+        ):
+            exact_ready = False
+            family_ready = False
+        if exact_ready:
+            exact_missing = _gpu_exact_missing_fields(specs)
+            if exact_missing:
+                return f"missing exact GPU card specs: {', '.join(exact_missing)}"
+            return None
+        if family_ready:
+            family_missing = _gpu_family_missing_fields(specs)
+            if family_missing:
+                return f"missing GPU family specs: {', '.join(family_missing)}"
+            return None
+        return "GPU needs family specs or exact card specs"
     if record.get("compatibility_ready") is False:
         return "not compatibility-ready"
     if not _catalog_row_has_required_specs(request.category, row.specs):
@@ -1367,6 +1481,24 @@ def _staged_string_list(value: Any) -> list[str]:
         elif item not in (None, "", []):
             strings.append(str(item))
     return list(dict.fromkeys(strings))
+
+
+def _staged_inferred_field_names(value: Any) -> set[str]:
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            decoded = value
+        value = decoded
+    if not isinstance(value, list):
+        return set()
+    names: set[str] = set()
+    for item in value:
+        if isinstance(item, dict) and item.get("field"):
+            names.add(str(item["field"]))
+        elif isinstance(item, str):
+            names.add(item)
+    return names
 
 
 def _hybrid_review_next_action(classification: str, missing_fields: list[str], conflicts: list[str], market_linked: bool) -> str:
@@ -2997,6 +3129,25 @@ class Neo4jPricingRepository:
 
             canonical_key = str(row.canonical_key)
             props = _catalog_product_properties(row, request.category, request.source_name)
+            if request.category == "GPU":
+                exact_ready = bool(staged.get("compatibility_ready_exact")) or _gpu_exact_ready(row.specs)
+                family_ready = bool(staged.get("compatibility_ready_family")) or _gpu_family_ready(row.specs)
+                readiness_state = "compatibility_ready_exact" if exact_ready else "compatibility_ready_family" if family_ready else "metadata_only"
+                props.update(
+                    _clean_properties(
+                        {
+                            "compatibility_ready": exact_ready,
+                            "compatibility_ready_exact": exact_ready,
+                            "compatibility_ready_family": family_ready,
+                            "readiness_state": readiness_state,
+                            "missing_exact_card_fields": _gpu_exact_missing_fields(row.specs),
+                            "card_dimension_missing": row.specs.get("length_mm") in (None, "", []),
+                            "spec_reference_tdp_w": row.specs.get("reference_tdp_w"),
+                            "spec_board_power_w": row.specs.get("board_power_w"),
+                            "spec_chip_family": row.specs.get("chip_family"),
+                        }
+                    )
+                )
             props.update(
                 _clean_properties(
                     {
@@ -3068,6 +3219,16 @@ class Neo4jPricingRepository:
                 approval_state="approved",
                 note=str(staged.get("license_note") or ""),
             )
+            confirmed_source_name = str(staged.get("confirmed_spec_source_name") or "").strip()
+            if confirmed_source_name:
+                self._attach_confirmed_spec_evidence(
+                    canonical_key=canonical_key,
+                    category=request.category,
+                    source_name=confirmed_source_name,
+                    license_note=str(staged.get("confirmed_spec_license_note") or staged.get("license_note") or ""),
+                    evidence_note=str(staged.get("confirmed_spec_note") or "confirmed compatibility specs"),
+                    specs=row.specs,
+                )
             self._mark_staged_canonical_record(staged, "imported", None)
 
         status = "preview" if not request.commit else "completed"
@@ -3201,7 +3362,14 @@ class Neo4jPricingRepository:
             reasons.append("category mismatch")
         if float(record.get("identity_confidence") or 0) < CANONICAL_IDENTITY_CONFIDENCE_MIN and request.adapter != "pc_part_dataset":
             reasons.append("identity confidence below import threshold")
-        if not bool(record.get("required_specs_present")) and request.adapter != "pc_part_dataset":
+        specs = _extract_staged_specs(record)
+        inferred_names = _staged_inferred_field_names(record.get("inferred_fields"))
+        family_ready_gpu = (
+            record.get("category") == "GPU"
+            and _gpu_family_ready(specs)
+            and not inferred_names.intersection({"reference_tdp_w", "pcie_generation"})
+        )
+        if not bool(record.get("required_specs_present")) and request.adapter != "pc_part_dataset" and not family_ready_gpu:
             reasons.append("missing required compatibility specs")
         bundle_reason = _component_bundle_rejection(str(record.get("raw_name") or record.get("name") or ""))
         if bundle_reason:
@@ -3224,7 +3392,7 @@ class Neo4jPricingRepository:
             warnings.append("one or more compatibility fields are inferred")
         optional_fields = {
             "CPU": ("tdp_w", "base_clock_ghz", "boost_clock_ghz"),
-            "GPU": ("vram_gb", "tdp_w", "length_mm"),
+            "GPU": ("vram_gb", "pcie_generation", "reference_tdp_w", "board_power_w", "length_mm", "slots", "power_connectors"),
             "Motherboard": ("m2_slots", "pcie_x16_slots"),
             "RAM": ("speed_mhz", "kit_config", "cas_latency"),
             "Storage": ("form_factor", "protocol"),
@@ -3674,18 +3842,41 @@ class Neo4jPricingRepository:
 
         items: list[HybridImportReviewItem] = []
         missing_fields: list[str] = []
+        missing_exact_card_fields: list[str] = []
         inferred_fields: list[str] = []
         classification_counts: dict[str, int] = {}
         for row in records:
             data = row.data()
             record = dict(data.get("record") or {})
+            specs = _extract_staged_specs(record)
             missing = _staged_string_list(record.get("missing_compatibility_fields"))
+            exact_missing = _staged_string_list(record.get("missing_exact_card_fields"))
+            if category == "GPU":
+                exact_missing = _gpu_exact_missing_fields(specs)
             inferred = _staged_string_list(record.get("inferred_fields"))
+            inferred_field_names = _staged_inferred_field_names(record.get("inferred_fields"))
             conflicts = _staged_string_list(record.get("conflict_candidates"))
             duplicates = _staged_string_list(record.get("duplicate_candidates"))
             rejected = _staged_string_list(record.get("rejected_reasons"))
             warnings = _staged_string_list(record.get("warning_reasons"))
-            compatibility_ready = bool(record.get("compatibility_ready"))
+            exact_ready = bool(record.get("compatibility_ready_exact"))
+            family_ready = bool(record.get("compatibility_ready_family"))
+            if category == "GPU":
+                exact_ready = exact_ready or _gpu_exact_ready(specs)
+                family_ready = family_ready or _gpu_family_ready(specs)
+                if inferred_field_names.intersection({"tdp_w", "board_power_w", "pcie_generation", "reference_tdp_w"}):
+                    exact_ready = False
+                    family_ready = False
+            else:
+                exact_ready = bool(record.get("compatibility_ready"))
+            compatibility_ready = exact_ready or family_ready
+            readiness_state = (
+                "compatibility_ready_exact"
+                if exact_ready
+                else "compatibility_ready_family"
+                if family_ready
+                else "metadata_only"
+            )
             market_linked = bool(data.get("market_product_id")) and int(data.get("price_snapshot_count") or 0) > 0
             cheapest = data.get("cheapest") or {}
             cheapest_price = (
@@ -3700,6 +3891,7 @@ class Neo4jPricingRepository:
             elif conflicts:
                 classification = "conflict_requires_founder_review"
                 commit_eligible = False
+                readiness_state = "conflict_requires_review"
             elif not compatibility_ready:
                 classification = "metadata_only_needs_enrichment"
                 commit_eligible = False
@@ -3711,6 +3903,7 @@ class Neo4jPricingRepository:
                 commit_eligible = True
 
             missing_fields.extend(missing)
+            missing_exact_card_fields.extend(exact_missing)
             inferred_fields.extend(inferred)
             classification_counts[classification] = classification_counts.get(classification, 0) + 1
             items.append(
@@ -3723,10 +3916,14 @@ class Neo4jPricingRepository:
                     classification=classification,
                     identity_confidence=_optional_float(record.get("identity_confidence")),
                     compatibility_ready=compatibility_ready,
+                    compatibility_ready_exact=exact_ready,
+                    compatibility_ready_family=family_ready,
+                    readiness_state=readiness_state,
                     market_linked=market_linked,
                     saudi_price_sar=_optional_float(cheapest_price),
                     saudi_vendor=cheapest.get("vendor_name"),
                     missing_compatibility_fields=missing,
+                    missing_exact_card_fields=exact_missing,
                     inferred_fields=inferred,
                     conflict_candidates=conflicts,
                     duplicate_candidates=duplicates,
@@ -3750,8 +3947,12 @@ class Neo4jPricingRepository:
             metadata_only_count=classification_counts.get("metadata_only_needs_enrichment", 0),
             conflict_count=classification_counts.get("conflict_requires_founder_review", 0),
             reject_count=classification_counts.get("reject", 0),
+            exact_ready_count=sum(1 for item in items if item.compatibility_ready_exact),
+            family_ready_count=sum(1 for item in items if item.compatibility_ready_family and not item.compatibility_ready_exact),
+            card_dimension_missing_count=sum(1 for item in items if "length_mm" in item.missing_exact_card_fields),
             commit_eligible_count=sum(1 for item in items if item.commit_eligible),
             top_missing_compatibility_fields=_count_reasons(missing_fields),
+            top_missing_exact_card_fields=_count_reasons(missing_exact_card_fields),
             top_inferred_fields=_count_reasons(inferred_fields),
             items=items[:100],
         )
@@ -3977,6 +4178,26 @@ class Neo4jPricingRepository:
             category=category,
             database_=settings.neo4j_database,
         )
+        if category == "GPU" and specs.get("chip_family"):
+            self.driver.execute_query(
+                """
+                MATCH (p:Product {id: $product_id})
+                MERGE (family:GPUFamily {family_key: $family_key})
+                SET family.name = $family_name,
+                    family.vram_gb = $vram_gb,
+                    family.pcie_generation = $pcie_generation,
+                    family.reference_tdp_w = $reference_tdp_w,
+                    family.updated_at = datetime()
+                MERGE (p)-[:HAS_GPU_FAMILY]->(family)
+                """,
+                product_id=product_id,
+                family_key=str(specs.get("chip_family")).upper().replace(" ", "_"),
+                family_name=str(specs.get("chip_family")),
+                vram_gb=specs.get("vram_gb"),
+                pcie_generation=specs.get("pcie_generation"),
+                reference_tdp_w=specs.get("reference_tdp_w"),
+                database_=settings.neo4j_database,
+            )
 
     def catalog_coverage(self, *, region: str = "SA") -> CatalogCoverageResponse:
         region = normalize_region(region)
@@ -4294,7 +4515,25 @@ class Neo4jPricingRepository:
 
             merged_specs = _extract_staged_specs(staged)
             merged_specs.update(confirmed_specs)
-            missing_after_merge = [field for field in required_fields if merged_specs.get(field) in (None, "", [])]
+            readiness_state = _gpu_readiness_state(category=request.category, specs=merged_specs, record=staged)
+            exact_ready = request.category != "GPU" and not [
+                field for field in required_fields if merged_specs.get(field) in (None, "", [])
+            ]
+            family_ready = False
+            missing_exact_card = []
+            if request.category == "GPU":
+                exact_ready = _gpu_exact_ready(merged_specs)
+                family_ready = _gpu_family_ready(merged_specs)
+                missing_exact_card = _gpu_exact_missing_fields(merged_specs)
+                if exact_ready:
+                    readiness_state = "compatibility_ready_exact"
+                elif family_ready:
+                    readiness_state = "compatibility_ready_family"
+                else:
+                    readiness_state = "metadata_only"
+                missing_after_merge = [] if exact_ready or family_ready else _gpu_family_missing_fields(merged_specs)
+            else:
+                missing_after_merge = [field for field in required_fields if merged_specs.get(field) in (None, "", [])]
             if missing_after_merge:
                 skipped += 1
                 items.append(
@@ -4328,6 +4567,11 @@ class Neo4jPricingRepository:
                 license_note=request.license_note,
                 evidence_note=incoming.evidence_note,
                 confirmed_fields=confirmed_fields,
+                readiness_state=readiness_state,
+                compatibility_ready_exact=exact_ready,
+                compatibility_ready_family=family_ready,
+                missing_compatibility_fields=[] if exact_ready else missing_exact_card if family_ready else missing_after_merge,
+                missing_exact_card_fields=missing_exact_card,
             )
             attached = self._attach_confirmed_spec_evidence(
                 canonical_key=incoming.canonical_key,
@@ -4543,18 +4787,40 @@ class Neo4jPricingRepository:
         license_note: str,
         evidence_note: str,
         confirmed_fields: list[str],
+        readiness_state: str | None = None,
+        compatibility_ready_exact: bool | None = None,
+        compatibility_ready_family: bool | None = None,
+        missing_compatibility_fields: list[str] | None = None,
+        missing_exact_card_fields: list[str] | None = None,
     ) -> None:
-        missing = [field for field in CONFIRMED_SPEC_REQUIRED_FIELDS.get(category, ()) if specs.get(field) in (None, "", [])]
+        if category == "GPU":
+            exact_ready = bool(compatibility_ready_exact)
+            family_ready = bool(compatibility_ready_family)
+            missing = [] if exact_ready or family_ready else _gpu_family_missing_fields(specs)
+            required_specs_present = exact_ready or family_ready
+            compatibility_ready = exact_ready
+            readiness = readiness_state or ("compatibility_ready_exact" if exact_ready else "compatibility_ready_family" if family_ready else "metadata_only")
+        else:
+            missing = [field for field in CONFIRMED_SPEC_REQUIRED_FIELDS.get(category, ()) if specs.get(field) in (None, "", [])]
+            exact_ready = not missing
+            family_ready = False
+            required_specs_present = exact_ready
+            compatibility_ready = exact_ready
+            readiness = readiness_state or ("compatibility_ready_exact" if exact_ready else "metadata_only")
         if missing:
             raise ValueError(f"confirmed specs still missing required fields: {', '.join(missing)}")
         records, _, _ = self.driver.execute_query(
             """
             MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
             SET record.specs = $specs_json,
-                record.compatibility_ready = true,
-                record.compatibility_completeness_score = 1.0,
-                record.required_specs_present = true,
-                record.missing_compatibility_fields = [],
+                record.compatibility_ready = $compatibility_ready,
+                record.compatibility_ready_exact = $compatibility_ready_exact,
+                record.compatibility_ready_family = $compatibility_ready_family,
+                record.readiness_state = $readiness_state,
+                record.compatibility_completeness_score = $compatibility_completeness_score,
+                record.required_specs_present = $required_specs_present,
+                record.missing_compatibility_fields = $missing_compatibility_fields,
+                record.missing_exact_card_fields = $missing_exact_card_fields,
                 record.confirmed_compatibility_fields = $confirmed_fields,
                 record.confirmed_spec_source_name = $source_name,
                 record.confirmed_spec_license_note = $license_note,
@@ -4566,6 +4832,14 @@ class Neo4jPricingRepository:
             """,
             canonical_key=canonical_key,
             specs_json=json.dumps(specs, sort_keys=True),
+            compatibility_ready=compatibility_ready,
+            compatibility_ready_exact=exact_ready,
+            compatibility_ready_family=family_ready,
+            readiness_state=readiness,
+            compatibility_completeness_score=1.0 if exact_ready else 0.72 if family_ready else 0.0,
+            required_specs_present=required_specs_present,
+            missing_compatibility_fields=missing_compatibility_fields if missing_compatibility_fields is not None else [],
+            missing_exact_card_fields=missing_exact_card_fields if missing_exact_card_fields is not None else [],
             confirmed_fields=confirmed_fields,
             source_name=source_name,
             license_note=license_note,
@@ -4585,6 +4859,7 @@ class Neo4jPricingRepository:
         evidence_note: str,
         specs: dict[str, Any],
     ) -> bool:
+        evidence_field = _confirmed_spec_evidence_field(category, specs)
         records, _, _ = self.driver.execute_query(
             """
             MATCH (p:Product {canonical_key: $canonical_key})
@@ -4593,6 +4868,16 @@ class Neo4jPricingRepository:
             SET source.updated_at = datetime(),
                 source.source_type = "confirmed_specs",
                 source.license_note = $license_note
+            WITH p, source
+            OPTIONAL MATCH (p)-[:HAS_CANONICAL_EVIDENCE]->(
+                existing:CanonicalEvidence {
+                    source_name: $source_name,
+                    evidence_type: "canonical_spec",
+                    field: $field
+                }
+            )
+            WITH p, source, existing
+            WHERE existing IS NULL
             CREATE (e:CanonicalEvidence)
             SET e.id = $evidence_id,
                 e.source_name = $source_name,
@@ -4612,7 +4897,7 @@ class Neo4jPricingRepository:
             license_note=license_note,
             evidence_note=evidence_note,
             evidence_id=f"evidence:{uuid4()}",
-            field=f"confirmed_{category.lower()}_specs",
+            field=evidence_field,
             value_json=json.dumps({"canonical_key": canonical_key, "category": category, "specs": specs}, sort_keys=True),
             database_=settings.neo4j_database,
         )
@@ -4790,12 +5075,24 @@ class Neo4jPricingRepository:
                      speed_mt_s: p.spec_speed_mt_s,
                      interface: p.spec_interface,
                      wattage_w: coalesce(p.spec_wattage_w, p.spec_wattage),
-                     efficiency_rating: p.spec_efficiency_rating
+                     efficiency_rating: p.spec_efficiency_rating,
+                     chip_family: p.spec_chip_family,
+                     vram_gb: p.spec_vram_gb,
+                     pcie_generation: p.spec_pcie_generation,
+                     reference_tdp_w: p.spec_reference_tdp_w,
+                     board_power_w: p.spec_board_power_w,
+                     gpu_length_mm: p.spec_length_mm,
+                     slots: p.spec_slots,
+                     power_connectors: p.spec_power_connectors
                    } AS summary_specs,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
                    p.processed_image_url AS processed_image_url,
                    p.compatibility_ready AS compatibility_ready,
+                   p.compatibility_ready_exact AS compatibility_ready_exact,
+                   p.compatibility_ready_family AS compatibility_ready_family,
+                   p.readiness_state AS readiness_state,
                    p.missing_compatibility_fields AS missing_compatibility_fields,
+                   p.missing_exact_card_fields AS missing_exact_card_fields,
                    p.inferred_fields AS inferred_fields,
                    CASE WHEN p.market_evidence_linked = true THEN 1 ELSE 0 END AS market_linked_count,
                    p.data_origin AS data_origin,

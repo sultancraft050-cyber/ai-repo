@@ -59,6 +59,95 @@ class StageRunFailingDriver(FakeDriver):
         return super().execute_query(query, **kwargs)
 
 
+class ConfirmedSpecCommitDriver(FakeDriver):
+    def execute_query(self, query: str, **kwargs: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        self.calls.append({"query": query, **kwargs})
+        if "MATCH (record:StagedCanonicalRecord)" in query and 'record.validation_status = "valid"' in query:
+            return [
+                FakeRecord(
+                    record={
+                        "source_name": "pc-part-dataset",
+                        "source_type": "community_repository",
+                        "category": "GPU",
+                        "validation_status": "valid",
+                        "import_status": "pending",
+                        "compatibility_ready": True,
+                        "required_specs_present": True,
+                        "license_note": "pc-part-dataset controlled fixture.",
+                        "identity_confidence": 0.95,
+                        "canonical_key": "GPU|AMD|POWERCOLOR_RX7800XT_16G_P",
+                        "name": "PowerColor RX7800XT 16G-P",
+                        "brand": "AMD",
+                        "model": "PowerColor RX7800XT 16G-P",
+                        "specs": {
+                            "vram_gb": 16,
+                            "tdp_w": 263,
+                            "length_mm": 260,
+                            "slots": 2.5,
+                            "power_connectors": "2x 8-pin",
+                            "pcie_generation": "PCIe 4.0",
+                        },
+                        "confirmed_spec_source_name": "founder_confirmed_gpu_specs",
+                        "confirmed_spec_license_note": "manual confirmed GPU compatibility evidence",
+                        "confirmed_spec_note": "confirmed GPU spec evidence",
+                    }
+                )
+            ], None, None
+        if "MATCH (p:Product {canonical_key:" in query and "RETURN p.id AS id" in query:
+            return [], None, None
+        if "MERGE (p:Product:CanonicalProduct" in query:
+            return [FakeRecord(id="canonical:gpu", created=True)], None, None
+        if "MATCH (p:Product {canonical_key:" in query and "MERGE (source:CanonicalSource" in query:
+            return [FakeRecord(evidence_id="evidence:confirmed-gpu")], None, None
+        return super().execute_query(query, **kwargs)
+
+
+class GPUFamilyReadyCommitDriver(FakeDriver):
+    def execute_query(self, query: str, **kwargs: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        self.calls.append({"query": query, **kwargs})
+        if "MATCH (record:StagedCanonicalRecord)" in query and 'record.validation_status = "valid"' in query:
+            return [
+                FakeRecord(
+                    record={
+                        "source_name": "pc-part-dataset",
+                        "source_type": "community_repository",
+                        "category": "GPU",
+                        "validation_status": "valid",
+                        "import_status": "pending",
+                        "compatibility_ready": False,
+                        "compatibility_ready_exact": False,
+                        "compatibility_ready_family": True,
+                        "readiness_state": "compatibility_ready_family",
+                        "required_specs_present": True,
+                        "license_note": "pc-part-dataset controlled fixture.",
+                        "identity_confidence": 0.95,
+                        "canonical_key": "GPU|AMD|RADEON_RX_7800_XT|POWERCOLOR_RX7800XT_16G_P",
+                        "name": "PowerColor RX7800XT 16G-P",
+                        "brand": "AMD",
+                        "model": "PowerColor RX7800XT 16G-P",
+                        "specs": {
+                            "chip_family": "Radeon RX 7800 XT",
+                            "vram_gb": 16,
+                            "pcie_generation": "PCIe 4.0",
+                            "reference_tdp_w": 263,
+                        },
+                        "confirmed_spec_source_name": "founder_confirmed_gpu_family_specs",
+                        "confirmed_spec_license_note": "manual confirmed GPU family compatibility evidence",
+                        "confirmed_spec_note": "confirmed GPU family spec evidence",
+                    }
+                )
+            ], None, None
+        if "MATCH (p:Product {canonical_key:" in query and "RETURN p.id AS id" in query:
+            return [], None, None
+        if "MERGE (p:Product:CanonicalProduct" in query:
+            return [FakeRecord(id="canonical:gpu-family", created=True)], None, None
+        if "MATCH (p:Product {canonical_key:" in query and "MERGE (source:CanonicalSource" in query:
+            return [FakeRecord(evidence_id="evidence:confirmed-gpu-family")], None, None
+        return super().execute_query(query, **kwargs)
+
+
 def _stage_request(**overrides: Any) -> CanonicalImportStageRequest:
     return CanonicalImportStageRequest(
         source_name=overrides.get("source_name", "BuildCores/OpenDB"),
@@ -212,6 +301,62 @@ def test_commit_staged_query_consumes_only_valid_records() -> None:
     assert not any("SET s:" in query or "SET snapshot" in query for query in driver.queries)
 
 
+def test_commit_attaches_confirmed_gpu_spec_evidence_after_product_import() -> None:
+    driver = ConfirmedSpecCommitDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.commit_canonical_import(
+        request=CanonicalImportCommitRequest(
+            source_name="pc-part-dataset",
+            source_type="community_repository",
+            category="GPU",
+            batch_limit=25,
+            commit=True,
+        )
+    )
+
+    confirmed_calls = [
+        call
+        for call in driver.calls
+        if call.get("source_name") == "founder_confirmed_gpu_specs"
+        and call.get("field") == "confirmed_gpu_card_specs"
+    ]
+    assert response.imported_count == 1
+    assert confirmed_calls
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
+def test_commit_allows_family_ready_gpu_without_exact_card_readiness() -> None:
+    driver = GPUFamilyReadyCommitDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.commit_canonical_import(
+        request=CanonicalImportCommitRequest(
+            source_name="pc-part-dataset",
+            source_type="community_repository",
+            category="GPU",
+            batch_limit=25,
+            commit=True,
+        )
+    )
+
+    product_upsert = next(call for call in driver.calls if "MERGE (p:Product:CanonicalProduct" in call["query"])
+    family_evidence_calls = [
+        call
+        for call in driver.calls
+        if call.get("source_name") == "founder_confirmed_gpu_family_specs"
+        and call.get("field") == "confirmed_gpu_family_specs"
+    ]
+    assert response.imported_count == 1
+    assert product_upsert["properties"]["compatibility_ready"] is False
+    assert product_upsert["properties"]["compatibility_ready_exact"] is False
+    assert product_upsert["properties"]["compatibility_ready_family"] is True
+    assert product_upsert["properties"]["readiness_state"] == "compatibility_ready_family"
+    assert family_evidence_calls
+    assert any("MERGE (family:GPUFamily" in query for query in driver.queries)
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
 def test_csv_loader_reads_local_sample() -> None:
     path = _resolve_import_dataset_path("samples/gpu_sample.csv")
 
@@ -239,7 +384,12 @@ def test_catalog_expansion_targets_returns_phase2_manifest_summary() -> None:
     response = repository.catalog_expansion_targets(region="SA")
 
     assert response.phase == "phase2_saudi_core"
-    assert response.product_states == ["compatibility_ready", "metadata_only", "conflict_requires_review"]
+    assert response.product_states == [
+        "compatibility_ready_exact",
+        "compatibility_ready_family",
+        "metadata_only",
+        "conflict_requires_review",
+    ]
     assert response.categories[0].category == "GPU"
     assert response.categories[0].safe_stage_batch_size == 50
     assert any(family.family_name == "RTX 4070 Super" for family in response.categories[0].families)

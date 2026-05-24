@@ -346,6 +346,9 @@ function HybridReviewCard({ review }: { review: HybridImportReviewResponse | nul
         </div>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <Metric label="exact ready" value={review.exact_ready_count ?? 0} />
+        <Metric label="family ready" value={review.family_ready_count ?? 0} />
+        <Metric label="card dimensions missing" value={review.card_dimension_missing_count ?? 0} />
         {Object.entries(review.classification_counts).map(([classification, count]) => (
           <Metric key={classification} label={classification.replaceAll("_", " ")} value={count} />
         ))}
@@ -364,6 +367,7 @@ function HybridReviewCard({ review }: { review: HybridImportReviewResponse | nul
         </div>
       ) : null}
       <ReasonList title="Missing compatibility fields" items={review.top_missing_compatibility_fields} />
+      <ReasonList title="Missing exact card fields" items={review.top_missing_exact_card_fields ?? []} />
       <ReasonList title="Inferred fields" items={review.top_inferred_fields} />
     </div>
   );

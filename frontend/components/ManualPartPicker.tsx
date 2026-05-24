@@ -1159,6 +1159,12 @@ function productCatalogState(product: ProductSearchResult): { label: string; cla
   if (product.catalog_state === "saudi_priced" || bestSarPrice(product)) {
     return { label: "Saudi priced", className: "bg-emerald-400/15 text-emerald-300" };
   }
+  if (product.readiness_state === "compatibility_ready_family" || product.compatibility_ready_family) {
+    return { label: "Family ready", className: "bg-sky-400/15 text-sky-200" };
+  }
+  if (product.readiness_state === "compatibility_ready_exact" || product.compatibility_ready_exact) {
+    return { label: "Exact ready", className: "bg-teal-400/15 text-teal-200" };
+  }
   if (product.catalog_state === "needs_spec_confirmation" || product.compatibility_ready === false) {
     return { label: "Needs specs", className: "bg-amber-300/15 text-amber-200" };
   }

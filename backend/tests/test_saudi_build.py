@@ -19,6 +19,8 @@ def _product(
     canonical_key: str | None = None,
     name: str | None = None,
     flags: list[str] | None = None,
+    compatibility_ready_exact: bool | None = None,
+    compatibility_ready_family: bool | None = None,
 ) -> ProductSearchResult:
     return ProductSearchResult(
         id=product_id or f"{category.lower()}:local",
@@ -42,6 +44,15 @@ def _product(
         lowest_market_vendor=vendor,
         lowest_market_seller_type="marketplace" if risk >= 0.6 else "retailer",
         lowest_marketplace_risk_score=risk,
+        compatibility_ready_exact=compatibility_ready_exact,
+        compatibility_ready_family=compatibility_ready_family,
+        readiness_state=(
+            "compatibility_ready_exact"
+            if compatibility_ready_exact
+            else "compatibility_ready_family"
+            if compatibility_ready_family
+            else None
+        ),
         flags=flags or [],
     )
 
@@ -714,6 +725,27 @@ def test_marketplace_risk_is_visible_in_build_explanation() -> None:
     assert any("marketplace risk" in risk.lower() for risk in first.explanation.risks)
     gpu_explanation = next(item for item in first.explanation.component_explanations if item.category == "GPU")
     assert "marketplace risk" in gpu_explanation.risk_summary.lower()
+
+
+def test_family_ready_gpu_surfaces_exact_card_warning_in_auto_build() -> None:
+    products = {category: [_ready_product(category, product_id=f"{category}:priced", price=700, lowest=700)] for category in REQUIRED_BUILD_CATEGORIES}
+    products["GPU"] = [
+        _ready_product(
+            "GPU",
+            product_id="GPU:family-ready",
+            price=1700,
+            lowest=1700,
+            compatibility_ready_exact=False,
+            compatibility_ready_family=True,
+        )
+    ]
+    repository = FakePricingRepository(products)
+    service = SaudiLocalBuildService(repository)  # type: ignore[arg-type]
+
+    response = service.generate_local(SaudiBuildRequest(budget_sar=6000))
+
+    first = response.builds[0]
+    assert any("confirmed family specs only" in warning for warning in first.summary.warning_summary)
 
 
 def test_build_comparison_marks_cheapest_and_safest_options() -> None:

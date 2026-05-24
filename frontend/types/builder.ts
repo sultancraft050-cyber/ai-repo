@@ -755,10 +755,14 @@ export type HybridImportReviewItem = {
   classification: HybridImportClassification;
   identity_confidence?: number | null;
   compatibility_ready: boolean;
+  compatibility_ready_exact: boolean;
+  compatibility_ready_family: boolean;
+  readiness_state: CatalogExpansionReadinessState;
   market_linked: boolean;
   saudi_price_sar?: number | null;
   saudi_vendor?: string | null;
   missing_compatibility_fields: string[];
+  missing_exact_card_fields: string[];
   inferred_fields: string[];
   conflict_candidates: string[];
   duplicate_candidates: string[];
@@ -781,13 +785,21 @@ export type HybridImportReviewResponse = {
   metadata_only_count: number;
   conflict_count: number;
   reject_count: number;
+  exact_ready_count: number;
+  family_ready_count: number;
+  card_dimension_missing_count: number;
   commit_eligible_count: number;
   top_missing_compatibility_fields: CanonicalImportReasonCount[];
+  top_missing_exact_card_fields: CanonicalImportReasonCount[];
   top_inferred_fields: CanonicalImportReasonCount[];
   items: HybridImportReviewItem[];
 };
 
-export type CatalogExpansionReadinessState = "compatibility_ready" | "metadata_only" | "conflict_requires_review";
+export type CatalogExpansionReadinessState =
+  | "compatibility_ready_exact"
+  | "compatibility_ready_family"
+  | "metadata_only"
+  | "conflict_requires_review";
 
 export type CatalogExpansionTargetFamily = {
   category: string;
@@ -925,6 +937,10 @@ export type ProductSearchResult = {
   compatibility_tags?: string[];
   catalog_state?: "saudi_priced" | "catalog_only" | "needs_spec_confirmation";
   compatibility_ready?: boolean;
+  compatibility_ready_exact?: boolean;
+  compatibility_ready_family?: boolean;
+  readiness_state?: CatalogExpansionReadinessState;
+  missing_exact_card_fields?: string[];
   missing_compatibility_fields?: string[];
   inferred_fields?: string[];
   market_linked_count?: number;

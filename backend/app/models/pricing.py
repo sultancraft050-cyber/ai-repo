@@ -379,6 +379,15 @@ class ProductSearchResult(BaseModel):
     compatibility_tags: list[str] = Field(default_factory=list)
     catalog_state: Literal["saudi_priced", "catalog_only", "needs_spec_confirmation"] | None = None
     compatibility_ready: bool | None = None
+    compatibility_ready_exact: bool | None = None
+    compatibility_ready_family: bool | None = None
+    readiness_state: Literal[
+        "compatibility_ready_exact",
+        "compatibility_ready_family",
+        "metadata_only",
+        "conflict_requires_review",
+    ] | None = None
+    missing_exact_card_fields: list[str] = Field(default_factory=list)
     missing_compatibility_fields: list[str] = Field(default_factory=list)
     inferred_fields: list[str] = Field(default_factory=list)
     market_linked_count: int = 0

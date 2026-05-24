@@ -7,7 +7,12 @@ import re
 from typing import Any
 
 
-CATALOG_PRODUCT_STATES = ("compatibility_ready", "metadata_only", "conflict_requires_review")
+CATALOG_PRODUCT_STATES = (
+    "compatibility_ready_exact",
+    "compatibility_ready_family",
+    "metadata_only",
+    "conflict_requires_review",
+)
 EXPANSION_PHASE = "phase2_saudi_core"
 
 
@@ -98,11 +103,19 @@ def annotate_expansion_target(record: dict[str, Any], category: str) -> Expansio
     return match
 
 
-def expansion_state(*, compatibility_ready: bool, metadata_only_count: int, conflict_count: int) -> str:
+def expansion_state(
+    *,
+    compatibility_ready: bool,
+    metadata_only_count: int,
+    conflict_count: int,
+    family_ready_count: int = 0,
+) -> str:
     if conflict_count > 0:
         return "conflict_requires_review"
     if compatibility_ready:
-        return "compatibility_ready"
+        return "compatibility_ready_exact"
+    if family_ready_count > 0:
+        return "compatibility_ready_family"
     return "metadata_only"
 
 

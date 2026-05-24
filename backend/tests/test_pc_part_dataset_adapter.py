@@ -58,6 +58,32 @@ class EnrichmentDriver(FakeDriver):
         return [], None, None
 
 
+class GPUFamilyEnrichmentDriver(FakeDriver):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[dict[str, Any]] = []
+
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        self.calls.append({"query": query, **parameters})
+        if "RETURN properties(record) AS record" in query:
+            return [
+                FakeRecord(
+                    record={
+                        "canonical_key": parameters["canonical_key"],
+                        "category": "GPU",
+                        "specs": json.dumps({"chip_family": "Radeon RX 7800 XT", "vram_gb": 16}),
+                        "compatibility_ready": False,
+                        "compatibility_ready_exact": False,
+                        "compatibility_ready_family": False,
+                    }
+                )
+            ], None, None
+        if "RETURN count(record) AS count" in query:
+            return [FakeRecord(count=1)], None, None
+        return [], None, None
+
+
 class HybridReviewDriver(FakeDriver):
     def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
         self.queries.append(query)
@@ -74,6 +100,40 @@ class HybridReviewDriver(FakeDriver):
                         "compatibility_ready": False,
                         "missing_compatibility_fields": ["socket"],
                         "inferred_fields": [{"field": "socket", "inferred_value": "AM5"}],
+                    },
+                    market_product_id=None,
+                    price_snapshot_count=0,
+                    cheapest=None,
+                )
+            ], None, None
+        return super().execute_query(query, **parameters)
+
+
+class GPUHybridReviewDriver(FakeDriver):
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        if "MATCH (record:StagedCanonicalRecord)" in query and "price_snapshot_count" in query:
+            return [
+                FakeRecord(
+                    record={
+                        "staged_id": "staged:gpu",
+                        "raw_name": "PowerColor RX7800XT 16G-P",
+                        "name": "PowerColor RX7800XT 16G-P",
+                        "canonical_key": "GPU|AMD|RADEON_RX_7800_XT|POWERCOLOR_RX7800XT_16G_P",
+                        "category": "GPU",
+                        "validation_status": "valid",
+                        "compatibility_ready": False,
+                        "compatibility_ready_exact": False,
+                        "compatibility_ready_family": True,
+                        "readiness_state": "compatibility_ready_family",
+                        "specs": json.dumps(
+                            {
+                                "chip_family": "Radeon RX 7800 XT",
+                                "vram_gb": 16,
+                                "pcie_generation": "PCIe 4.0",
+                                "reference_tdp_w": 263,
+                            }
+                        ),
                     },
                     market_product_id=None,
                     price_snapshot_count=0,
@@ -161,6 +221,8 @@ def test_gpu_requires_confirmed_power_length_and_pcie_for_compatibility_ready() 
     assert record["compatibility_ready"] is False
     assert "tdp_w" in record["missing_compatibility_fields"]
     assert "pcie_generation" in record["missing_compatibility_fields"]
+    assert "slots" in record["missing_compatibility_fields"]
+    assert "power_connectors" in record["missing_compatibility_fields"]
 
 
 def test_case_missing_clearance_warns_without_fake_defaults() -> None:
@@ -308,6 +370,23 @@ def test_hybrid_review_classifies_metadata_only_without_market_mutation() -> Non
     assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
 
 
+def test_hybrid_review_reports_gpu_family_ready_separately_from_exact_ready() -> None:
+    driver = GPUHybridReviewDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.hybrid_import_review(source_name="pc-part-dataset", category="GPU", region="SA")
+
+    assert response.family_ready_count == 1
+    assert response.exact_ready_count == 0
+    assert response.commit_eligible_count == 1
+    assert response.card_dimension_missing_count == 1
+    assert response.items[0].readiness_state == "compatibility_ready_family"
+    assert response.items[0].compatibility_ready is True
+    assert response.items[0].compatibility_ready_exact is False
+    assert response.items[0].compatibility_ready_family is True
+    assert "length_mm" in response.items[0].missing_exact_card_fields
+
+
 def test_general_confirmed_spec_enrichment_dry_run_writes_nothing() -> None:
     driver = EnrichmentDriver()
     repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
@@ -332,6 +411,42 @@ def test_general_confirmed_spec_enrichment_dry_run_writes_nothing() -> None:
     assert response.enriched_records == 0
     assert not any("SET record.specs" in query for query in driver.queries)
     assert not any("CREATE (e:CanonicalEvidence)" in query for query in driver.queries)
+
+
+def test_gpu_family_enrichment_does_not_create_exact_card_readiness() -> None:
+    driver = GPUFamilyEnrichmentDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.enrich_staged_specs(
+        ConfirmedSpecEnrichmentRequest(
+            category="GPU",
+            source_name="founder_confirmed_gpu_family_specs",
+            license_note="manual confirmed GPU family compatibility evidence",
+            records=[
+                {
+                    "canonical_key": "GPU|AMD|RADEON_RX_7800_XT|POWERCOLOR_RX7800XT_16G_P",
+                    "specs": {
+                        "chip_family": "Radeon RX 7800 XT",
+                        "vram_gb": 16,
+                        "pcie_generation": "PCIe 4.0",
+                        "reference_tdp_w": 263,
+                    },
+                    "evidence_note": "confirmed GPU family spec evidence",
+                }
+            ],
+            dry_run=False,
+        )
+    )
+
+    update_call = next(call for call in driver.calls if "record.compatibility_ready_family" in call["query"])
+    assert response.enriched_records == 1
+    assert response.items[0].status == "enriched"
+    assert update_call["compatibility_ready"] is False
+    assert update_call["compatibility_ready_exact"] is False
+    assert update_call["compatibility_ready_family"] is True
+    assert update_call["readiness_state"] == "compatibility_ready_family"
+    assert "length_mm" in update_call["missing_exact_card_fields"]
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
 
 
 def test_market_evidence_link_dry_run_preserves_prices() -> None:

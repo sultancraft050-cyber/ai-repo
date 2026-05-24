@@ -8,7 +8,7 @@ from typing import Any
 
 CRITICAL_FIELDS = {
     "CPU": ("socket",),
-    "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation"),
+    "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation", "slots", "power_connectors"),
     "Motherboard": ("socket", "memory_type", "form_factor"),
     "RAM": ("memory_type", "capacity_gb"),
     "Case": ("supported_motherboard_form_factors",),
@@ -53,6 +53,12 @@ def adapt_pc_part_dataset_record(raw: dict[str, Any], category: str) -> dict[str
         "inferred_fields": inferred,
         "warning_reasons": warnings,
     }
+    if category == "GPU":
+        record["canonical_key"] = _gpu_card_canonical_key(
+            brand=brand,
+            name=name,
+            chip_family=str(specs.get("chip_family") or specs.get("model") or ""),
+        )
     return record
 
 
@@ -76,9 +82,11 @@ def _map_specs(raw: dict[str, Any], category: str, name: str) -> tuple[dict[str,
         }
         return _clean(specs), inferred, warnings
     if category == "GPU":
+        chip_family = _get(raw, "chipset", "gpu_family", "chip_family")
         specs = {
-            "chip_vendor": _get(raw, "chipset", "brand"),
-            "model": _get(raw, "chipset", "model"),
+            "chip_vendor": _gpu_chip_vendor(chip_family),
+            "chip_family": chip_family,
+            "model": chip_family or _get(raw, "model"),
             "vram_gb": _capacity_to_gb(_get(raw, "memory")),
             "length_mm": _as_int(_get(raw, "length")),
             "pcie_generation": _get(raw, "pcie_generation", "pcie", "interface"),
@@ -183,6 +191,27 @@ def _get(raw: dict[str, Any], *keys: str) -> Any:
 
 def _clean(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if not _missing(value)}
+
+
+def _gpu_card_canonical_key(*, brand: str, name: str, chip_family: str) -> str:
+    parts = ["GPU", brand or _brand_from_name(name) or "UNKNOWN", chip_family or "UNKNOWN_FAMILY", name]
+    normalized = [
+        re.sub(r"[^A-Z0-9]+", "_", str(part).upper()).strip("_")
+        for part in parts
+        if str(part).strip()
+    ]
+    return "|".join(normalized)
+
+
+def _gpu_chip_vendor(chip_family: Any) -> str | None:
+    text = str(chip_family or "").upper()
+    if "GEFORCE" in text or text.startswith("RTX") or text.startswith("GTX"):
+        return "NVIDIA"
+    if "RADEON" in text or text.startswith("RX "):
+        return "AMD"
+    if "ARC" in text:
+        return "Intel"
+    return None
 
 
 def _missing(value: Any) -> bool:

@@ -676,6 +676,11 @@ class SaudiLocalBuildService:
         local_bonus = 0.12 if product.current_recommended_price is not None else 0
         warning_penalty = 0.08 if product.lowest_price_warning else 0
         score = confidence + local_bonus + brand_bonus + under_target * 0.16 - over_target * 0.35 - risk * 0.22 - warning_penalty
+        if product.category == "GPU":
+            if product.compatibility_ready_exact:
+                score += 0.08
+            elif product.compatibility_ready_family:
+                score -= 0.07
         if mode == "value":
             score += (1 / max(price, 1)) * target_budget * 0.3
         elif mode == "budget":
@@ -701,6 +706,10 @@ class SaudiLocalBuildService:
             warnings.append("No recommended Saudi price; using lowest market price with risk label.")
         if category in {"RAM", "Storage", "Motherboard"} and self._is_usable_with_warnings_candidate(category, product):
             warnings.append(f"{category} is usable with market-data warnings; verify VAT, shipping, warranty, and seller terms.")
+        if category == "GPU" and product.compatibility_ready_family and not product.compatibility_ready_exact:
+            warnings.append(
+                "GPU uses confirmed family specs only; verify exact card length, board power, slots, and power connectors before purchase."
+            )
         risk = product.current_recommended_marketplace_risk_score
         if risk is not None and risk > 0.72:
             warnings.append(f"{category} has elevated marketplace risk ({risk:.2f}).")

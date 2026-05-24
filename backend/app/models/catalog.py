@@ -219,6 +219,14 @@ class CatalogCoverageResponse(BaseModel):
     categories: list[CatalogCategoryCoverage]
 
 
+CatalogProductState = Literal[
+    "compatibility_ready_exact",
+    "compatibility_ready_family",
+    "metadata_only",
+    "conflict_requires_review",
+]
+
+
 class CatalogExpansionTargetFamily(BaseModel):
     category: str
     family_key: str
@@ -234,7 +242,7 @@ class CatalogExpansionTargetFamily(BaseModel):
     metadata_only_count: int
     conflict_count: int
     missing_required_specs: list[str] = Field(default_factory=list)
-    readiness_state: Literal["compatibility_ready", "metadata_only", "conflict_requires_review"]
+    readiness_state: CatalogProductState
     next_action: str
 
 
@@ -253,7 +261,7 @@ class CatalogExpansionCategorySummary(BaseModel):
     metadata_only_count: int
     conflict_count: int
     missing_required_specs: list[str] = Field(default_factory=list)
-    readiness_state: Literal["compatibility_ready", "metadata_only", "conflict_requires_review"]
+    readiness_state: CatalogProductState
     next_action: str
     families: list[CatalogExpansionTargetFamily] = Field(default_factory=list)
 
@@ -269,7 +277,7 @@ class CatalogExpansionTargetsResponse(BaseModel):
     total_compatibility_ready_count: int
     total_saudi_priced_count: int
     total_trusted_vendor_count: int
-    product_states: list[Literal["compatibility_ready", "metadata_only", "conflict_requires_review"]]
+    product_states: list[CatalogProductState]
     categories: list[CatalogExpansionCategorySummary] = Field(default_factory=list)
 
 
@@ -405,10 +413,14 @@ class HybridImportReviewItem(BaseModel):
     classification: HybridImportClassification
     identity_confidence: float | None = None
     compatibility_ready: bool = False
+    compatibility_ready_exact: bool = False
+    compatibility_ready_family: bool = False
+    readiness_state: CatalogProductState = "metadata_only"
     market_linked: bool = False
     saudi_price_sar: float | None = None
     saudi_vendor: str | None = None
     missing_compatibility_fields: list[str] = Field(default_factory=list)
+    missing_exact_card_fields: list[str] = Field(default_factory=list)
     inferred_fields: list[str] = Field(default_factory=list)
     conflict_candidates: list[str] = Field(default_factory=list)
     duplicate_candidates: list[str] = Field(default_factory=list)
@@ -431,8 +443,12 @@ class HybridImportReviewResponse(BaseModel):
     metadata_only_count: int
     conflict_count: int
     reject_count: int
+    exact_ready_count: int = 0
+    family_ready_count: int = 0
+    card_dimension_missing_count: int = 0
     commit_eligible_count: int
     top_missing_compatibility_fields: list[CanonicalImportReasonCount] = Field(default_factory=list)
+    top_missing_exact_card_fields: list[CanonicalImportReasonCount] = Field(default_factory=list)
     top_inferred_fields: list[CanonicalImportReasonCount] = Field(default_factory=list)
     items: list[HybridImportReviewItem] = Field(default_factory=list)
 
