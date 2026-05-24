@@ -33,6 +33,7 @@ from app.models.catalog import (
     MarketEvidenceLinkRequest,
     MarketEvidenceLinkResponse,
 )
+from app.services.catalog_expansion import CATALOG_PRODUCT_STATES, load_expansion_manifest
 from app.services.saudi_build_generator import SaudiLocalBuildService
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
@@ -154,7 +155,73 @@ def catalog_expansion_targets(
     region: str | None = "SA",
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> CatalogExpansionTargetsResponse:
-    return repository.catalog_expansion_targets(region=resolve_market_region(region))
+    resolved_region = resolve_market_region(region)
+    try:
+        return repository.catalog_expansion_targets(region=resolved_region)
+    except Exception as error:  # noqa: BLE001 - founder ops should still see the curated target manifest.
+        logger.exception("catalog_expansion_targets_failed", extra={"error_type": type(error).__name__})
+        manifest = load_expansion_manifest()
+        milestone = dict(manifest.get("milestone") or {})
+        categories = []
+        for order, (category, config) in enumerate(dict(manifest.get("categories") or {}).items(), start=1):
+            families = [
+                {
+                    "category": category,
+                    "family_key": f"{category}|{str(family).upper().replace('-', ' ').replace(' ', '_')}",
+                    "family_name": str(family),
+                    "priority": index,
+                    "target_min": int(config.get("target_min") or 0),
+                    "target_max": int(config.get("target_max") or 0),
+                    "canonical_count": 0,
+                    "compatibility_ready_count": 0,
+                    "saudi_priced_count": 0,
+                    "trusted_vendor_count": 0,
+                    "staged_count": 0,
+                    "metadata_only_count": 0,
+                    "conflict_count": 0,
+                    "missing_required_specs": list(config.get("required_specs") or []),
+                    "readiness_state": "metadata_only",
+                    "next_action": f"Run small curated {category} staging batches from the target manifest.",
+                }
+                for index, family in enumerate(config.get("families") or [], start=1)
+            ]
+            categories.append(
+                {
+                    "category": category,
+                    "priority_order": order,
+                    "target_min": int(config.get("target_min") or 0),
+                    "target_max": int(config.get("target_max") or 0),
+                    "safe_stage_batch_size": int(config.get("safe_stage_batch_size") or 100),
+                    "safe_commit_batch_size": int(config.get("safe_commit_batch_size") or 100),
+                    "canonical_count": 0,
+                    "compatibility_ready_count": 0,
+                    "saudi_priced_count": 0,
+                    "trusted_vendor_count": 0,
+                    "staged_count": 0,
+                    "metadata_only_count": 0,
+                    "conflict_count": 0,
+                    "missing_required_specs": list(config.get("required_specs") or []),
+                    "readiness_state": "metadata_only",
+                    "next_action": f"Run small curated {category} staging batches from the target manifest.",
+                    "families": families,
+                }
+            )
+        return CatalogExpansionTargetsResponse.model_validate(
+            {
+                "region": resolved_region,
+                "phase": str(manifest.get("phase") or "phase2_saudi_core"),
+                "first_milestone_min": int(milestone.get("first_min") or 500),
+                "first_milestone_max": int(milestone.get("first_max") or 700),
+                "final_milestone_min": int(milestone.get("final_min") or 500),
+                "final_milestone_max": int(milestone.get("final_max") or 2000),
+                "total_canonical_count": 0,
+                "total_compatibility_ready_count": 0,
+                "total_saudi_priced_count": 0,
+                "total_trusted_vendor_count": 0,
+                "product_states": list(CATALOG_PRODUCT_STATES),
+                "categories": categories,
+            }
+        )
 
 
 @router.get("/hybrid/strategy", response_model=HybridGraphStrategyResponse)
