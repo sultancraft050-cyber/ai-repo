@@ -19,6 +19,7 @@ import type {
   CanonicalImportStageResponse,
   CanonicalStagedClearResponse,
   CanonicalStagedSummaryResponse,
+  ConfirmedSpecEnrichmentRequest,
   CpuDuplicateReport,
   DailyFounderReport,
   DeploymentChecklist,
@@ -41,6 +42,8 @@ import type {
   ProductCategory,
   HardwareCognitionReport,
   HardwareIntelligence,
+  HybridImportReviewResponse,
+  MarketEvidenceLinkResponse,
   ProductSearchResult,
   ReasoningGovernanceReport,
   SaudiBuildDataCompleteness,
@@ -408,6 +411,42 @@ export async function clearStagedCanonicalRecords(
   return requestJson<CanonicalStagedClearResponse>(`/catalog/import/staged?${params.toString()}`, {
     method: "DELETE",
     headers: authHeaders(apiKey)
+  });
+}
+
+export async function getHybridImportReview(
+  apiKey: string,
+  request: { source_name: string; category: string; region?: string }
+): Promise<HybridImportReviewResponse> {
+  const params = new URLSearchParams({
+    source_name: request.source_name,
+    category: request.category,
+    region: request.region ?? "SA"
+  });
+  return requestJson<HybridImportReviewResponse>(`/catalog/import/hybrid-review?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function enrichConfirmedSpecs(
+  apiKey: string,
+  request: ConfirmedSpecEnrichmentRequest
+): Promise<unknown> {
+  return requestJson<unknown>("/catalog/canonical/enrich-specs", {
+    method: "POST",
+    headers: authHeaders(apiKey),
+    body: JSON.stringify(request)
+  });
+}
+
+export async function linkMarketEvidenceDryRun(
+  apiKey: string,
+  request: { source_name?: string; region?: string; category?: string; canonical_keys?: string[]; limit?: number }
+): Promise<MarketEvidenceLinkResponse> {
+  return requestJson<MarketEvidenceLinkResponse>("/catalog/canonical/link-market-evidence", {
+    method: "POST",
+    headers: authHeaders(apiKey),
+    body: JSON.stringify({ dry_run: true, region: "SA", ...request })
   });
 }
 

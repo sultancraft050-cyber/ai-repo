@@ -84,8 +84,11 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     hybrid_integrity = endpoint_rule("GET", "/catalog/hybrid/integrity")
     canonical_evidence = endpoint_rule("POST", "/catalog/canonical/evidence")
     canonical_cpu_enrich = endpoint_rule("POST", "/catalog/canonical/enrich-cpu-specs")
+    canonical_enrich = endpoint_rule("POST", "/catalog/canonical/enrich-specs")
+    canonical_market_link = endpoint_rule("POST", "/catalog/canonical/link-market-evidence")
     canonical_stage = endpoint_rule("POST", "/catalog/import/stage")
     canonical_staged = endpoint_rule("GET", "/catalog/import/staged")
+    canonical_hybrid_review = endpoint_rule("GET", "/catalog/import/hybrid-review")
     canonical_clear = endpoint_rule("DELETE", "/catalog/import/staged")
     canonical_import = endpoint_rule("POST", "/catalog/import/commit")
     capacity_report = endpoint_rule("GET", "/ops/neo4j-capacity-report")
@@ -100,8 +103,11 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     assert hybrid_integrity and hybrid_integrity.role == "analyst"
     assert canonical_evidence and canonical_evidence.role == "admin" and canonical_evidence.risk_level == "level_1"
     assert canonical_cpu_enrich and canonical_cpu_enrich.role == "admin" and canonical_cpu_enrich.risk_level == "level_1"
+    assert canonical_enrich and canonical_enrich.role == "admin" and canonical_enrich.risk_level == "level_1"
+    assert canonical_market_link and canonical_market_link.role == "admin" and canonical_market_link.risk_level == "level_1"
     assert canonical_stage and canonical_stage.role == "admin" and canonical_stage.risk_level == "level_1"
     assert canonical_staged and canonical_staged.role == "analyst"
+    assert canonical_hybrid_review and canonical_hybrid_review.role == "analyst"
     assert canonical_clear and canonical_clear.role == "admin" and canonical_clear.risk_level == "level_1"
     assert canonical_import and canonical_import.role == "admin" and canonical_import.risk_level == "level_1"
     assert public is None

@@ -33,7 +33,7 @@ type SelectionMap = Partial<Record<ComponentKind, ProductSearchResult>>;
 type CategoryFailures = Partial<Record<ComponentKind, string>>;
 type CategoryLoading = Partial<Record<ComponentKind, boolean>>;
 type CategoryHasMore = Partial<Record<ComponentKind, boolean>>;
-type SortMode = "recommended" | "price_low" | "price_high" | "name";
+type SortMode = "recommended" | "cheapest" | "newest" | "name";
 const PRODUCT_PAGE_SIZE = 24;
 
 const categoryCopy: Record<ComponentKind, string> = {
@@ -479,7 +479,17 @@ function ProductPickerModal({
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("recommended");
   const [brand, setBrand] = useState<string>("all");
+  const [socket, setSocket] = useState<string>("all");
+  const [memoryType, setMemoryType] = useState<string>("all");
+  const [chipset, setChipset] = useState<string>("all");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
   const [onlyPriced, setOnlyPriced] = useState(false);
+  const [browserProducts, setBrowserProducts] = useState<ProductSearchResult[]>(products);
+  const [browserLoading, setBrowserLoading] = useState(false);
+  const [browserLoadingMore, setBrowserLoadingMore] = useState(false);
+  const [browserHasMore, setBrowserHasMore] = useState(hasMore);
+  const [browserError, setBrowserError] = useState<string | null>(null);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -493,7 +503,78 @@ function ProductPickerModal({
     };
   }, [onClose]);
 
-  const groupedProducts = useMemo(() => cheapestProducts(products), [products]);
+  useEffect(() => {
+    setBrowserProducts(products);
+    setBrowserHasMore(hasMore);
+  }, [hasMore, products]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      setBrowserLoading(true);
+      setBrowserError(null);
+      try {
+        const nextProducts = await searchProducts({
+          query,
+          category: kind,
+          region: "SA",
+          limit: PRODUCT_PAGE_SIZE,
+          offset: 0,
+          brand: brand === "all" ? undefined : brand,
+          socket: socket === "all" ? undefined : socket,
+          chipset: chipset === "all" ? undefined : chipset,
+          memoryType: memoryType === "all" ? undefined : memoryType,
+          minPriceSar: minPrice ? Number(minPrice) : undefined,
+          maxPriceSar: maxPrice ? Number(maxPrice) : undefined,
+          inStockPricedOnly: onlyPriced,
+          sort
+        });
+        if (cancelled) return;
+        setBrowserProducts(nextProducts);
+        setBrowserHasMore(nextProducts.length === PRODUCT_PAGE_SIZE);
+      } catch (error) {
+        if (!cancelled) setBrowserError(error instanceof Error ? error.message : "Unable to search products.");
+      } finally {
+        if (!cancelled) setBrowserLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [brand, chipset, kind, maxPrice, memoryType, minPrice, onlyPriced, query, socket, sort]);
+
+  async function loadMoreFilteredProducts() {
+    if (browserLoadingMore || !browserHasMore) return;
+    setBrowserLoadingMore(true);
+    setBrowserError(null);
+    try {
+      const nextPage = await searchProducts({
+        query,
+        category: kind,
+        region: "SA",
+        limit: PRODUCT_PAGE_SIZE,
+        offset: browserProducts.length,
+        brand: brand === "all" ? undefined : brand,
+        socket: socket === "all" ? undefined : socket,
+        chipset: chipset === "all" ? undefined : chipset,
+        memoryType: memoryType === "all" ? undefined : memoryType,
+        minPriceSar: minPrice ? Number(minPrice) : undefined,
+        maxPriceSar: maxPrice ? Number(maxPrice) : undefined,
+        inStockPricedOnly: onlyPriced,
+        sort
+      });
+      setBrowserProducts((current) => dedupeProducts([...current, ...nextPage]));
+      setBrowserHasMore(nextPage.length === PRODUCT_PAGE_SIZE);
+      if (!nextPage.length) onLoadMore();
+    } catch (error) {
+      setBrowserError(error instanceof Error ? error.message : "Unable to load more products.");
+    } finally {
+      setBrowserLoadingMore(false);
+    }
+  }
+
+  const groupedProducts = useMemo(() => cheapestProducts(browserProducts), [browserProducts]);
   const brands = useMemo(
     () =>
       Array.from(new Set(groupedProducts.map((product) => product.brand).filter(Boolean) as string[]))
@@ -501,6 +582,9 @@ function ProductPickerModal({
         .slice(0, 10),
     [groupedProducts]
   );
+  const sockets = useMemo(() => facetValues(groupedProducts, "socket").slice(0, 10), [groupedProducts]);
+  const memoryTypes = useMemo(() => facetValues(groupedProducts, "memory_type").slice(0, 10), [groupedProducts]);
+  const chipsets = useMemo(() => facetValues(groupedProducts, "chipset").slice(0, 10), [groupedProducts]);
   const priceBounds = useMemo(() => {
     const prices = groupedProducts
       .map((product) => bestSarPrice(product)?.amount)
@@ -511,19 +595,12 @@ function ProductPickerModal({
     };
   }, [groupedProducts]);
   const visible = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
     return groupedProducts
       .filter((product) => {
-        if (normalizedQuery) {
-          const haystack = `${displayProductName(product)} ${product.brand ?? ""} ${product.model ?? ""}`.toLowerCase();
-          if (!haystack.includes(normalizedQuery)) return false;
-        }
-        if (brand !== "all" && product.brand !== brand) return false;
-        if (onlyPriced && !bestSarPrice(product)) return false;
         return true;
       })
       .sort((left, right) => productSort(left, right, sort));
-  }, [brand, groupedProducts, onlyPriced, query, sort]);
+  }, [groupedProducts, sort]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/76 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-label={`Add ${kind}`}>
@@ -564,6 +641,22 @@ function ProductPickerModal({
               <span>{priceBounds.min ? formatSar(priceBounds.min) : "N/A"}</span>
               <span>{priceBounds.max ? formatSar(priceBounds.max) : "N/A"}</span>
             </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <input
+                inputMode="numeric"
+                value={minPrice}
+                onChange={(event) => setMinPrice(event.target.value.replace(/[^\d]/g, ""))}
+                placeholder="Min SAR"
+                className="h-9 rounded-md border border-line bg-[#050915] px-2 text-sm text-ink placeholder:text-muted"
+              />
+              <input
+                inputMode="numeric"
+                value={maxPrice}
+                onChange={(event) => setMaxPrice(event.target.value.replace(/[^\d]/g, ""))}
+                placeholder="Max SAR"
+                className="h-9 rounded-md border border-line bg-[#050915] px-2 text-sm text-ink placeholder:text-muted"
+              />
+            </div>
           </div>
 
           <div className="mt-4 border-t border-line pt-4">
@@ -588,6 +681,16 @@ function ProductPickerModal({
               ))}
             </div>
           </div>
+
+          {sockets.length ? (
+            <FacetFilter title="Socket" value={socket} options={sockets} onChange={setSocket} />
+          ) : null}
+          {memoryTypes.length ? (
+            <FacetFilter title="Memory" value={memoryType} options={memoryTypes} onChange={setMemoryType} />
+          ) : null}
+          {chipsets.length ? (
+            <FacetFilter title="Chipset" value={chipset} options={chipsets} onChange={setChipset} />
+          ) : null}
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
@@ -595,7 +698,7 @@ function ProductPickerModal({
             <div>
               <h3 className="text-lg font-semibold text-ink">Showing {visible.length} market products</h3>
               <p className="text-sm text-muted">
-                one card per product, cheapest seller price shown from {products.length} loaded listings
+                one card per product, cheapest seller price shown from {browserProducts.length} loaded listings
               </p>
             </div>
             <button
@@ -613,8 +716,8 @@ function ProductPickerModal({
               <ArrowUpDown size={16} aria-hidden />
               <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="w-full bg-transparent text-ink outline-none">
                 <option value="recommended">Recommended</option>
-                <option value="price_low">Price low</option>
-                <option value="price_high">Price high</option>
+                <option value="cheapest">Cheapest</option>
+                <option value="newest">Newest</option>
                 <option value="name">Name</option>
               </select>
             </label>
@@ -631,9 +734,9 @@ function ProductPickerModal({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
-            {failure ? (
-              <div className="rounded-md border border-danger/30 bg-red-50 px-3 py-2 text-sm text-danger">{failure}</div>
-            ) : loading ? (
+            {failure || browserError ? (
+              <div className="rounded-md border border-danger/30 bg-red-50 px-3 py-2 text-sm text-danger">{failure ?? browserError}</div>
+            ) : loading || browserLoading ? (
               <div className="grid place-items-center rounded-lg border border-line bg-panel px-3 py-16 text-sm text-muted">
                 Loading Saudi market products...
               </div>
@@ -653,15 +756,15 @@ function ProductPickerModal({
                 ))}
               </div>
             )}
-            {!failure && !loading && hasMore ? (
+            {!failure && !loading && !browserLoading && browserHasMore ? (
               <div className="mt-4 grid place-items-center">
                 <button
                   type="button"
-                  onClick={onLoadMore}
-                  disabled={loadingMore}
+                  onClick={loadMoreFilteredProducts}
+                  disabled={loadingMore || browserLoadingMore}
                   className="inline-flex h-10 items-center justify-center rounded-md border border-line bg-[#2d2d30] px-4 text-sm font-bold text-white transition hover:border-signal disabled:cursor-wait disabled:opacity-60"
                 >
-                  {loadingMore ? "Loading more..." : "Load more products"}
+                  {loadingMore || browserLoadingMore ? "Loading more..." : "Load more products"}
                 </button>
               </div>
             ) : null}
@@ -676,6 +779,7 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
   const price = bestSarPrice(product);
   const productName = displayProductName(product);
   const specs = productSummarySpecs(product);
+  const state = productCatalogState(product);
   return (
     <article className={`flex min-h-[380px] flex-col overflow-hidden rounded-md border bg-[#1c1c1e] shadow-[0_18px_40px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:border-signal/70 ${selected ? "border-signal" : "border-[#2f3137]"}`}>
       <div className="grid aspect-[4/3] place-items-center bg-white p-4">
@@ -689,6 +793,7 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
           <div className="mt-2 flex flex-wrap gap-2 text-xs text-[#a1a1aa]">
             {product.brand ? <span>{product.brand}</span> : null}
             <span>{product.region}</span>
+            <span className={`rounded-full px-2 py-0.5 font-semibold ${state.className}`}>{state.label}</span>
           </div>
         </div>
         <div className="flex items-start justify-between gap-3">
@@ -754,6 +859,36 @@ function MetricMini({ label, value }: { label: string; value: string }) {
   );
 }
 
+function FacetFilter({
+  title,
+  value,
+  options,
+  onChange
+}: {
+  title: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <div className="mb-2 text-xs font-semibold uppercase text-muted">{title}</div>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-md border border-line bg-[#050915] px-3 text-sm font-semibold text-ink"
+      >
+        <option value="all">All {title.toLowerCase()}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 function SummaryMetric({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
   return (
     <div className="rounded-md border border-line bg-white px-3 py-2">
@@ -785,7 +920,7 @@ function cheapestProducts(products: ProductSearchResult[]): ProductSearchResult[
       grouped.set(key, product);
       return;
     }
-    const cheapest = productSort(product, current, "price_low") < 0 ? product : current;
+    const cheapest = productSort(product, current, "cheapest") < 0 ? product : current;
     const imageCarrier = cheapest.image_url ? cheapest : product.image_url ? product : current;
     if (cheapest !== current || (!current.image_url && imageCarrier.image_url)) {
       grouped.set(key, {
@@ -851,23 +986,51 @@ function displayStoreName(value?: string | null): string {
 }
 
 function productSummarySpecs(product: ProductSearchResult): Array<{ label: string; value: string }> {
-  if (product.category !== "CPU") return [];
   const specs = product.summary_specs ?? {};
-  return [
+  const category = String(product.category);
+  const common = [
     { label: "Socket", value: stringSpec(specs.socket) },
-    {
-      label: "Cores",
-      value: stringSpec(specs.cores)
-    },
-    {
-      label: "Threads",
-      value: stringSpec(specs.threads)
-    },
-    {
-      label: "Boost",
-      value: clockSpec(specs.boost_clock_ghz)
-    }
-  ].filter((item): item is { label: string; value: string } => Boolean(item.value));
+    { label: "Chipset", value: stringSpec(specs.chipset) },
+    { label: "Memory", value: stringSpec(specs.memory_type) },
+    { label: "Form factor", value: stringSpec(specs.form_factor) }
+  ];
+  const byCategory: Record<string, Array<{ label: string; value: string }>> = {
+    CPU: [
+      { label: "Socket", value: stringSpec(specs.socket) },
+      { label: "Cores", value: stringSpec(specs.cores) },
+      { label: "Threads", value: stringSpec(specs.threads) },
+      { label: "Boost", value: clockSpec(specs.boost_clock_ghz) || stringSpec(specs.boost_clock) },
+      { label: "TDP", value: wattSpec(specs.tdp_w) }
+    ],
+    GPU: [
+      { label: "VRAM", value: gbSpec(specs.vram_gb) },
+      { label: "Length", value: mmSpec(specs.length_mm) },
+      { label: "TDP", value: wattSpec(specs.tdp_w) }
+    ],
+    RAM: [
+      { label: "Type", value: stringSpec(specs.memory_type) },
+      { label: "Capacity", value: gbSpec(specs.capacity_gb) },
+      { label: "Speed", value: mhzSpec(specs.speed_mhz ?? specs.speed_mt_s) },
+      { label: "Kit", value: stringSpec(specs.kit_config) }
+    ],
+    Storage: [
+      { label: "Capacity", value: tbOrGbSpec(specs.capacity_tb, specs.capacity_gb) },
+      { label: "Interface", value: stringSpec(specs.interface) },
+      { label: "Protocol", value: stringSpec(specs.protocol) }
+    ],
+    PSU: [
+      { label: "Wattage", value: wattSpec(specs.wattage_w) },
+      { label: "Efficiency", value: stringSpec(specs.efficiency_rating) }
+    ],
+    Motherboard: common,
+    Case: common,
+    Cooler: [
+      { label: "Type", value: stringSpec(specs.cooler_type) },
+      { label: "Radiator", value: mmSpec(specs.radiator_size_mm) },
+      { label: "Height", value: mmSpec(specs.height_mm) }
+    ]
+  };
+  return (byCategory[category] ?? common).filter((item): item is { label: string; value: string } => Boolean(item.value)).slice(0, 6);
 }
 
 function stringSpec(value: unknown): string {
@@ -882,6 +1045,32 @@ function clockSpec(value: unknown): string {
     return value.toLowerCase().includes("ghz") ? value.trim() : `${value.trim()} GHz`;
   }
   return "";
+}
+
+function wattSpec(value: unknown): string {
+  const raw = stringSpec(value);
+  return raw ? (raw.toLowerCase().includes("w") ? raw : `${raw}W`) : "";
+}
+
+function gbSpec(value: unknown): string {
+  const raw = stringSpec(value);
+  return raw ? (raw.toLowerCase().includes("gb") ? raw : `${raw}GB`) : "";
+}
+
+function mmSpec(value: unknown): string {
+  const raw = stringSpec(value);
+  return raw ? (raw.toLowerCase().includes("mm") ? raw : `${raw}mm`) : "";
+}
+
+function mhzSpec(value: unknown): string {
+  const raw = stringSpec(value);
+  return raw ? (raw.toLowerCase().includes("hz") || raw.toLowerCase().includes("mt") ? raw : `${raw}MT/s`) : "";
+}
+
+function tbOrGbSpec(tb: unknown, gb: unknown): string {
+  const tbValue = stringSpec(tb);
+  if (tbValue) return tbValue.toLowerCase().includes("tb") ? tbValue : `${tbValue}TB`;
+  return gbSpec(gb);
 }
 
 function brandFromName(name: string): string {
@@ -941,12 +1130,39 @@ function bestSarPrice(product: ProductSearchResult): { amount: number; vendor?: 
 function productSort(left: ProductSearchResult, right: ProductSearchResult, sort: SortMode) {
   const leftPrice = bestSarPrice(left)?.amount;
   const rightPrice = bestSarPrice(right)?.amount;
-  if (sort === "price_low") return (leftPrice ?? Number.POSITIVE_INFINITY) - (rightPrice ?? Number.POSITIVE_INFINITY);
-  if (sort === "price_high") return (rightPrice ?? -1) - (leftPrice ?? -1);
+  if (sort === "cheapest") return (leftPrice ?? Number.POSITIVE_INFINITY) - (rightPrice ?? Number.POSITIVE_INFINITY);
+  if (sort === "newest") {
+    const leftTime = left.current_price_timestamp ? Date.parse(left.current_price_timestamp) : 0;
+    const rightTime = right.current_price_timestamp ? Date.parse(right.current_price_timestamp) : 0;
+    return rightTime - leftTime || displayProductName(left).localeCompare(displayProductName(right));
+  }
   if (sort === "name") return displayProductName(left).localeCompare(displayProductName(right));
   const leftScore = (left.price_confidence ?? 0) + (left.current_price_trust_score ?? 0) + (left.best_local_price ? 1 : 0);
   const rightScore = (right.price_confidence ?? 0) + (right.current_price_trust_score ?? 0) + (right.best_local_price ? 1 : 0);
   return rightScore - leftScore || (leftPrice ?? Number.POSITIVE_INFINITY) - (rightPrice ?? Number.POSITIVE_INFINITY);
+}
+
+function facetValues(products: ProductSearchResult[], field: string): string[] {
+  return Array.from(
+    new Set(
+      products
+        .map((product) => product.summary_specs?.[field])
+        .flatMap((value) => (Array.isArray(value) ? value : [value]))
+        .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+    )
+  ).sort((left, right) => left.localeCompare(right));
+}
+
+function productCatalogState(product: ProductSearchResult): { label: string; className: string } {
+  if (product.catalog_state === "saudi_priced" || bestSarPrice(product)) {
+    return { label: "Saudi priced", className: "bg-emerald-400/15 text-emerald-300" };
+  }
+  if (product.catalog_state === "needs_spec_confirmation" || product.compatibility_ready === false) {
+    return { label: "Needs specs", className: "bg-amber-300/15 text-amber-200" };
+  }
+  return { label: "Catalog only", className: "bg-slate-400/15 text-slate-200" };
 }
 
 function formatSar(value?: number | null) {

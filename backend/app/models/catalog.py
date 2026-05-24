@@ -327,3 +327,119 @@ class ConfirmedCpuSpecEnrichmentResponse(BaseModel):
     skipped_records: int
     evidence_created: int
     items: list[ConfirmedCpuSpecEnrichmentItem] = Field(default_factory=list)
+
+
+HybridImportClassification = Literal[
+    "canonical_ready_and_market_linked",
+    "canonical_ready_no_saudi_price",
+    "metadata_only_needs_enrichment",
+    "conflict_requires_founder_review",
+    "reject",
+]
+
+
+class HybridImportReviewItem(BaseModel):
+    staged_id: str | None = None
+    raw_name: str
+    normalized_name: str | None = None
+    canonical_key: str | None = None
+    category: str
+    classification: HybridImportClassification
+    identity_confidence: float | None = None
+    compatibility_ready: bool = False
+    market_linked: bool = False
+    saudi_price_sar: float | None = None
+    saudi_vendor: str | None = None
+    missing_compatibility_fields: list[str] = Field(default_factory=list)
+    inferred_fields: list[str] = Field(default_factory=list)
+    conflict_candidates: list[str] = Field(default_factory=list)
+    duplicate_candidates: list[str] = Field(default_factory=list)
+    rejected_reasons: list[str] = Field(default_factory=list)
+    warning_reasons: list[str] = Field(default_factory=list)
+    commit_eligible: bool = False
+    next_action: str
+
+
+class HybridImportReviewResponse(BaseModel):
+    source_name: str
+    category: str
+    region: str
+    total_staged: int
+    classification_counts: dict[str, int] = Field(default_factory=dict)
+    market_linked_count: int
+    metadata_only_count: int
+    conflict_count: int
+    reject_count: int
+    commit_eligible_count: int
+    top_missing_compatibility_fields: list[CanonicalImportReasonCount] = Field(default_factory=list)
+    top_inferred_fields: list[CanonicalImportReasonCount] = Field(default_factory=list)
+    items: list[HybridImportReviewItem] = Field(default_factory=list)
+
+
+class ConfirmedSpecRecord(BaseModel):
+    canonical_key: str = Field(min_length=3, max_length=240)
+    specs: dict[str, Any] = Field(default_factory=dict)
+    evidence_note: str = Field(min_length=3, max_length=500)
+
+
+class ConfirmedSpecEnrichmentRequest(BaseModel):
+    category: CatalogCategory
+    source_name: str = Field(min_length=2, max_length=120)
+    license_note: str = Field(min_length=3, max_length=500)
+    records: list[ConfirmedSpecRecord] = Field(default_factory=list, min_length=1, max_length=100)
+    dry_run: bool = True
+
+
+class ConfirmedSpecEnrichmentItem(BaseModel):
+    canonical_key: str
+    status: Literal["would_enrich", "enriched", "skipped", "conflict_requires_founder_review"]
+    staged_record_found: bool
+    evidence_attached: bool = False
+    reason: str | None = None
+    confirmed_fields: list[str] = Field(default_factory=list)
+    missing_required_fields: list[str] = Field(default_factory=list)
+
+
+class ConfirmedSpecEnrichmentResponse(BaseModel):
+    source_name: str
+    category: str
+    dry_run: bool
+    total_records: int
+    matched_staged_records: int
+    enriched_records: int
+    skipped_records: int
+    conflict_count: int
+    evidence_created: int
+    items: list[ConfirmedSpecEnrichmentItem] = Field(default_factory=list)
+
+
+class MarketEvidenceLinkRequest(BaseModel):
+    source_name: str = Field(default="catalog_identity_linker", min_length=2, max_length=120)
+    region: str = Field(default="SA", min_length=2, max_length=8)
+    category: CatalogCategory | None = None
+    canonical_keys: list[str] = Field(default_factory=list, max_length=100)
+    confidence_threshold: float = Field(default=0.9, ge=0.5, le=1)
+    limit: int = Field(default=50, ge=1, le=100)
+    dry_run: bool = True
+
+
+class MarketEvidenceLinkItem(BaseModel):
+    canonical_key: str
+    product_id: str | None = None
+    product_name: str | None = None
+    confidence: float
+    status: Literal["would_link", "linked", "skipped"]
+    reason: str | None = None
+    price_snapshot_count: int = 0
+    cheapest_price_sar: float | None = None
+    cheapest_vendor: str | None = None
+
+
+class MarketEvidenceLinkResponse(BaseModel):
+    region: str
+    dry_run: bool
+    matched_count: int
+    linked_count: int
+    skipped_count: int
+    price_mutation_count: int = 0
+    items: list[MarketEvidenceLinkItem] = Field(default_factory=list)

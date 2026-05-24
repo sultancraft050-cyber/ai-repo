@@ -2,11 +2,13 @@
 
 import { DatabaseZap, Eraser, FileCheck2, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { clearStagedCanonicalRecords, getStagedCanonicalSummary, stageCanonicalDataset } from "@/lib/api";
+import { clearStagedCanonicalRecords, getHybridImportReview, getStagedCanonicalSummary, stageCanonicalDataset } from "@/lib/api";
 import type {
+  CanonicalImportAdapter,
   CanonicalImportSourceType,
   CanonicalImportStageResponse,
   CanonicalStagedSummaryResponse,
+  HybridImportReviewResponse,
   ProductCategory
 } from "@/types/builder";
 import { productCategories } from "@/types/builder";
@@ -15,10 +17,28 @@ type Props = {
   apiKey: string;
 };
 
-const sourceOptions: { name: string; type: CanonicalImportSourceType; label: string }[] = [
-  { name: "BuildCores/OpenDB", type: "canonical_specs", label: "BuildCores/OpenDB specs" },
-  { name: "Kaggle PC Parts Dataset", type: "kaggle_dataset", label: "Kaggle PC parts dataset" },
-  { name: "Community Hardware Repository", type: "community_repository", label: "Community hardware repository" }
+const sourceOptions: {
+  name: string;
+  type: CanonicalImportSourceType;
+  label: string;
+  adapter?: CanonicalImportAdapter;
+  defaultPath: string;
+}[] = [
+  { name: "BuildCores/OpenDB", type: "canonical_specs", label: "BuildCores/OpenDB specs", defaultPath: "samples/cpu_sample.json" },
+  {
+    name: "pc-part-dataset",
+    type: "community_repository",
+    label: "pc-part-dataset adapter",
+    adapter: "pc_part_dataset",
+    defaultPath: "datasets/pc-part-dataset/cpu.json"
+  },
+  { name: "Kaggle PC Parts Dataset", type: "kaggle_dataset", label: "Kaggle PC parts dataset", defaultPath: "samples/cpu_sample.json" },
+  {
+    name: "Community Hardware Repository",
+    type: "community_repository",
+    label: "Community hardware repository",
+    defaultPath: "samples/cpu_sample.json"
+  }
 ];
 
 export function CanonicalImportStagingPanel({ apiKey }: Props) {
@@ -32,6 +52,7 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
   const [clearing, setClearing] = useState(false);
   const [stageResult, setStageResult] = useState<CanonicalImportStageResponse | null>(null);
   const [summary, setSummary] = useState<CanonicalStagedSummaryResponse | null>(null);
+  const [hybridReview, setHybridReview] = useState<HybridImportReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const source = sourceOptions[sourceIndex] ?? sourceOptions[0];
 
@@ -45,12 +66,14 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
         dataset_path: datasetPath,
         category,
         batch_limit: batchLimit,
+        adapter: source.adapter ?? null,
         license_note: licenseNote,
         dry_run: dryRun
       });
       setStageResult(result);
       const nextSummary = await getStagedCanonicalSummary(apiKey, { source_name: source.name, category });
       setSummary(nextSummary);
+      setHybridReview(await getHybridImportReview(apiKey, { source_name: source.name, category, region: "SA" }));
     } catch (stageError) {
       setError(stageError instanceof Error ? stageError.message : "Unable to stage canonical dataset.");
     } finally {
@@ -63,6 +86,7 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
     setError(null);
     try {
       setSummary(await getStagedCanonicalSummary(apiKey, { source_name: source.name, category }));
+      setHybridReview(await getHybridImportReview(apiKey, { source_name: source.name, category, region: "SA" }));
     } catch (summaryError) {
       setError(summaryError instanceof Error ? summaryError.message : "Unable to load staged summary.");
     } finally {
@@ -78,6 +102,7 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
     try {
       const result = await clearStagedCanonicalRecords(apiKey, { source_name: source.name, category });
       setStageResult(null);
+      setHybridReview(null);
       setSummary({
         source_name: result.source_name,
         source_type: source.type,
@@ -127,7 +152,13 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
           <span className="font-medium text-slate-300">Source</span>
           <select
             value={sourceIndex}
-            onChange={(event) => setSourceIndex(Number(event.target.value))}
+            onChange={(event) => {
+              const nextIndex = Number(event.target.value);
+              const nextSource = sourceOptions[nextIndex] ?? sourceOptions[0];
+              setSourceIndex(nextIndex);
+              setDatasetPath(nextSource.adapter === "pc_part_dataset" ? pcPartDatasetPath(category) : nextSource.defaultPath);
+              setHybridReview(null);
+            }}
             className="h-10 rounded-md border border-slate-700 bg-slate-900 px-3 text-slate-100"
           >
             {sourceOptions.map((option, index) => (
@@ -145,6 +176,8 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
               const nextCategory = event.target.value as ProductCategory;
               setCategory(nextCategory);
               if (nextCategory === "Motherboard" && batchLimit > 50) setBatchLimit(50);
+              if (source.adapter === "pc_part_dataset") setDatasetPath(pcPartDatasetPath(nextCategory));
+              setHybridReview(null);
             }}
             className="h-10 rounded-md border border-slate-700 bg-slate-900 px-3 text-slate-100"
           >
@@ -226,8 +259,23 @@ export function CanonicalImportStagingPanel({ apiKey }: Props) {
         <StageResultCard result={stageResult} />
         <SummaryCard summary={summary} />
       </div>
+      <HybridReviewCard review={hybridReview} />
     </section>
   );
+}
+
+function pcPartDatasetPath(category: ProductCategory): string {
+  const fileByCategory: Partial<Record<ProductCategory, string>> = {
+    CPU: "cpu.json",
+    GPU: "video-card.json",
+    RAM: "memory.json",
+    Motherboard: "motherboard.json",
+    PSU: "power-supply.json",
+    Case: "case.json",
+    Cooler: "cpu-cooler.json",
+    Storage: "internal-hard-drive.json"
+  };
+  return `datasets/pc-part-dataset/${fileByCategory[category] ?? "cpu.json"}`;
 }
 
 function StageResultCard({ result }: { result: CanonicalImportStageResponse | null }) {
@@ -277,6 +325,46 @@ function SummaryCard({ summary }: { summary: CanonicalStagedSummaryResponse | nu
         <p className="text-xs font-semibold uppercase text-slate-500">Readiness</p>
         <p className="mt-1 text-sm font-semibold text-teal-200">{summary.readiness_for_commit.replaceAll("_", " ")}</p>
       </div>
+    </div>
+  );
+}
+
+function HybridReviewCard({ review }: { review: HybridImportReviewResponse | null }) {
+  if (!review) return null;
+  return (
+    <div className="mt-3 rounded-md border border-slate-800 bg-slate-900 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-100">Hybrid catalog review</h4>
+          <p className="mt-1 text-sm leading-6 text-slate-400">
+            Shows which staged rows are market-linked, metadata-only, conflicted, or clean enough for commit.
+          </p>
+        </div>
+        <div className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-right">
+          <p className="text-xs font-semibold uppercase text-slate-500">Commit eligible</p>
+          <p className="text-lg font-semibold text-teal-200">{review.commit_eligible_count}</p>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {Object.entries(review.classification_counts).map(([classification, count]) => (
+          <Metric key={classification} label={classification.replaceAll("_", " ")} value={count} />
+        ))}
+      </div>
+      {review.items.length ? (
+        <div className="mt-3 overflow-hidden rounded border border-slate-800">
+          {review.items.slice(0, 5).map((item) => (
+            <div key={item.staged_id ?? item.canonical_key ?? item.raw_name} className="border-b border-slate-800 bg-slate-950 px-3 py-2 last:border-b-0">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold text-slate-100">{item.raw_name}</p>
+                <span className="text-xs font-semibold uppercase text-teal-200">{item.classification.replaceAll("_", " ")}</span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-slate-400">{item.next_action}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <ReasonList title="Missing compatibility fields" items={review.top_missing_compatibility_fields} />
+      <ReasonList title="Inferred fields" items={review.top_inferred_fields} />
     </div>
   );
 }

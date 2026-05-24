@@ -31,8 +31,16 @@ from app.models.catalog import (
     ConfirmedCpuSpecEnrichmentItem,
     ConfirmedCpuSpecEnrichmentRequest,
     ConfirmedCpuSpecEnrichmentResponse,
+    ConfirmedSpecEnrichmentItem,
+    ConfirmedSpecEnrichmentRequest,
+    ConfirmedSpecEnrichmentResponse,
     HybridGraphIntegrityResponse,
+    HybridImportReviewItem,
+    HybridImportReviewResponse,
     HybridIntegrityCheck,
+    MarketEvidenceLinkItem,
+    MarketEvidenceLinkRequest,
+    MarketEvidenceLinkResponse,
 )
 from app.models.pricing import (
     CpuSpecsImportResponse,
@@ -86,6 +94,16 @@ APPROVED_CANONICAL_IMPORT_SOURCES = {
     ("Community Hardware Repository", "community_repository"),
     ("community hardware repositories", "community_repository"),
     ("Community repositories", "community_repository"),
+}
+CONFIRMED_SPEC_REQUIRED_FIELDS = {
+    "CPU": ("socket", "cores", "threads"),
+    "GPU": ("vram_gb",),
+    "Motherboard": ("socket", "memory_type", "form_factor"),
+    "RAM": ("memory_type", "capacity_gb"),
+    "Storage": ("capacity_gb", "interface"),
+    "PSU": ("wattage_w",),
+    "Case": ("supported_motherboard_form_factors",),
+    "Cooler": ("cooler_type",),
 }
 CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
 SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
@@ -512,6 +530,11 @@ def _search_result(data: dict[str, Any]) -> ProductSearchResult:
         cheapest_vendor=data.get("cheapest_vendor"),
         cheapest_price_sar=_optional_float(data.get("cheapest_price_sar")),
         compatibility_tags=list(data.get("compatibility_tags") or []),
+        catalog_state=data.get("catalog_state"),
+        compatibility_ready=data.get("compatibility_ready"),
+        missing_compatibility_fields=_staged_string_list(data.get("missing_compatibility_fields")),
+        inferred_fields=_staged_string_list(data.get("inferred_fields")),
+        market_linked_count=int(data.get("market_linked_count") or 0),
         data_origin=data.get("data_origin") or "unknown",
         price_status=data.get("price_status") or "unavailable",
         flags=list(data.get("flags") or []),
@@ -1054,6 +1077,12 @@ def _finalize_search_data(data: dict[str, Any], rollups: dict[str, Any]) -> dict
     data["compatibility_tags"] = _compatibility_tags(data.get("category"), data.get("summary_specs") or {})
     seed_without_price = not data.get("canonical_key") and data["price_status"] == "unavailable"
     data["data_origin"] = data.get("data_origin") or ("seed" if seed_without_price else "live")
+    if data["price_status"] != "unavailable" and data.get("cheapest_price_sar"):
+        data["catalog_state"] = "saudi_priced"
+    elif data.get("compatibility_ready") is False or _staged_string_list(data.get("missing_compatibility_fields")):
+        data["catalog_state"] = "needs_spec_confirmation"
+    else:
+        data["catalog_state"] = "catalog_only"
     if seed_without_price:
         data["stale"] = True
         data["flags"] = list(dict.fromkeys([*(data.get("flags") or []), "stale_seed_product"]))
@@ -1291,6 +1320,48 @@ def _count_reasons(rows: list[str]) -> list[CanonicalImportReasonCount]:
         CanonicalImportReasonCount(reason=reason, count=count)
         for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8]
     ]
+
+
+def _property_list(value: Any) -> list[Any]:
+    if value in (None, "", []):
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return [value] if value else []
+        if isinstance(decoded, list):
+            return decoded
+        if isinstance(decoded, dict):
+            return [decoded]
+    return [value]
+
+
+def _staged_string_list(value: Any) -> list[str]:
+    strings: list[str] = []
+    for item in _property_list(value):
+        if isinstance(item, dict):
+            field = item.get("field") or item.get("inferred_value") or item.get("warning_reason")
+            if field not in (None, "", []):
+                strings.append(str(field))
+        elif item not in (None, "", []):
+            strings.append(str(item))
+    return list(dict.fromkeys(strings))
+
+
+def _hybrid_review_next_action(classification: str, missing_fields: list[str], conflicts: list[str], market_linked: bool) -> str:
+    if classification == "reject":
+        return "Fix rejected staged data, source attribution, or category before retrying."
+    if classification == "conflict_requires_founder_review":
+        return f"Review founder approval before merging conflicting field(s): {', '.join(conflicts[:4])}."
+    if classification == "metadata_only_needs_enrichment":
+        missing = ", ".join(missing_fields[:4]) if missing_fields else "confirmed compatibility evidence"
+        return f"Attach confirmed spec evidence for {missing} before commit."
+    if market_linked:
+        return "Eligible for clean canonical commit; Saudi price evidence is already linked by identity."
+    return "Eligible for clean canonical commit; add approved Saudi URLs later for local pricing."
 
 
 def _coverage_next_action(category: str, priced_count: int, missing_specs: int, stale_count: int) -> str:
@@ -3398,6 +3469,140 @@ class Neo4jPricingRepository:
             readiness_for_commit=readiness,
         )
 
+    def hybrid_import_review(
+        self,
+        *,
+        source_name: str,
+        category: str,
+        region: str = "SA",
+    ) -> HybridImportReviewResponse:
+        region = normalize_region(region)
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord)
+            WHERE record.source_name = $source_name
+              AND record.category = $category
+            OPTIONAL MATCH (market:Product)
+            WHERE market.canonical_key = record.canonical_key
+               OR (
+                    market.category = record.category
+                    AND toLower(coalesce(market.brand, "")) = toLower(coalesce(record.brand, ""))
+                    AND toLower(coalesce(market.model, "")) = toLower(coalesce(record.model, ""))
+                    AND coalesce(record.model, "") <> ""
+                  )
+            OPTIONAL MATCH (market)-[:HAS_PRICE]->(snapshot:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+            WHERE snapshot.region = $region AND snapshot.currency = "SAR"
+            WITH record, market, snapshot, vendor
+            ORDER BY coalesce(snapshot.price, 999999999) ASC
+            WITH record,
+                 collect(DISTINCT market.id) AS market_ids,
+                 count(DISTINCT snapshot) AS price_snapshot_count,
+                 collect(
+                   CASE
+                     WHEN snapshot IS NULL THEN NULL
+                     ELSE {
+                       price: snapshot.price,
+                       item_price_sar: snapshot.item_price_sar,
+                       final_landed_price_sar: snapshot.final_landed_price_sar,
+                       vendor_name: vendor.name
+                     }
+                   END
+                 ) AS price_rows
+            RETURN properties(record) AS record,
+                   [id IN market_ids WHERE id IS NOT NULL][0] AS market_product_id,
+                   price_snapshot_count,
+                   [row IN price_rows WHERE row IS NOT NULL][0] AS cheapest
+            ORDER BY coalesce(record.created_at, datetime("1970-01-01T00:00:00Z")) ASC,
+                     record.canonical_key ASC
+            LIMIT 250
+            """,
+            source_name=source_name,
+            category=category,
+            region=region,
+            database_=settings.neo4j_database,
+        )
+
+        items: list[HybridImportReviewItem] = []
+        missing_fields: list[str] = []
+        inferred_fields: list[str] = []
+        classification_counts: dict[str, int] = {}
+        for row in records:
+            data = row.data()
+            record = dict(data.get("record") or {})
+            missing = _staged_string_list(record.get("missing_compatibility_fields"))
+            inferred = _staged_string_list(record.get("inferred_fields"))
+            conflicts = _staged_string_list(record.get("conflict_candidates"))
+            duplicates = _staged_string_list(record.get("duplicate_candidates"))
+            rejected = _staged_string_list(record.get("rejected_reasons"))
+            warnings = _staged_string_list(record.get("warning_reasons"))
+            compatibility_ready = bool(record.get("compatibility_ready"))
+            market_linked = bool(data.get("market_product_id")) and int(data.get("price_snapshot_count") or 0) > 0
+            cheapest = data.get("cheapest") or {}
+            cheapest_price = (
+                cheapest.get("final_landed_price_sar")
+                or cheapest.get("item_price_sar")
+                or cheapest.get("price")
+            )
+
+            if str(record.get("validation_status") or "") != "valid" or rejected:
+                classification = "reject"
+                commit_eligible = False
+            elif conflicts:
+                classification = "conflict_requires_founder_review"
+                commit_eligible = False
+            elif not compatibility_ready:
+                classification = "metadata_only_needs_enrichment"
+                commit_eligible = False
+            elif market_linked:
+                classification = "canonical_ready_and_market_linked"
+                commit_eligible = True
+            else:
+                classification = "canonical_ready_no_saudi_price"
+                commit_eligible = True
+
+            missing_fields.extend(missing)
+            inferred_fields.extend(inferred)
+            classification_counts[classification] = classification_counts.get(classification, 0) + 1
+            items.append(
+                HybridImportReviewItem(
+                    staged_id=record.get("staged_id"),
+                    raw_name=str(record.get("raw_name") or record.get("name") or ""),
+                    normalized_name=record.get("normalized_name") or record.get("name"),
+                    canonical_key=record.get("canonical_key"),
+                    category=str(record.get("category") or category),
+                    classification=classification,
+                    identity_confidence=_optional_float(record.get("identity_confidence")),
+                    compatibility_ready=compatibility_ready,
+                    market_linked=market_linked,
+                    saudi_price_sar=_optional_float(cheapest_price),
+                    saudi_vendor=cheapest.get("vendor_name"),
+                    missing_compatibility_fields=missing,
+                    inferred_fields=inferred,
+                    conflict_candidates=conflicts,
+                    duplicate_candidates=duplicates,
+                    rejected_reasons=rejected,
+                    warning_reasons=warnings,
+                    commit_eligible=commit_eligible,
+                    next_action=_hybrid_review_next_action(classification, missing, conflicts, market_linked),
+                )
+            )
+
+        return HybridImportReviewResponse(
+            source_name=source_name,
+            category=category,
+            region=region,
+            total_staged=len(items),
+            classification_counts=classification_counts,
+            market_linked_count=sum(1 for item in items if item.market_linked),
+            metadata_only_count=classification_counts.get("metadata_only_needs_enrichment", 0),
+            conflict_count=classification_counts.get("conflict_requires_founder_review", 0),
+            reject_count=classification_counts.get("reject", 0),
+            commit_eligible_count=sum(1 for item in items if item.commit_eligible),
+            top_missing_compatibility_fields=_count_reasons(missing_fields),
+            top_inferred_fields=_count_reasons(inferred_fields),
+            items=items[:100],
+        )
+
     def clear_staged_canonical_import(self, *, source_name: str, category: str) -> CanonicalStagedClearResponse:
         records, _, _ = self.driver.execute_query(
             """
@@ -3695,6 +3900,227 @@ class Neo4jPricingRepository:
             items=items,
         )
 
+    def enrich_staged_specs(self, request: ConfirmedSpecEnrichmentRequest) -> ConfirmedSpecEnrichmentResponse:
+        items: list[ConfirmedSpecEnrichmentItem] = []
+        required_fields = CONFIRMED_SPEC_REQUIRED_FIELDS.get(request.category, ())
+        matched = 0
+        enriched = 0
+        skipped = 0
+        conflicts = 0
+        evidence_created = 0
+
+        for incoming in request.records:
+            staged = self._staged_record_by_canonical_key(incoming.canonical_key)
+            confirmed_specs = _clean_properties(incoming.specs)
+            confirmed_fields = [key for key, value in confirmed_specs.items() if value not in (None, "", [])]
+            missing_required = [field for field in required_fields if confirmed_specs.get(field) in (None, "", [])]
+
+            if not staged:
+                skipped += 1
+                items.append(
+                    ConfirmedSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="skipped",
+                        staged_record_found=False,
+                        reason="staged canonical record not found",
+                        confirmed_fields=confirmed_fields,
+                        missing_required_fields=list(missing_required),
+                    )
+                )
+                continue
+            if str(staged.get("category") or "") != request.category:
+                skipped += 1
+                items.append(
+                    ConfirmedSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="skipped",
+                        staged_record_found=True,
+                        reason=f"staged record is {staged.get('category')}, not {request.category}",
+                        confirmed_fields=confirmed_fields,
+                        missing_required_fields=list(missing_required),
+                    )
+                )
+                continue
+
+            matched += 1
+            staged_conflicts = _staged_string_list(staged.get("conflict_candidates"))
+            if staged_conflicts:
+                conflicts += 1
+                items.append(
+                    ConfirmedSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="conflict_requires_founder_review",
+                        staged_record_found=True,
+                        reason="staged record already has canonical conflicts",
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
+                continue
+
+            merged_specs = _extract_staged_specs(staged)
+            merged_specs.update(confirmed_specs)
+            missing_after_merge = [field for field in required_fields if merged_specs.get(field) in (None, "", [])]
+            if missing_after_merge:
+                skipped += 1
+                items.append(
+                    ConfirmedSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="skipped",
+                        staged_record_found=True,
+                        reason=f"confirmed evidence is missing required field(s): {', '.join(missing_after_merge)}",
+                        confirmed_fields=confirmed_fields,
+                        missing_required_fields=missing_after_merge,
+                    )
+                )
+                continue
+
+            if request.dry_run:
+                items.append(
+                    ConfirmedSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="would_enrich",
+                        staged_record_found=True,
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
+                continue
+
+            self._apply_confirmed_specs_to_staged_record(
+                canonical_key=incoming.canonical_key,
+                category=request.category,
+                specs=merged_specs,
+                source_name=request.source_name,
+                license_note=request.license_note,
+                evidence_note=incoming.evidence_note,
+                confirmed_fields=confirmed_fields,
+            )
+            attached = self._attach_confirmed_spec_evidence(
+                canonical_key=incoming.canonical_key,
+                category=request.category,
+                source_name=request.source_name,
+                license_note=request.license_note,
+                evidence_note=incoming.evidence_note,
+                specs=confirmed_specs,
+            )
+            if attached:
+                evidence_created += 1
+            enriched += 1
+            items.append(
+                ConfirmedSpecEnrichmentItem(
+                    canonical_key=incoming.canonical_key,
+                    status="enriched",
+                    staged_record_found=True,
+                    evidence_attached=attached,
+                    confirmed_fields=confirmed_fields,
+                )
+            )
+
+        return ConfirmedSpecEnrichmentResponse(
+            source_name=request.source_name,
+            category=request.category,
+            dry_run=request.dry_run,
+            total_records=len(request.records),
+            matched_staged_records=matched,
+            enriched_records=enriched,
+            skipped_records=skipped,
+            conflict_count=conflicts,
+            evidence_created=evidence_created,
+            items=items,
+        )
+
+    def link_market_evidence(self, request: MarketEvidenceLinkRequest) -> MarketEvidenceLinkResponse:
+        region = normalize_region(request.region)
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product)
+            WHERE p.canonical_key IS NOT NULL
+              AND ($category IS NULL OR p.category = $category OR $category IN labels(p))
+              AND (size($canonical_keys) = 0 OR p.canonical_key IN $canonical_keys)
+            MATCH (p)-[:HAS_PRICE]->(snapshot:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+            WHERE snapshot.region = $region AND snapshot.currency = "SAR"
+            WITH p, snapshot, vendor
+            ORDER BY snapshot.price ASC
+            WITH p,
+                 count(DISTINCT snapshot) AS price_snapshot_count,
+                 collect({price: snapshot.price, vendor_name: vendor.name})[0] AS cheapest
+            RETURN p.id AS product_id,
+                   p.name AS product_name,
+                   p.canonical_key AS canonical_key,
+                   coalesce(p.identity_confidence, 1.0) AS confidence,
+                   price_snapshot_count,
+                   cheapest.price AS cheapest_price_sar,
+                   cheapest.vendor_name AS cheapest_vendor
+            ORDER BY p.name ASC
+            LIMIT $limit
+            """,
+            region=region,
+            category=request.category,
+            canonical_keys=request.canonical_keys,
+            limit=request.limit,
+            database_=settings.neo4j_database,
+        )
+
+        items: list[MarketEvidenceLinkItem] = []
+        linked = 0
+        skipped = 0
+        for row in records:
+            data = row.data()
+            confidence = float(data.get("confidence") or 0)
+            if confidence < request.confidence_threshold:
+                skipped += 1
+                items.append(
+                    MarketEvidenceLinkItem(
+                        canonical_key=str(data.get("canonical_key") or ""),
+                        product_id=data.get("product_id"),
+                        product_name=data.get("product_name"),
+                        confidence=confidence,
+                        status="skipped",
+                        reason="identity confidence below threshold",
+                        price_snapshot_count=int(data.get("price_snapshot_count") or 0),
+                        cheapest_price_sar=_optional_float(data.get("cheapest_price_sar")),
+                        cheapest_vendor=data.get("cheapest_vendor"),
+                    )
+                )
+                continue
+
+            if not request.dry_run:
+                self.driver.execute_query(
+                    """
+                    MATCH (p:Product {id: $product_id})
+                    SET p.market_evidence_linked = true,
+                        p.market_evidence_region = $region,
+                        p.market_evidence_source_name = $source_name,
+                        p.market_evidence_linked_at = datetime()
+                    """,
+                    product_id=data.get("product_id"),
+                    region=region,
+                    source_name=request.source_name,
+                    database_=settings.neo4j_database,
+                )
+                linked += 1
+            items.append(
+                MarketEvidenceLinkItem(
+                    canonical_key=str(data.get("canonical_key") or ""),
+                    product_id=data.get("product_id"),
+                    product_name=data.get("product_name"),
+                    confidence=confidence,
+                    status="linked" if not request.dry_run else "would_link",
+                    price_snapshot_count=int(data.get("price_snapshot_count") or 0),
+                    cheapest_price_sar=_optional_float(data.get("cheapest_price_sar")),
+                    cheapest_vendor=data.get("cheapest_vendor"),
+                )
+            )
+
+        return MarketEvidenceLinkResponse(
+            region=region,
+            dry_run=request.dry_run,
+            matched_count=len(records),
+            linked_count=linked,
+            skipped_count=skipped,
+            price_mutation_count=0,
+            items=items,
+        )
+
     def attach_canonical_evidence(self, request: CanonicalEvidenceRequest) -> CanonicalEvidenceResponse:
         evidence_id = f"evidence:{uuid4()}"
         approval_state = "approved" if request.approved_by_founder else "pending_review"
@@ -3771,6 +4197,91 @@ class Neo4jPricingRepository:
         if not records:
             return None
         return dict(records[0].data().get("record") or {})
+
+    def _apply_confirmed_specs_to_staged_record(
+        self,
+        *,
+        canonical_key: str,
+        category: str,
+        specs: dict[str, Any],
+        source_name: str,
+        license_note: str,
+        evidence_note: str,
+        confirmed_fields: list[str],
+    ) -> None:
+        missing = [field for field in CONFIRMED_SPEC_REQUIRED_FIELDS.get(category, ()) if specs.get(field) in (None, "", [])]
+        if missing:
+            raise ValueError(f"confirmed specs still missing required fields: {', '.join(missing)}")
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+            SET record.specs = $specs_json,
+                record.compatibility_ready = true,
+                record.compatibility_completeness_score = 1.0,
+                record.required_specs_present = true,
+                record.missing_compatibility_fields = [],
+                record.confirmed_compatibility_fields = $confirmed_fields,
+                record.confirmed_spec_source_name = $source_name,
+                record.confirmed_spec_license_note = $license_note,
+                record.confirmed_spec_note = $evidence_note,
+                record.confirmed_spec_updated_at = datetime(),
+                record.import_status = "pending",
+                record.updated_at = datetime()
+            RETURN count(record) AS count
+            """,
+            canonical_key=canonical_key,
+            specs_json=json.dumps(specs, sort_keys=True),
+            confirmed_fields=confirmed_fields,
+            source_name=source_name,
+            license_note=license_note,
+            evidence_note=evidence_note,
+            database_=settings.neo4j_database,
+        )
+        if not records or int(records[0]["count"] or 0) < 1:
+            raise ValueError("staged canonical record not found during enrichment")
+
+    def _attach_confirmed_spec_evidence(
+        self,
+        *,
+        canonical_key: str,
+        category: str,
+        source_name: str,
+        license_note: str,
+        evidence_note: str,
+        specs: dict[str, Any],
+    ) -> bool:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product {canonical_key: $canonical_key})
+            WITH p LIMIT 1
+            MERGE (source:CanonicalSource {name: $source_name})
+            SET source.updated_at = datetime(),
+                source.source_type = "confirmed_specs",
+                source.license_note = $license_note
+            CREATE (e:CanonicalEvidence)
+            SET e.id = $evidence_id,
+                e.source_name = $source_name,
+                e.evidence_type = "canonical_spec",
+                e.field = $field,
+                e.value_json = $value_json,
+                e.trust_score = 0.95,
+                e.note = $evidence_note,
+                e.approval_state = "approved",
+                e.created_at = datetime()
+            MERGE (p)-[:HAS_CANONICAL_EVIDENCE]->(e)
+            MERGE (e)-[:FROM_SOURCE]->(source)
+            RETURN e.id AS evidence_id
+            """,
+            canonical_key=canonical_key,
+            source_name=source_name,
+            license_note=license_note,
+            evidence_note=evidence_note,
+            evidence_id=f"evidence:{uuid4()}",
+            field=f"confirmed_{category.lower()}_specs",
+            value_json=json.dumps({"canonical_key": canonical_key, "category": category, "specs": specs}, sort_keys=True),
+            database_=settings.neo4j_database,
+        )
+        return bool(records)
 
     def _apply_confirmed_cpu_specs_to_staged_record(
         self,
@@ -3948,6 +4459,10 @@ class Neo4jPricingRepository:
                    } AS summary_specs,
                    coalesce(p.imageUrl, p.image_url) AS image_url,
                    p.processed_image_url AS processed_image_url,
+                   p.compatibility_ready AS compatibility_ready,
+                   p.missing_compatibility_fields AS missing_compatibility_fields,
+                   p.inferred_fields AS inferred_fields,
+                   CASE WHEN p.market_evidence_linked = true THEN 1 ELSE 0 END AS market_linked_count,
                    p.data_origin AS data_origin,
                    coalesce(p.stale, false) AS stale,
                    coalesce(p.best_value, false) AS best_value,

@@ -739,6 +739,83 @@ export type CanonicalStagedClearResponse = {
   status: string;
 };
 
+export type HybridImportClassification =
+  | "canonical_ready_and_market_linked"
+  | "canonical_ready_no_saudi_price"
+  | "metadata_only_needs_enrichment"
+  | "conflict_requires_founder_review"
+  | "reject";
+
+export type HybridImportReviewItem = {
+  staged_id?: string | null;
+  raw_name: string;
+  normalized_name?: string | null;
+  canonical_key?: string | null;
+  category: string;
+  classification: HybridImportClassification;
+  identity_confidence?: number | null;
+  compatibility_ready: boolean;
+  market_linked: boolean;
+  saudi_price_sar?: number | null;
+  saudi_vendor?: string | null;
+  missing_compatibility_fields: string[];
+  inferred_fields: string[];
+  conflict_candidates: string[];
+  duplicate_candidates: string[];
+  rejected_reasons: string[];
+  warning_reasons: string[];
+  commit_eligible: boolean;
+  next_action: string;
+};
+
+export type HybridImportReviewResponse = {
+  source_name: string;
+  category: string;
+  region: string;
+  total_staged: number;
+  classification_counts: Record<string, number>;
+  market_linked_count: number;
+  metadata_only_count: number;
+  conflict_count: number;
+  reject_count: number;
+  commit_eligible_count: number;
+  top_missing_compatibility_fields: CanonicalImportReasonCount[];
+  top_inferred_fields: CanonicalImportReasonCount[];
+  items: HybridImportReviewItem[];
+};
+
+export type ConfirmedSpecEnrichmentRequest = {
+  category: ProductCategory | string;
+  source_name: string;
+  license_note: string;
+  records: Array<{
+    canonical_key: string;
+    specs: Record<string, unknown>;
+    evidence_note: string;
+  }>;
+  dry_run: boolean;
+};
+
+export type MarketEvidenceLinkResponse = {
+  region: string;
+  dry_run: boolean;
+  matched_count: number;
+  linked_count: number;
+  skipped_count: number;
+  price_mutation_count: number;
+  items: Array<{
+    canonical_key: string;
+    product_id?: string | null;
+    product_name?: string | null;
+    confidence: number;
+    status: "would_link" | "linked" | "skipped";
+    reason?: string | null;
+    price_snapshot_count: number;
+    cheapest_price_sar?: number | null;
+    cheapest_vendor?: string | null;
+  }>;
+};
+
 export type SourceType =
   | "manufacturer"
   | "retailer_api"
@@ -749,7 +826,7 @@ export type SourceType =
 export type ListingCondition = "new" | "used" | "refurbished" | "open_box" | "unknown";
 export type SellerType = "retailer" | "manufacturer" | "marketplace" | "third_party" | "unknown";
 export type PriceStatus = "active" | "stale" | "unavailable";
-export type DataOrigin = "live" | "seed" | "demo" | "unknown";
+export type DataOrigin = "live" | "seed" | "demo" | "canonical_import" | "community_dataset" | "unknown";
 export type BuyRecommendationLevel =
   | "recommended"
   | "good_if_price_matters"
@@ -787,6 +864,11 @@ export type ProductSearchResult = {
   cheapest_vendor?: string | null;
   cheapest_price_sar?: number | null;
   compatibility_tags?: string[];
+  catalog_state?: "saudi_priced" | "catalog_only" | "needs_spec_confirmation";
+  compatibility_ready?: boolean;
+  missing_compatibility_fields?: string[];
+  inferred_fields?: string[];
+  market_linked_count?: number;
   data_origin: DataOrigin;
   price_status: PriceStatus;
   flags: string[];

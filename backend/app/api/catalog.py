@@ -22,10 +22,15 @@ from app.models.catalog import (
     CatalogFeedRunView,
     ConfirmedCpuSpecEnrichmentRequest,
     ConfirmedCpuSpecEnrichmentResponse,
+    ConfirmedSpecEnrichmentRequest,
+    ConfirmedSpecEnrichmentResponse,
     HybridDataLayerView,
     HybridGraphIntegrityResponse,
     HybridGraphStrategyResponse,
+    HybridImportReviewResponse,
     HybridSourceView,
+    MarketEvidenceLinkRequest,
+    MarketEvidenceLinkResponse,
 )
 from app.services.saudi_build_generator import SaudiLocalBuildService
 
@@ -110,6 +115,20 @@ def staged_canonical_import_summary(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> CanonicalStagedSummaryResponse:
     return repository.staged_canonical_import_summary(source_name=source_name, category=category)
+
+
+@router.get("/import/hybrid-review", response_model=HybridImportReviewResponse)
+def hybrid_import_review(
+    source_name: str = Query(min_length=2, max_length=120),
+    category: str = Query(min_length=2, max_length=80),
+    region: str | None = "SA",
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> HybridImportReviewResponse:
+    return repository.hybrid_import_review(
+        source_name=source_name,
+        category=category,
+        region=resolve_market_region(region),
+    )
 
 
 @router.delete("/import/staged", response_model=CanonicalStagedClearResponse)
@@ -245,3 +264,19 @@ def enrich_cpu_specs(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> ConfirmedCpuSpecEnrichmentResponse:
     return repository.enrich_staged_cpu_specs(request_body)
+
+
+@router.post("/canonical/enrich-specs", response_model=ConfirmedSpecEnrichmentResponse)
+def enrich_confirmed_specs(
+    request_body: ConfirmedSpecEnrichmentRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> ConfirmedSpecEnrichmentResponse:
+    return repository.enrich_staged_specs(request_body)
+
+
+@router.post("/canonical/link-market-evidence", response_model=MarketEvidenceLinkResponse)
+def link_market_evidence(
+    request_body: MarketEvidenceLinkRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> MarketEvidenceLinkResponse:
+    return repository.link_market_evidence(request_body)

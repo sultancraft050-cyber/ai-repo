@@ -28,7 +28,7 @@ Availability = Literal["in_stock", "out_of_stock", "preorder", "backorder", "unk
 ListingCondition = Literal["new", "used", "refurbished", "open_box", "unknown"]
 SellerType = Literal["retailer", "manufacturer", "marketplace", "third_party", "unknown"]
 PriceStatus = Literal["active", "stale", "unavailable"]
-DataOrigin = Literal["live", "seed", "demo", "unknown"]
+DataOrigin = Literal["live", "seed", "demo", "canonical_import", "community_dataset", "unknown"]
 BuyRecommendationLevel = Literal[
     "recommended",
     "good_if_price_matters",
@@ -377,6 +377,11 @@ class ProductSearchResult(BaseModel):
     cheapest_vendor: str | None = None
     cheapest_price_sar: float | None = None
     compatibility_tags: list[str] = Field(default_factory=list)
+    catalog_state: Literal["saudi_priced", "catalog_only", "needs_spec_confirmation"] | None = None
+    compatibility_ready: bool | None = None
+    missing_compatibility_fields: list[str] = Field(default_factory=list)
+    inferred_fields: list[str] = Field(default_factory=list)
+    market_linked_count: int = 0
     data_origin: DataOrigin = "unknown"
     price_status: PriceStatus = "unavailable"
     flags: list[str] = Field(default_factory=list)

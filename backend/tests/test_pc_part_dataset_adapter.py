@@ -7,7 +7,12 @@ from typing import Any
 import pytest
 
 from app.graph.pricing_repository import Neo4jPricingRepository
-from app.models.catalog import CanonicalImportStageRequest, ConfirmedCpuSpecEnrichmentRequest
+from app.models.catalog import (
+    CanonicalImportStageRequest,
+    ConfirmedCpuSpecEnrichmentRequest,
+    ConfirmedSpecEnrichmentRequest,
+    MarketEvidenceLinkRequest,
+)
 from app.services.import_adapters.pc_part_dataset_adapter import adapt_pc_part_dataset_record
 from scripts.prepare_datasets import prepare_pc_part_dataset
 
@@ -50,6 +55,49 @@ class EnrichmentDriver(FakeDriver):
             return [FakeRecord(count=1)], None, None
         if "CREATE (e:CanonicalEvidence)" in query:
             return [FakeRecord(evidence_id="evidence:test")], None, None
+        return [], None, None
+
+
+class HybridReviewDriver(FakeDriver):
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        if "MATCH (record:StagedCanonicalRecord)" in query and "price_snapshot_count" in query:
+            return [
+                FakeRecord(
+                    record={
+                        "staged_id": "staged:cpu",
+                        "raw_name": "AMD Ryzen 7 7800X3D",
+                        "name": "AMD Ryzen 7 7800X3D",
+                        "canonical_key": "CPU|AMD|RYZEN_7_7800X3D",
+                        "category": "CPU",
+                        "validation_status": "valid",
+                        "compatibility_ready": False,
+                        "missing_compatibility_fields": ["socket"],
+                        "inferred_fields": [{"field": "socket", "inferred_value": "AM5"}],
+                    },
+                    market_product_id=None,
+                    price_snapshot_count=0,
+                    cheapest=None,
+                )
+            ], None, None
+        return super().execute_query(query, **parameters)
+
+
+class MarketLinkDriver(FakeDriver):
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        if "MATCH (p:Product)" in query and "price_snapshot_count" in query:
+            return [
+                FakeRecord(
+                    product_id="prod:cpu",
+                    product_name="AMD Ryzen 7 7800X3D",
+                    canonical_key="CPU|AMD|RYZEN_7_7800X3D",
+                    confidence=0.95,
+                    price_snapshot_count=1,
+                    cheapest_price_sar=1499,
+                    cheapest_vendor="Computer Palace",
+                )
+            ], None, None
         return [], None, None
 
 
@@ -233,3 +281,56 @@ def test_confirmed_cpu_enrichment_updates_staged_record_without_price_mutation()
     assert any("SET record.specs" in query for query in driver.queries)
     assert any("CREATE (e:CanonicalEvidence)" in query for query in driver.queries)
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
+def test_hybrid_review_classifies_metadata_only_without_market_mutation() -> None:
+    driver = HybridReviewDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.hybrid_import_review(source_name="pc-part-dataset", category="CPU", region="SA")
+
+    assert response.total_staged == 1
+    assert response.items[0].classification == "metadata_only_needs_enrichment"
+    assert response.items[0].commit_eligible is False
+    assert response.top_missing_compatibility_fields[0].reason == "socket"
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
+def test_general_confirmed_spec_enrichment_dry_run_writes_nothing() -> None:
+    driver = EnrichmentDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.enrich_staged_specs(
+        ConfirmedSpecEnrichmentRequest(
+            category="CPU",
+            source_name="founder_confirmed_specs",
+            license_note="manual confirmed CPU compatibility evidence",
+            records=[
+                {
+                    "canonical_key": "CPU|AMD|RYZEN_7_7800X3D",
+                    "specs": {"socket": "AM5", "cores": 8, "threads": 16, "tdp_w": 120},
+                    "evidence_note": "confirmed CPU spec evidence",
+                }
+            ],
+            dry_run=True,
+        )
+    )
+
+    assert response.items[0].status == "would_enrich"
+    assert response.enriched_records == 0
+    assert not any("SET record.specs" in query for query in driver.queries)
+    assert not any("CREATE (e:CanonicalEvidence)" in query for query in driver.queries)
+
+
+def test_market_evidence_link_dry_run_preserves_prices() -> None:
+    driver = MarketLinkDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.link_market_evidence(
+        MarketEvidenceLinkRequest(category="CPU", region="SA", dry_run=True, limit=10)
+    )
+
+    assert response.items[0].status == "would_link"
+    assert response.linked_count == 0
+    assert response.price_mutation_count == 0
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
