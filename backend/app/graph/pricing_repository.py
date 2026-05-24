@@ -3787,26 +3787,31 @@ class Neo4jPricingRepository:
         category_stats = _initial_expansion_category_stats(manifest)
         categories = list(categories_config.keys())
 
-        product_records, _, _ = self.driver.execute_query(
-            """
-            MATCH (p:Product:CanonicalProduct)
-            WHERE p.category IN $categories OR any(label IN labels(p) WHERE label IN $categories)
-            OPTIONAL MATCH (p)-[:HAS_PRICE]->(price:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
-            WHERE price.region = $region
-              AND price.currency = "SAR"
-              AND coalesce(price.accepted, true) = true
-            RETURN properties(p) AS product,
-                   labels(p) AS labels,
-                   count(DISTINCT price) AS price_count,
-                   count(DISTINCT CASE
-                     WHEN price IS NOT NULL AND coalesce(price.marketplace_risk_score, 0.5) < 0.45 THEN vendor
-                     ELSE null
-                   END) AS trusted_vendor_count
-            """,
-            categories=categories,
-            region=region,
-            database_=settings.neo4j_database,
-        )
+        try:
+            product_records, _, _ = self.driver.execute_query(
+                """
+                MATCH (p:Product)
+                WHERE (p:CanonicalProduct OR p.data_origin = "canonical_import")
+                  AND (p.category IN $categories OR any(label IN labels(p) WHERE label IN $categories))
+                OPTIONAL MATCH (p)-[:HAS_PRICE]->(price:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+                WHERE price.region = $region
+                  AND price.currency = "SAR"
+                  AND coalesce(price.accepted, true) = true
+                RETURN properties(p) AS product,
+                       labels(p) AS labels,
+                       count(DISTINCT price) AS price_count,
+                       count(DISTINCT CASE
+                         WHEN price IS NOT NULL AND coalesce(price.marketplace_risk_score, 0.5) < 0.45 THEN vendor.name
+                         ELSE null
+                       END) AS trusted_vendor_count
+                """,
+                categories=categories,
+                region=region,
+                database_=settings.neo4j_database,
+            )
+        except Exception as error:  # noqa: BLE001 - target manifest should still load if live coverage is sparse.
+            logger.warning("catalog_expansion_product_query_failed", extra={"error_type": type(error).__name__})
+            product_records = []
         for row in product_records:
             data = row.data()
             props = dict(data.get("product") or {})
@@ -3833,16 +3838,20 @@ class Neo4jPricingRepository:
             cat["trusted_vendor_count"] += trusted_count
             cat["missing_required_specs"].update(missing_specs)
 
-        staged_records, _, _ = self.driver.execute_query(
-            """
-            MATCH (record:StagedCanonicalRecord)
-            WHERE record.category IN $categories
-              AND coalesce(record.import_status, "pending") <> "imported"
-            RETURN properties(record) AS record
-            """,
-            categories=categories,
-            database_=settings.neo4j_database,
-        )
+        try:
+            staged_records, _, _ = self.driver.execute_query(
+                """
+                MATCH (record:StagedCanonicalRecord)
+                WHERE record.category IN $categories
+                  AND coalesce(record.import_status, "pending") <> "imported"
+                RETURN properties(record) AS record
+                """,
+                categories=categories,
+                database_=settings.neo4j_database,
+            )
+        except Exception as error:  # noqa: BLE001 - endpoint remains useful as manifest even if staging read fails.
+            logger.warning("catalog_expansion_staged_query_failed", extra={"error_type": type(error).__name__})
+            staged_records = []
         for row in staged_records:
             record = dict(row.data().get("record") or {})
             category = str(record.get("category") or "")
