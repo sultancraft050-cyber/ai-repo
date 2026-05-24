@@ -392,7 +392,10 @@ def test_catalog_expansion_targets_returns_phase2_manifest_summary() -> None:
     ]
     assert response.categories[0].category == "GPU"
     assert response.categories[0].safe_stage_batch_size == 50
+    assert response.categories[0].families[0].family_name == "RTX 5060"
+    assert response.categories[0].families[0].priority_tier == "current_gen_priority"
     assert any(family.family_name == "RTX 4070 Super" for family in response.categories[0].families)
+    assert next(family for family in response.categories[0].families if family.family_name == "RTX 4070 Super").priority_tier == "value_fallback"
 
 
 def test_phase2_manifest_prefers_specific_target_family() -> None:
@@ -403,6 +406,91 @@ def test_phase2_manifest_prefers_specific_target_family() -> None:
 
     assert match is not None
     assert match.family_name == "RTX 4070 Super"
+    assert match.priority_tier == "value_fallback"
+
+
+def test_phase2_manifest_prioritizes_current_generation_targets() -> None:
+    gpu_match = match_expansion_target(
+        {"name": "NVIDIA GeForce RTX 5070 Ti", "brand": "NVIDIA", "model": "GeForce RTX 5070 Ti"},
+        "GPU",
+    )
+    cpu_match = match_expansion_target(
+        {"name": "Intel Core Ultra 7 265K", "brand": "Intel", "model": "Core Ultra 7 265K"},
+        "CPU",
+    )
+    legacy_match = match_expansion_target(
+        {"name": "AMD Radeon RX 6600", "brand": "AMD", "model": "Radeon RX 6600"},
+        "GPU",
+    )
+
+    assert gpu_match is not None
+    assert gpu_match.priority_tier == "current_gen_priority"
+    assert cpu_match is not None
+    assert cpu_match.priority_tier == "current_gen_priority"
+    assert legacy_match is not None
+    assert legacy_match.priority_tier == "legacy_deprioritized"
+    assert gpu_match.priority < legacy_match.priority
+
+
+def test_phase2_manifest_prioritizes_modern_core_parts_after_cpu_gpu() -> None:
+    examples = [
+        (
+            "RAM",
+            {"name": "G.Skill Trident Z5 Neo 32GB DDR5 6000 EXPO Kit"},
+            "current_gen_priority",
+        ),
+        (
+            "Storage",
+            {"name": "Samsung 990 Pro 2TB NVMe PCIe 4.0 M.2 SSD"},
+            "current_gen_priority",
+        ),
+        (
+            "PSU",
+            {"name": "MSI MAG A850GL PCIE5 850W Gold Fully Modular ATX 3.0 PSU"},
+            "current_gen_priority",
+        ),
+        (
+            "Motherboard",
+            {"name": "MSI MAG B650 Tomahawk WiFi AM5 DDR5 ATX Motherboard"},
+            "current_gen_priority",
+        ),
+        (
+            "Case",
+            {"name": "Corsair 4000D Airflow ATX Mid Tower Case"},
+            "current_gen_priority",
+        ),
+        (
+            "Cooler",
+            {"name": "Arctic Liquid Freezer III 360mm AIO CPU Cooler AM5 LGA1851"},
+            "current_gen_priority",
+        ),
+    ]
+
+    for category, record, tier in examples:
+        match = match_expansion_target(record, category)
+        assert match is not None, category
+        assert match.priority_tier == tier
+
+
+def test_phase2_low_risk_categories_can_scale_to_fifty_item_batches() -> None:
+    for category in ("RAM", "Storage", "PSU"):
+        request = CanonicalImportCommitRequest(
+            source_name="BuildCores/OpenDB",
+            source_type="canonical_specs",
+            category=category,
+            batch_limit=50,
+            commit=True,
+        )
+        assert request.batch_limit == 50
+
+    with pytest.raises(ValueError, match="Motherboard canonical imports are capped at batch_limit=20"):
+        CanonicalImportCommitRequest(
+            source_name="BuildCores/OpenDB",
+            source_type="canonical_specs",
+            category="Motherboard",
+            batch_limit=21,
+            commit=True,
+        )
 
 
 def test_stage_rejects_records_outside_phase2_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

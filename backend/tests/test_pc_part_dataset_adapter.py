@@ -84,6 +84,46 @@ class GPUFamilyEnrichmentDriver(FakeDriver):
         return [], None, None
 
 
+class CurrentGenGPUFamilyEnrichmentDriver(FakeDriver):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[dict[str, Any]] = []
+
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        self.calls.append({"query": query, **parameters})
+        if "record.target_family_key = $target_family_key" in query:
+            return [
+                FakeRecord(
+                    record={
+                        "canonical_key": "GPU|GIGABYTE|GEFORCE_RTX_5070|GIGABYTE_RTX_5070_EAGLE_OC",
+                        "category": "GPU",
+                        "target_family_key": "GPU|RTX_5070",
+                        "target_family_name": "RTX 5070",
+                        "specs": json.dumps({"chip_family": "RTX 5070", "vram_gb": 12}),
+                        "compatibility_ready": False,
+                        "compatibility_ready_exact": False,
+                        "compatibility_ready_family": False,
+                    }
+                ),
+                FakeRecord(
+                    record={
+                        "canonical_key": "GPU|MSI|GEFORCE_RTX_5070|MSI_RTX_5070_SHADOW_3X",
+                        "category": "GPU",
+                        "target_family_key": "GPU|RTX_5070",
+                        "target_family_name": "RTX 5070",
+                        "specs": json.dumps({"chip_family": "RTX 5070", "vram_gb": 12}),
+                        "compatibility_ready": False,
+                        "compatibility_ready_exact": False,
+                        "compatibility_ready_family": False,
+                    }
+                ),
+            ], None, None
+        if "RETURN count(record) AS count" in query:
+            return [FakeRecord(count=1)], None, None
+        return [], None, None
+
+
 class HybridReviewDriver(FakeDriver):
     def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
         self.queries.append(query)
@@ -447,6 +487,57 @@ def test_gpu_family_enrichment_does_not_create_exact_card_readiness() -> None:
     assert update_call["readiness_state"] == "compatibility_ready_family"
     assert "length_mm" in update_call["missing_exact_card_fields"]
     assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
+def test_current_gen_gpu_family_enrichment_matches_multiple_staged_cards_without_exact_readiness() -> None:
+    driver = CurrentGenGPUFamilyEnrichmentDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.enrich_staged_specs(
+        ConfirmedSpecEnrichmentRequest(
+            category="GPU",
+            source_name="founder_confirmed_phase2_specs",
+            license_note="source-attributed current-generation GPU family evidence",
+            records=[
+                {
+                    "canonical_key": "GPU|FAMILY|RTX_5070",
+                    "specs": {
+                        "chip_family": "RTX 5070",
+                        "vram_gb": 12,
+                        "pcie_generation": "PCIe 5.0",
+                        "reference_tdp_w": 250,
+                    },
+                    "evidence_note": "confirmed RTX 5070 family evidence",
+                }
+            ],
+            dry_run=False,
+        )
+    )
+
+    update_calls = [call for call in driver.calls if "record.compatibility_ready_family" in call["query"]]
+    assert response.matched_staged_records == 2
+    assert response.enriched_records == 2
+    assert {item.status for item in response.items} == {"enriched"}
+    assert len(update_calls) == 2
+    assert all(call["compatibility_ready"] is False for call in update_calls)
+    assert all(call["compatibility_ready_exact"] is False for call in update_calls)
+    assert all(call["compatibility_ready_family"] is True for call in update_calls)
+    assert all("slots" in call["missing_exact_card_fields"] for call in update_calls)
+    assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
+def test_phase2_current_gen_fixture_keeps_ambiguous_gpu_variants_out_of_family_enrichment() -> None:
+    fixture = json.loads(Path("backend/data/canonical_specs/phase2_current_gen_specs.json").read_text())
+    gpu_keys = {record["canonical_key"] for record in fixture["gpu_family_records"]}
+    ambiguous_targets = {record["target_family"] for record in fixture["gpu_family_records_requiring_variant_split"]}
+    cpu_keys = {record["canonical_key"] for record in fixture["cpu_records"]}
+
+    assert "GPU|FAMILY|RTX_5070" in gpu_keys
+    assert "GPU|FAMILY|RTX_5060_TI" not in gpu_keys
+    assert "GPU|FAMILY|RX_9060_XT" not in gpu_keys
+    assert ambiguous_targets == {"RTX 5060 Ti", "RX 9060 XT"}
+    assert "CPU|AMD|RYZEN_7_9800X3D" in cpu_keys
+    assert "CPU|INTEL|CORE_ULTRA_9_285K" in cpu_keys
 
 
 def test_market_evidence_link_dry_run_preserves_prices() -> None:

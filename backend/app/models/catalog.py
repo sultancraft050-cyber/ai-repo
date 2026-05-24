@@ -225,6 +225,7 @@ CatalogProductState = Literal[
     "metadata_only",
     "conflict_requires_review",
 ]
+CatalogExpansionPriorityTier = Literal["current_gen_priority", "value_fallback", "legacy_deprioritized"]
 
 
 class CatalogExpansionTargetFamily(BaseModel):
@@ -232,6 +233,7 @@ class CatalogExpansionTargetFamily(BaseModel):
     family_key: str
     family_name: str
     priority: int
+    priority_tier: CatalogExpansionPriorityTier = "current_gen_priority"
     target_min: int
     target_max: int
     canonical_count: int

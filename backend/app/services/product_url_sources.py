@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 import json
@@ -52,6 +52,15 @@ class ExtractedProductPage:
     image_url: str | None = None
     availability: str = "unknown"
     condition: str | None = None
+    diagnostics: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PriceCandidate:
+    source: str
+    price: float | None
+    currency: str | None
+    text: str
 
 
 PRODUCT_URL_POLICIES: tuple[ProductUrlSourcePolicy, ...] = (
@@ -197,21 +206,31 @@ class ProductUrlExtractionService:
     def __init__(self, fetch_html: FetchHtml | None = None) -> None:
         self.fetch_html = fetch_html or fetch_product_html
 
-    def extract(self, url: str) -> ExtractedProductPage:
+    def extract(self, url: str, *, policy: ProductUrlSourcePolicy | None = None) -> ExtractedProductPage:
         html = self.fetch_html(url)
         parser = ProductPageParser()
         parser.feed(html)
         from_json_ld = _extract_from_json_ld(parser.json_ld)
         visible_text = _visible_text_window(parser.visible_text)
         title = from_json_ld.title or _meta_first(parser.meta, "og:title", "twitter:title", "title")
-        price = from_json_ld.price or _price_from_meta(parser.meta) or _price_from_text(visible_text)
-        currency = (
-            from_json_ld.currency
-            or _currency_from_meta(parser.meta)
-            or _currency_from_text(visible_text)
-        )
+        price_candidates = _collect_price_candidates(parser, from_json_ld, visible_text, policy=policy)
+        selected_candidate, price_error = _select_price_candidate(price_candidates)
+        price = selected_candidate.price if selected_candidate else None
+        currency = selected_candidate.currency if selected_candidate else None
         image_url = from_json_ld.image_url or _meta_first(parser.meta, "og:image", "twitter:image")
-        availability = from_json_ld.availability or _availability_from_text(visible_text)
+        availability = (
+            from_json_ld.availability
+            if from_json_ld.availability and from_json_ld.availability != "unknown"
+            else _availability_from_text(visible_text)
+        )
+        diagnostics = _extraction_diagnostics(
+            policy=policy,
+            title=title,
+            availability=availability,
+            candidates=price_candidates,
+            selected_candidate=selected_candidate,
+            price_error=price_error,
+        )
         return ExtractedProductPage(
             title=_clean_title(title),
             price=price,
@@ -219,6 +238,7 @@ class ProductUrlExtractionService:
             image_url=image_url,
             availability=availability,
             condition=from_json_ld.condition,
+            diagnostics=diagnostics,
         )
 
 
@@ -435,7 +455,26 @@ class ProductUrlIngestionService:
                 rejected_reasons=[str(error)],
             )
         try:
-            extracted = self.extractor.extract(normalized_url)
+            if policy.source_name == "Noon Saudi":
+                return ProductUrlPreviewResponse(
+                    product_url=normalized_url,
+                    normalized_url=normalized_url,
+                    category=category,
+                    region=region,
+                    vendor_name=policy.source_name,
+                    source_name=policy.source_name,
+                    source_policy_status=policy.policy_status,
+                    accepted=False,
+                    rejected_reasons=["policy_gated_no_safe_price_extraction"],
+                    extraction_diagnostics={
+                        "source_name": policy.source_name,
+                        "policy_status": policy.policy_status,
+                        "rejection_reason": "policy_gated_no_safe_price_extraction",
+                        "confidence": 0.0,
+                        "price_text_candidates": [],
+                    },
+                )
+            extracted = self.extractor.extract(normalized_url, policy=policy)
         except Exception as error:  # noqa: BLE001 - extraction failures are returned safely.
             return ProductUrlPreviewResponse(
                 product_url=normalized_url,
@@ -447,6 +486,13 @@ class ProductUrlIngestionService:
                 source_policy_status=policy.policy_status,
                 accepted=False,
                 rejected_reasons=[f"extraction_failed:{type(error).__name__}"],
+                extraction_diagnostics={
+                    "source_name": policy.source_name,
+                    "policy_status": policy.policy_status,
+                    "rejection_reason": f"extraction_failed:{type(error).__name__}",
+                    "confidence": 0.0,
+                    "price_text_candidates": [],
+                },
             )
         base = ProductUrlPreviewResponse(
             raw_title=extracted.title,
@@ -461,13 +507,15 @@ class ProductUrlIngestionService:
             region=region,
             source_name=policy.source_name,
             source_policy_status=policy.policy_status,
+            extraction_diagnostics=extracted.diagnostics,
         )
         if not extracted.title:
-            return base.model_copy(update={"rejected_reasons": ["missing_product_title"]})
+            return _reject_preview(base, "missing_product_title")
         if extracted.price is None or not extracted.currency:
-            return base.model_copy(update={"rejected_reasons": ["missing_or_unreadable_price"]})
+            reason = extracted.diagnostics.get("price_error") or "missing_or_unreadable_price"
+            return _reject_preview(base, str(reason))
         if extracted.currency.upper() not in {"SAR", "USD", "AED", "EUR", "GBP"}:
-            return base.model_copy(update={"rejected_reasons": ["unsupported_currency"]})
+            return _reject_preview(base, "unsupported_currency")
 
         record = self._record_from_extracted(
             extracted=extracted,
@@ -686,6 +734,150 @@ def _json_ld_currency(item: dict[str, Any], offer: dict[str, Any]) -> Any:
     return item.get("priceCurrency")
 
 
+def _collect_price_candidates(
+    parser: ProductPageParser,
+    from_json_ld: ExtractedProductPage,
+    visible_text: str,
+    *,
+    policy: ProductUrlSourcePolicy | None,
+) -> list[PriceCandidate]:
+    candidates: list[PriceCandidate] = []
+    if from_json_ld.price is not None:
+        candidates.append(
+            PriceCandidate(
+                source="json_ld",
+                price=from_json_ld.price,
+                currency=from_json_ld.currency,
+                text=_candidate_text(from_json_ld.price, from_json_ld.currency),
+            )
+        )
+    for key in ("product:price:amount", "og:price:amount", "price", "twitter:data1"):
+        raw = parser.meta.get(key)
+        if raw is None:
+            continue
+        currency = _currency_from_meta(parser.meta) or _currency_from_text(raw)
+        candidates.append(
+            PriceCandidate(
+                source=f"meta:{key}",
+                price=_to_price(raw),
+                currency=currency,
+                text=_candidate_text(raw, currency),
+            )
+        )
+    if policy and policy.source_name == "Microless Saudi":
+        current = _microless_current_price(parser.meta)
+        if current is not None:
+            candidates.append(
+                PriceCandidate(
+                    source="microless_state",
+                    price=current,
+                    currency=_currency_from_meta(parser.meta) or "SAR",
+                    text=_candidate_text(current, "SAR"),
+                )
+            )
+    for value in _price_text_candidates(visible_text):
+        candidates.append(
+            PriceCandidate(
+                source="visible_text",
+                price=_to_price(value),
+                currency=_currency_from_text(value),
+                text=_candidate_text(value, _currency_from_text(value)),
+            )
+        )
+    return candidates
+
+
+def _select_price_candidate(candidates: list[PriceCandidate]) -> tuple[PriceCandidate | None, str | None]:
+    structured_zero = any(
+        candidate.source != "visible_text" and candidate.price == 0
+        for candidate in candidates
+        if candidate.price is not None
+    )
+    positive = [
+        candidate
+        for candidate in candidates
+        if candidate.price is not None and candidate.price > 0 and _candidate_currency_supported(candidate)
+    ]
+    if not positive:
+        zero_or_missing = any(candidate.price == 0 for candidate in candidates if candidate.price is not None)
+        return None, "missing_or_unreadable_price" if not zero_or_missing else "missing_or_unreadable_price"
+    structured = [candidate for candidate in positive if candidate.source != "visible_text"]
+    if structured:
+        distinct = _distinct_prices(structured)
+        if len(distinct) > 1:
+            return None, "ambiguous_price_candidates"
+        return structured[0], None
+    if structured_zero:
+        return None, "missing_or_unreadable_price"
+    visible_distinct = _distinct_prices(positive)
+    if len(visible_distinct) != 1:
+        return None, "ambiguous_price_candidates"
+    return positive[0], None
+
+
+def _candidate_currency_supported(candidate: PriceCandidate) -> bool:
+    currency = (candidate.currency or "").upper()
+    if currency in {"SAR", "AED"}:
+        return True
+    text = candidate.text.upper()
+    return "SAR" in text or "ريال" in text or "ر.س" in text
+
+
+def _distinct_prices(candidates: list[PriceCandidate]) -> set[float]:
+    return {round(float(candidate.price or 0), 2) for candidate in candidates}
+
+
+def _candidate_text(price: Any, currency: str | None) -> str:
+    text = str(price).strip()
+    if currency:
+        text = f"{text} {currency.strip().upper()}"
+    return text[:80]
+
+
+def _price_text_candidates(text: str) -> list[str]:
+    patterns = (
+        r"(?:SAR|ر\.?س\.?|ريال)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+        r"([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:SAR|ر\.?س\.?|ريال)",
+    )
+    values: list[str] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            value = match.group(0)
+            if value not in values:
+                values.append(value)
+    return values[:12]
+
+
+def _microless_current_price(meta: dict[str, str]) -> float | None:
+    # Microless exposes the public product price in normal product metadata when a SKU is purchasable.
+    # A value of 0 is an out-of-stock/no-price signal and is intentionally not accepted.
+    price = _to_price(meta.get("product:price:amount"))
+    return price if price and price > 0 else None
+
+
+def _extraction_diagnostics(
+    *,
+    policy: ProductUrlSourcePolicy | None,
+    title: str | None,
+    availability: str,
+    candidates: list[PriceCandidate],
+    selected_candidate: PriceCandidate | None,
+    price_error: str | None,
+) -> dict[str, Any]:
+    return {
+        "source_name": policy.source_name if policy else None,
+        "policy_status": policy.policy_status if policy else None,
+        "detected_title": _clean_title(title),
+        "price_text_candidates": [candidate.text for candidate in candidates[:12]],
+        "candidate_sources": [candidate.source for candidate in candidates[:12]],
+        "selected_price": selected_candidate.price if selected_candidate else None,
+        "currency": selected_candidate.currency.upper() if selected_candidate and selected_candidate.currency else None,
+        "availability": availability,
+        "price_error": price_error,
+        "confidence": 0.82 if selected_candidate and selected_candidate.source != "visible_text" else (0.62 if selected_candidate else 0.0),
+    }
+
+
 def _meta_first(meta: dict[str, str], *keys: str) -> str | None:
     for key in keys:
         if meta.get(key):
@@ -759,6 +951,14 @@ def _recommendation_level(flags: list[str], recommended_candidate: bool) -> str:
     if any(flag in flags for flag in ("price_requires_review", "marketplace_listing", "imported_listing")):
         return "acceptable_with_risk"
     return "insufficient_data"
+
+
+def _reject_preview(base: ProductUrlPreviewResponse, reason: str) -> ProductUrlPreviewResponse:
+    diagnostics = dict(base.extraction_diagnostics)
+    diagnostics["rejection_reason"] = reason
+    if "confidence" not in diagnostics:
+        diagnostics["confidence"] = 0.0
+    return base.model_copy(update={"rejected_reasons": [reason], "extraction_diagnostics": diagnostics})
 
 
 def _sanitize_error(error: Exception) -> str:

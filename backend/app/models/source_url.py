@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -134,6 +134,7 @@ class ProductUrlPreviewResponse(BaseModel):
     accepted: bool = False
     rejected_reasons: list[str] = Field(default_factory=list)
     flags: list[str] = Field(default_factory=list)
+    extraction_diagnostics: dict[str, Any] = Field(default_factory=dict)
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

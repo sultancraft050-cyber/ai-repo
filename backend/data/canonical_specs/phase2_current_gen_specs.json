@@ -1,0 +1,138 @@
+{
+  "source_name": "founder_confirmed_phase2_specs",
+  "license_note": "Source-attributed current-generation CPU and GPU compatibility facts for controlled Phase 2 enrichment; prices are not included.",
+  "gpu_family_records": [
+    {
+      "canonical_key": "GPU|FAMILY|RTX_5060",
+      "specs": {
+        "chip_family": "RTX 5060",
+        "vram_gb": 8,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 145
+      },
+      "evidence_note": "NVIDIA GeForce RTX 50 series comparison: RTX 5060 reference memory, PCIe generation, and graphics card power."
+    },
+    {
+      "canonical_key": "GPU|FAMILY|RTX_5070",
+      "specs": {
+        "chip_family": "RTX 5070",
+        "vram_gb": 12,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 250
+      },
+      "evidence_note": "NVIDIA GeForce RTX 50 series comparison: RTX 5070 reference memory, PCIe generation, and graphics card power."
+    },
+    {
+      "canonical_key": "GPU|FAMILY|RTX_5070_TI",
+      "specs": {
+        "chip_family": "RTX 5070 Ti",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 300
+      },
+      "evidence_note": "NVIDIA GeForce RTX 50 series comparison: RTX 5070 Ti reference memory, PCIe generation, and graphics card power."
+    },
+    {
+      "canonical_key": "GPU|FAMILY|RTX_5080",
+      "specs": {
+        "chip_family": "RTX 5080",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 360
+      },
+      "evidence_note": "NVIDIA GeForce RTX 50 series comparison: RTX 5080 reference memory, PCIe generation, and graphics card power."
+    },
+    {
+      "canonical_key": "GPU|FAMILY|RTX_5090",
+      "specs": {
+        "chip_family": "RTX 5090",
+        "vram_gb": 32,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 575
+      },
+      "evidence_note": "NVIDIA GeForce RTX 50 series comparison: RTX 5090 reference memory, PCIe generation, and graphics card power."
+    },
+    {
+      "canonical_key": "GPU|FAMILY|RX_9070",
+      "specs": {
+        "chip_family": "RX 9070",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 220
+      },
+      "evidence_note": "AMD Radeon RX 9000 series quick reference guide: RX 9070 reference memory, PCIe support, and total board power."
+    },
+    {
+      "canonical_key": "GPU|FAMILY|RX_9070_XT",
+      "specs": {
+        "chip_family": "RX 9070 XT",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "reference_tdp_w": 304
+      },
+      "evidence_note": "AMD Radeon RX 9000 series quick reference guide: RX 9070 XT reference memory, PCIe support, and total board power."
+    }
+  ],
+  "gpu_family_records_requiring_variant_split": [
+    {
+      "target_family": "RTX 5060 Ti",
+      "reason": "RTX 5060 Ti has 8GB and 16GB variants; variant-specific evidence is required before family enrichment."
+    },
+    {
+      "target_family": "RX 9060 XT",
+      "reason": "RX 9060 XT has 8GB and 16GB variants with different reference board power; variant-specific evidence is required before family enrichment."
+    }
+  ],
+  "cpu_records": [
+    {
+      "canonical_key": "CPU|AMD|RYZEN_5_9600X",
+      "specs": { "socket": "AM5", "cores": 6, "threads": 12, "tdp_w": 65 },
+      "evidence_note": "AMD Ryzen 9000 series specifications: Ryzen 5 9600X socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|AMD|RYZEN_7_9700X",
+      "specs": { "socket": "AM5", "cores": 8, "threads": 16, "tdp_w": 65 },
+      "evidence_note": "AMD Ryzen 9000 series specifications: Ryzen 7 9700X socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|AMD|RYZEN_7_9800X3D",
+      "specs": { "socket": "AM5", "cores": 8, "threads": 16, "tdp_w": 120 },
+      "evidence_note": "AMD Ryzen 9000 X3D specifications: Ryzen 7 9800X3D socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|AMD|RYZEN_9_9900X",
+      "specs": { "socket": "AM5", "cores": 12, "threads": 24, "tdp_w": 120 },
+      "evidence_note": "AMD Ryzen 9000 series specifications: Ryzen 9 9900X socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|AMD|RYZEN_9_9900X3D",
+      "specs": { "socket": "AM5", "cores": 12, "threads": 24, "tdp_w": 120 },
+      "evidence_note": "AMD Ryzen 9000 X3D specifications: Ryzen 9 9900X3D socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|AMD|RYZEN_9_9950X",
+      "specs": { "socket": "AM5", "cores": 16, "threads": 32, "tdp_w": 170 },
+      "evidence_note": "AMD Ryzen 9000 series specifications: Ryzen 9 9950X socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|AMD|RYZEN_9_9950X3D",
+      "specs": { "socket": "AM5", "cores": 16, "threads": 32, "tdp_w": 170 },
+      "evidence_note": "AMD Ryzen 9000 X3D specifications: Ryzen 9 9950X3D socket family, cores/threads, and default TDP."
+    },
+    {
+      "canonical_key": "CPU|INTEL|CORE_ULTRA_5_245K",
+      "specs": { "socket": "LGA1851", "cores": 14, "threads": 14, "tdp_w": 125 },
+      "evidence_note": "Intel Core Ultra desktop Series 2 specifications: Core Ultra 5 245K socket platform, cores/threads, and processor base power."
+    },
+    {
+      "canonical_key": "CPU|INTEL|CORE_ULTRA_7_265K",
+      "specs": { "socket": "LGA1851", "cores": 20, "threads": 20, "tdp_w": 125 },
+      "evidence_note": "Intel Core Ultra desktop Series 2 product brief: Core Ultra 7 265K socket platform, cores/threads, and processor base power."
+    },
+    {
+      "canonical_key": "CPU|INTEL|CORE_ULTRA_9_285K",
+      "specs": { "socket": "LGA1851", "cores": 24, "threads": 24, "tdp_w": 125 },
+      "evidence_note": "Intel Core Ultra desktop Series 2 product brief: Core Ultra 9 285K socket platform, cores/threads, and processor base power."
+    }
+  ]
+}

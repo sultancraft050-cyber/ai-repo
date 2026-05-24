@@ -67,6 +67,7 @@ from app.services.pricing_normalization import cpu_model_key_from_title
 from app.services.import_adapters.pc_part_dataset_adapter import load_pc_part_dataset_records
 from app.services.catalog_expansion import (
     CATALOG_PRODUCT_STATES,
+    PRIORITY_TIER_WEIGHTS,
     annotate_expansion_target,
     expansion_state,
     load_expansion_manifest,
@@ -1261,6 +1262,24 @@ def _gpu_family_ready(specs: dict[str, Any]) -> bool:
     return not _gpu_family_missing_fields(specs)
 
 
+def _is_gpu_family_spec_record(category: str, canonical_key: str) -> bool:
+    return category == "GPU" and str(canonical_key).upper().startswith("GPU|FAMILY|")
+
+
+def _gpu_family_name_from_confirmed_spec(canonical_key: str, specs: dict[str, Any]) -> str:
+    chip_family = str(specs.get("chip_family") or "").strip()
+    if chip_family:
+        return re.sub(r"\s+", " ", chip_family.replace("GeForce ", "").replace("Radeon ", "")).strip()
+    parts = str(canonical_key or "").split("|", 2)
+    family = parts[2] if len(parts) == 3 else str(canonical_key or "")
+    return re.sub(r"\s+", " ", family.replace("_", " ")).strip()
+
+
+def _gpu_family_target_key(family_name: str) -> str:
+    normalized = re.sub(r"[^A-Z0-9]+", "_", str(family_name or "").upper()).strip("_")
+    return f"GPU|{normalized}" if normalized else ""
+
+
 def _gpu_readiness_state(*, category: str, specs: dict[str, Any], record: dict[str, Any] | None = None) -> str:
     record = record or {}
     if category != "GPU":
@@ -1527,13 +1546,17 @@ def _coverage_next_action(category: str, priced_count: int, missing_specs: int, 
 def _initial_expansion_family_stats(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     stats: dict[str, dict[str, Any]] = {}
     for category, config in dict(manifest.get("categories") or {}).items():
-        for priority, family_name in enumerate(config.get("families") or [], start=1):
+        for rank, family_entry in enumerate(config.get("families") or [], start=1):
+            family_name = _expansion_family_name(family_entry)
+            priority_tier = _expansion_family_tier(family_entry)
+            priority = PRIORITY_TIER_WEIGHTS.get(priority_tier, 0) + rank
             key = f"{category}|{str(family_name).upper().replace('-', ' ').replace(' ', '_')}"
             stats[key] = {
                 "category": category,
                 "family_key": key,
                 "family_name": str(family_name),
                 "priority": priority,
+                "priority_tier": priority_tier,
                 "required_specs": tuple(str(item) for item in config.get("required_specs") or []),
                 "canonical_count": 0,
                 "compatibility_ready_count": 0,
@@ -1545,6 +1568,20 @@ def _initial_expansion_family_stats(manifest: dict[str, Any]) -> dict[str, dict[
                 "missing_required_specs": set(),
             }
     return stats
+
+
+def _expansion_family_name(family_entry: Any) -> str:
+    if isinstance(family_entry, dict):
+        return str(family_entry.get("name") or "").strip()
+    return str(family_entry).strip()
+
+
+def _expansion_family_tier(family_entry: Any) -> str:
+    if isinstance(family_entry, dict):
+        tier = str(family_entry.get("priority_tier") or "current_gen_priority").strip()
+    else:
+        tier = "current_gen_priority"
+    return tier if tier in PRIORITY_TIER_WEIGHTS else "current_gen_priority"
 
 
 def _initial_expansion_category_stats(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1624,16 +1661,22 @@ def _expansion_next_action(
     conflict_count: int,
     missing_required_specs: list[str],
     family_name: str,
+    priority_tier: str = "current_gen_priority",
 ) -> str:
     if conflict_count:
         return f"Review founder conflicts for {family_name} before merging."
+    if priority_tier == "legacy_deprioritized" and saudi_priced_count == 0:
+        return f"Deprioritized legacy family; continue only if strong Saudi price evidence appears for {family_name}."
     if canonical_count == 0 and staged_count == 0:
-        return f"Stage curated metadata for {family_name}."
+        if priority_tier == "value_fallback":
+            return f"Stage {family_name} only after current-gen coverage or when value pricing is strong."
+        return f"Stage current-generation curated metadata for {family_name}."
     if compatibility_ready_count == 0:
         fields = ", ".join(missing_required_specs[:4]) if missing_required_specs else "confirmed compatibility specs"
         return f"Attach confirmed evidence for {fields}."
     if saudi_priced_count == 0:
-        return f"Preview exact Saudi product URLs for {family_name}."
+        prefix = "Value fallback: " if priority_tier == "value_fallback" else ""
+        return f"{prefix}Preview exact Saudi product URLs for {family_name}."
     return "Keep price refresh monitoring and add second-vendor coverage when available."
 
 
@@ -1641,7 +1684,11 @@ def _expansion_category_next_action(category: str, stats: dict[str, Any]) -> str
     if int(stats["conflict_count"]):
         return f"Resolve {category} founder review conflicts before larger imports."
     if int(stats["canonical_count"]) < max(1, int(stats["target_min"]) // 4):
-        return f"Run small curated {category} staging batches from the target manifest."
+        if category in {"RAM", "Storage", "PSU"}:
+            return f"Run faster 50-item curated {category} staging batches from current-generation targets first."
+        if category in {"Motherboard", "Case", "Cooler"}:
+            return f"Run cautious 10-20 item {category} staging batches from current-generation targets first."
+        return f"Run small curated {category} staging batches from current-generation targets first."
     if int(stats["compatibility_ready_count"]) < int(stats["canonical_count"]):
         return f"Attach confirmed compatibility evidence to metadata-only {category} products."
     if int(stats["saudi_priced_count"]) < int(stats["compatibility_ready_count"]):
@@ -4096,6 +4143,7 @@ class Neo4jPricingRepository:
                         family_key=key,
                         family_name=str(stats["family_name"]),
                         priority=int(stats["priority"]),
+                        priority_tier=str(stats.get("priority_tier") or "current_gen_priority"),  # type: ignore[arg-type]
                         target_min=int(cat["target_min"]),
                         target_max=int(cat["target_max"]),
                         canonical_count=int(stats["canonical_count"]),
@@ -4115,6 +4163,7 @@ class Neo4jPricingRepository:
                             conflict_count=int(stats["conflict_count"]),
                             missing_required_specs=missing,
                             family_name=str(stats["family_name"]),
+                            priority_tier=str(stats.get("priority_tier") or "current_gen_priority"),
                         ),
                     )
                 )
@@ -4466,12 +4515,21 @@ class Neo4jPricingRepository:
         evidence_created = 0
 
         for incoming in request.records:
-            staged = self._staged_record_by_canonical_key(incoming.canonical_key)
             confirmed_specs = _clean_properties(incoming.specs)
             confirmed_fields = [key for key, value in confirmed_specs.items() if value not in (None, "", [])]
-            missing_required = [field for field in required_fields if confirmed_specs.get(field) in (None, "", [])]
+            required_for_record = (
+                GPU_FAMILY_REQUIRED_FIELDS
+                if _is_gpu_family_spec_record(request.category, incoming.canonical_key)
+                else required_fields
+            )
+            missing_required = [field for field in required_for_record if confirmed_specs.get(field) in (None, "", [])]
+            staged_records = self._staged_records_for_confirmed_spec(
+                category=request.category,
+                canonical_key=incoming.canonical_key,
+                specs=confirmed_specs,
+            )
 
-            if not staged:
+            if not staged_records:
                 skipped += 1
                 items.append(
                     ConfirmedSpecEnrichmentItem(
@@ -4484,115 +4542,120 @@ class Neo4jPricingRepository:
                     )
                 )
                 continue
-            if str(staged.get("category") or "") != request.category:
-                skipped += 1
-                items.append(
-                    ConfirmedSpecEnrichmentItem(
-                        canonical_key=incoming.canonical_key,
-                        status="skipped",
-                        staged_record_found=True,
-                        reason=f"staged record is {staged.get('category')}, not {request.category}",
-                        confirmed_fields=confirmed_fields,
-                        missing_required_fields=list(missing_required),
-                    )
-                )
-                continue
 
-            matched += 1
-            staged_conflicts = _staged_string_list(staged.get("conflict_candidates"))
-            if staged_conflicts:
-                conflicts += 1
-                items.append(
-                    ConfirmedSpecEnrichmentItem(
-                        canonical_key=incoming.canonical_key,
-                        status="conflict_requires_founder_review",
-                        staged_record_found=True,
-                        reason="staged record already has canonical conflicts",
-                        confirmed_fields=confirmed_fields,
+            for staged in staged_records:
+                staged_canonical_key = str(staged.get("canonical_key") or incoming.canonical_key)
+                if str(staged.get("category") or "") != request.category:
+                    skipped += 1
+                    items.append(
+                        ConfirmedSpecEnrichmentItem(
+                            canonical_key=staged_canonical_key,
+                            status="skipped",
+                            staged_record_found=True,
+                            reason=f"staged record is {staged.get('category')}, not {request.category}",
+                            confirmed_fields=confirmed_fields,
+                            missing_required_fields=list(missing_required),
+                        )
                     )
-                )
-                continue
+                    continue
 
-            merged_specs = _extract_staged_specs(staged)
-            merged_specs.update(confirmed_specs)
-            readiness_state = _gpu_readiness_state(category=request.category, specs=merged_specs, record=staged)
-            exact_ready = request.category != "GPU" and not [
-                field for field in required_fields if merged_specs.get(field) in (None, "", [])
-            ]
-            family_ready = False
-            missing_exact_card = []
-            if request.category == "GPU":
-                exact_ready = _gpu_exact_ready(merged_specs)
-                family_ready = _gpu_family_ready(merged_specs)
-                missing_exact_card = _gpu_exact_missing_fields(merged_specs)
-                if exact_ready:
-                    readiness_state = "compatibility_ready_exact"
-                elif family_ready:
-                    readiness_state = "compatibility_ready_family"
+                matched += 1
+                staged_conflicts = _staged_string_list(staged.get("conflict_candidates"))
+                if staged_conflicts:
+                    conflicts += 1
+                    items.append(
+                        ConfirmedSpecEnrichmentItem(
+                            canonical_key=staged_canonical_key,
+                            status="conflict_requires_founder_review",
+                            staged_record_found=True,
+                            reason="staged record already has canonical conflicts",
+                            confirmed_fields=confirmed_fields,
+                        )
+                    )
+                    continue
+
+                merged_specs = _extract_staged_specs(staged)
+                merged_specs.update(confirmed_specs)
+                readiness_state = _gpu_readiness_state(category=request.category, specs=merged_specs, record=staged)
+                exact_ready = request.category != "GPU" and not [
+                    field for field in required_fields if merged_specs.get(field) in (None, "", [])
+                ]
+                family_ready = False
+                missing_exact_card = []
+                if request.category == "GPU":
+                    exact_ready = _gpu_exact_ready(merged_specs)
+                    family_ready = _gpu_family_ready(merged_specs)
+                    missing_exact_card = _gpu_exact_missing_fields(merged_specs)
+                    if exact_ready:
+                        readiness_state = "compatibility_ready_exact"
+                    elif family_ready:
+                        readiness_state = "compatibility_ready_family"
+                    else:
+                        readiness_state = "metadata_only"
+                    missing_after_merge = [] if exact_ready or family_ready else _gpu_family_missing_fields(merged_specs)
                 else:
-                    readiness_state = "metadata_only"
-                missing_after_merge = [] if exact_ready or family_ready else _gpu_family_missing_fields(merged_specs)
-            else:
-                missing_after_merge = [field for field in required_fields if merged_specs.get(field) in (None, "", [])]
-            if missing_after_merge:
-                skipped += 1
-                items.append(
-                    ConfirmedSpecEnrichmentItem(
-                        canonical_key=incoming.canonical_key,
-                        status="skipped",
-                        staged_record_found=True,
-                        reason=f"confirmed evidence is missing required field(s): {', '.join(missing_after_merge)}",
-                        confirmed_fields=confirmed_fields,
-                        missing_required_fields=missing_after_merge,
+                    missing_after_merge = [
+                        field for field in required_fields if merged_specs.get(field) in (None, "", [])
+                    ]
+                if missing_after_merge:
+                    skipped += 1
+                    items.append(
+                        ConfirmedSpecEnrichmentItem(
+                            canonical_key=staged_canonical_key,
+                            status="skipped",
+                            staged_record_found=True,
+                            reason=f"confirmed evidence is missing required field(s): {', '.join(missing_after_merge)}",
+                            confirmed_fields=confirmed_fields,
+                            missing_required_fields=missing_after_merge,
+                        )
                     )
-                )
-                continue
+                    continue
 
-            if request.dry_run:
-                items.append(
-                    ConfirmedSpecEnrichmentItem(
-                        canonical_key=incoming.canonical_key,
-                        status="would_enrich",
-                        staged_record_found=True,
-                        confirmed_fields=confirmed_fields,
+                if request.dry_run:
+                    items.append(
+                        ConfirmedSpecEnrichmentItem(
+                            canonical_key=staged_canonical_key,
+                            status="would_enrich",
+                            staged_record_found=True,
+                            confirmed_fields=confirmed_fields,
+                        )
                     )
-                )
-                continue
+                    continue
 
-            self._apply_confirmed_specs_to_staged_record(
-                canonical_key=incoming.canonical_key,
-                category=request.category,
-                specs=merged_specs,
-                source_name=request.source_name,
-                license_note=request.license_note,
-                evidence_note=incoming.evidence_note,
-                confirmed_fields=confirmed_fields,
-                readiness_state=readiness_state,
-                compatibility_ready_exact=exact_ready,
-                compatibility_ready_family=family_ready,
-                missing_compatibility_fields=[] if exact_ready else missing_exact_card if family_ready else missing_after_merge,
-                missing_exact_card_fields=missing_exact_card,
-            )
-            attached = self._attach_confirmed_spec_evidence(
-                canonical_key=incoming.canonical_key,
-                category=request.category,
-                source_name=request.source_name,
-                license_note=request.license_note,
-                evidence_note=incoming.evidence_note,
-                specs=confirmed_specs,
-            )
-            if attached:
-                evidence_created += 1
-            enriched += 1
-            items.append(
-                ConfirmedSpecEnrichmentItem(
-                    canonical_key=incoming.canonical_key,
-                    status="enriched",
-                    staged_record_found=True,
-                    evidence_attached=attached,
+                self._apply_confirmed_specs_to_staged_record(
+                    canonical_key=staged_canonical_key,
+                    category=request.category,
+                    specs=merged_specs,
+                    source_name=request.source_name,
+                    license_note=request.license_note,
+                    evidence_note=incoming.evidence_note,
                     confirmed_fields=confirmed_fields,
+                    readiness_state=readiness_state,
+                    compatibility_ready_exact=exact_ready,
+                    compatibility_ready_family=family_ready,
+                    missing_compatibility_fields=[] if exact_ready else missing_exact_card if family_ready else missing_after_merge,
+                    missing_exact_card_fields=missing_exact_card,
                 )
-            )
+                attached = self._attach_confirmed_spec_evidence(
+                    canonical_key=staged_canonical_key,
+                    category=request.category,
+                    source_name=request.source_name,
+                    license_note=request.license_note,
+                    evidence_note=incoming.evidence_note,
+                    specs=confirmed_specs,
+                )
+                if attached:
+                    evidence_created += 1
+                enriched += 1
+                items.append(
+                    ConfirmedSpecEnrichmentItem(
+                        canonical_key=staged_canonical_key,
+                        status="enriched",
+                        staged_record_found=True,
+                        evidence_attached=attached,
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
 
         return ConfirmedSpecEnrichmentResponse(
             source_name=request.source_name,
@@ -4776,6 +4839,41 @@ class Neo4jPricingRepository:
         if not records:
             return None
         return dict(records[0].data().get("record") or {})
+
+    def _staged_records_for_confirmed_spec(
+        self,
+        *,
+        category: str,
+        canonical_key: str,
+        specs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        if _is_gpu_family_spec_record(category, canonical_key):
+            family_name = _gpu_family_name_from_confirmed_spec(canonical_key, specs)
+            target_family_key = _gpu_family_target_key(family_name)
+            family_text = family_name.upper()
+            records, _, _ = self.driver.execute_query(
+                """
+                MATCH (record:StagedCanonicalRecord)
+                WHERE record.category = "GPU"
+                  AND (
+                    record.target_family_key = $target_family_key
+                    OR toUpper(coalesce(record.target_family_name, "")) = $family_text
+                    OR toUpper(coalesce(record.raw_name, "")) CONTAINS $family_text
+                    OR toUpper(coalesce(record.name, "")) CONTAINS $family_text
+                    OR toUpper(coalesce(record.normalized_name, "")) CONTAINS $normalized_family_text
+                  )
+                RETURN properties(record) AS record
+                ORDER BY record.canonical_key ASC
+                LIMIT 100
+                """,
+                target_family_key=target_family_key,
+                family_text=family_text,
+                normalized_family_text=family_text.replace(" ", "_"),
+                database_=settings.neo4j_database,
+            )
+            return [dict(row.data().get("record") or {}) for row in records]
+        staged = self._staged_record_by_canonical_key(canonical_key)
+        return [staged] if staged else []
 
     def _apply_confirmed_specs_to_staged_record(
         self,

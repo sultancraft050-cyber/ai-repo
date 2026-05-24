@@ -44,6 +44,58 @@ NO_PRICE_HTML = """
 """
 
 
+MICROLESS_GPU_HTML = """
+<html>
+  <head>
+    <meta property="og:title" content="ASUS Dual GeForce RTX 4060 OC Edition 8GB Graphics Card" />
+    <meta property="product:price:amount" content="1399.00" />
+    <meta property="product:price:currency" content="SAR" />
+    <meta property="og:image" content="https://microless.com/cdn/products/rtx4060.jpg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "ASUS Dual GeForce RTX 4060 OC Edition 8GB Graphics Card",
+        "offers": {
+          "@type": "Offer",
+          "price": "1399.00",
+          "priceCurrency": "SAR",
+          "availability": "https://schema.org/InStock",
+          "itemCondition": "https://schema.org/NewCondition"
+        }
+      }
+    </script>
+  </head>
+  <body>In Stock VAT included</body>
+</html>
+"""
+
+
+MICROLESS_MISSING_PRICE_HTML = """
+<html>
+  <head>
+    <meta property="og:title" content="GALAX GeForce RTX 4060 EX 1-Click OC Graphics Card" />
+    <meta property="product:price:amount" content="0" />
+    <meta property="product:price:currency" content="SAR" />
+  </head>
+  <body>Out of Stock Notify Me When in Stock</body>
+</html>
+"""
+
+
+MICROLESS_AMBIGUOUS_PRICE_HTML = """
+<html>
+  <head>
+    <meta property="og:title" content="Sapphire Radeon RX 7800 XT Graphics Card" />
+  </head>
+  <body>
+    Special offer SAR 1899.00
+    Installment price SAR 2099.00
+  </body>
+</html>
+"""
+
+
 class FakeProductUrlRepository:
     def __init__(self) -> None:
         self.upserted_offers = []
@@ -152,6 +204,93 @@ def test_preview_extracts_safe_structured_metadata_without_mutating_graph() -> N
     assert preview.product_type == "standalone_gpu"
     assert preview.canonical_key
     assert "tracking" not in preview.normalized_url
+    assert repository.upserted_offers == []
+    assert repository.product_urls == []
+
+
+def test_microless_valid_product_price_extraction_with_diagnostics() -> None:
+    repository = FakeProductUrlRepository()
+    service = ProductUrlIngestionService(repository, fetch_html=lambda url: MICROLESS_GPU_HTML)  # type: ignore[arg-type]
+
+    preview = service.preview(
+        ProductUrlPreviewRequest(
+            url="https://saudi.microless.com/product/asus-dual-geforce-rtx-4060-oc-edition-8gb-graphics-card/",
+            region="SA",
+            category="GPU",
+        )
+    )
+
+    assert preview.accepted is True
+    assert preview.source_name == "Microless Saudi"
+    assert preview.price == 1399.0
+    assert preview.currency == "SAR"
+    assert preview.extraction_diagnostics["detected_title"].startswith("ASUS Dual")
+    assert preview.extraction_diagnostics["selected_price"] == 1399.0
+    assert preview.extraction_diagnostics["confidence"] > 0.8
+    assert repository.upserted_offers == []
+    assert repository.product_urls == []
+
+
+def test_microless_missing_price_rejects_with_clear_diagnostics() -> None:
+    repository = FakeProductUrlRepository()
+    service = ProductUrlIngestionService(repository, fetch_html=lambda url: MICROLESS_MISSING_PRICE_HTML)  # type: ignore[arg-type]
+
+    preview = service.preview(
+        ProductUrlPreviewRequest(
+            url="https://saudi.microless.com/product/galax-geforce-rtx-4060-ex-1-click-oc-graphics-card/",
+            region="SA",
+            category="GPU",
+        )
+    )
+
+    assert preview.accepted is False
+    assert preview.rejected_reasons == ["missing_or_unreadable_price"]
+    assert preview.extraction_diagnostics["availability"] == "out_of_stock"
+    assert preview.extraction_diagnostics["selected_price"] is None
+    assert repository.upserted_offers == []
+    assert repository.product_urls == []
+
+
+def test_microless_ambiguous_visible_price_rejects() -> None:
+    repository = FakeProductUrlRepository()
+    service = ProductUrlIngestionService(repository, fetch_html=lambda url: MICROLESS_AMBIGUOUS_PRICE_HTML)  # type: ignore[arg-type]
+
+    preview = service.preview(
+        ProductUrlPreviewRequest(
+            url="https://saudi.microless.com/product/sapphire-radeon-rx-7800-xt-graphics-card/",
+            region="SA",
+            category="GPU",
+        )
+    )
+
+    assert preview.accepted is False
+    assert preview.rejected_reasons == ["ambiguous_price_candidates"]
+    assert preview.extraction_diagnostics["selected_price"] is None
+    assert preview.extraction_diagnostics["rejection_reason"] == "ambiguous_price_candidates"
+    assert repository.upserted_offers == []
+    assert repository.product_urls == []
+
+
+def test_noon_policy_gated_rejects_safely_without_fetching() -> None:
+    repository = FakeProductUrlRepository()
+
+    def fail_fetch(url: str) -> str:
+        raise AssertionError("Noon policy-gated preview should not fetch page HTML")
+
+    service = ProductUrlIngestionService(repository, fetch_html=fail_fetch)  # type: ignore[arg-type]
+
+    preview = service.preview(
+        ProductUrlPreviewRequest(
+            url="https://www.noon.com/saudi-en/asrock-amd-radeon-rx-6600-challenger-d-8gb-gddr6/ZA04E2DD9844AB04DE2E5Z/p/",
+            region="SA",
+            category="GPU",
+        )
+    )
+
+    assert preview.accepted is False
+    assert preview.source_policy_status == "policy_gated"
+    assert preview.rejected_reasons == ["policy_gated_no_safe_price_extraction"]
+    assert preview.extraction_diagnostics["rejection_reason"] == "policy_gated_no_safe_price_extraction"
     assert repository.upserted_offers == []
     assert repository.product_urls == []
 

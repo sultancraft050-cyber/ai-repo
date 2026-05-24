@@ -164,27 +164,36 @@ def catalog_expansion_targets(
         milestone = dict(manifest.get("milestone") or {})
         categories = []
         for order, (category, config) in enumerate(dict(manifest.get("categories") or {}).items(), start=1):
-            families = [
-                {
-                    "category": category,
-                    "family_key": f"{category}|{str(family).upper().replace('-', ' ').replace(' ', '_')}",
-                    "family_name": str(family),
-                    "priority": index,
-                    "target_min": int(config.get("target_min") or 0),
-                    "target_max": int(config.get("target_max") or 0),
-                    "canonical_count": 0,
-                    "compatibility_ready_count": 0,
-                    "saudi_priced_count": 0,
-                    "trusted_vendor_count": 0,
-                    "staged_count": 0,
-                    "metadata_only_count": 0,
-                    "conflict_count": 0,
-                    "missing_required_specs": list(config.get("required_specs") or []),
-                    "readiness_state": "metadata_only",
-                    "next_action": f"Run small curated {category} staging batches from the target manifest.",
-                }
-                for index, family in enumerate(config.get("families") or [], start=1)
-            ]
+            families = []
+            for index, family in enumerate(config.get("families") or [], start=1):
+                if isinstance(family, dict):
+                    family_name = str(family.get("name") or "")
+                    priority_tier = str(family.get("priority_tier") or "current_gen_priority")
+                else:
+                    family_name = str(family)
+                    priority_tier = "current_gen_priority"
+                tier_offset = {"current_gen_priority": 0, "value_fallback": 1000, "legacy_deprioritized": 2000}.get(priority_tier, 0)
+                families.append(
+                    {
+                        "category": category,
+                        "family_key": f"{category}|{family_name.upper().replace('-', ' ').replace(' ', '_')}",
+                        "family_name": family_name,
+                        "priority": tier_offset + index,
+                        "priority_tier": priority_tier,
+                        "target_min": int(config.get("target_min") or 0),
+                        "target_max": int(config.get("target_max") or 0),
+                        "canonical_count": 0,
+                        "compatibility_ready_count": 0,
+                        "saudi_priced_count": 0,
+                        "trusted_vendor_count": 0,
+                        "staged_count": 0,
+                        "metadata_only_count": 0,
+                        "conflict_count": 0,
+                        "missing_required_specs": list(config.get("required_specs") or []),
+                        "readiness_state": "metadata_only",
+                        "next_action": f"Run small curated {category} staging batches from the target manifest.",
+                    }
+                )
             categories.append(
                 {
                     "category": category,

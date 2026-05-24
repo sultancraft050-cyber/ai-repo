@@ -14,6 +14,12 @@ CATALOG_PRODUCT_STATES = (
     "conflict_requires_review",
 )
 EXPANSION_PHASE = "phase2_saudi_core"
+PRIORITY_TIERS = ("current_gen_priority", "value_fallback", "legacy_deprioritized")
+PRIORITY_TIER_WEIGHTS = {
+    "current_gen_priority": 0,
+    "value_fallback": 1000,
+    "legacy_deprioritized": 2000,
+}
 
 
 @dataclass(frozen=True)
@@ -23,6 +29,7 @@ class ExpansionTargetMatch:
     family_key: str
     family_name: str
     priority: int
+    priority_tier: str
     required_specs: tuple[str, ...]
 
 
@@ -63,21 +70,23 @@ def match_expansion_target(record: dict[str, Any], category: str) -> ExpansionTa
     if not category_config:
         return None
     haystack = _record_haystack(record)
-    families = [str(item) for item in category_config.get("families", [])]
+    families = _family_entries(category_config)
     required_specs = tuple(str(item) for item in category_config.get("required_specs", []))
     family_entries = sorted(
-        enumerate(families, start=1),
-        key=lambda item: len(_normalize_text(item[1])),
+        families,
+        key=lambda item: len(_normalize_text(item["name"])),
         reverse=True,
     )
-    for priority, family in family_entries:
+    for family_entry in family_entries:
+        family = str(family_entry["name"])
         if _family_matches(category, family, haystack):
             return ExpansionTargetMatch(
                 phase=str(manifest.get("phase") or EXPANSION_PHASE),
                 category=category,
                 family_key=_family_key(category, family),
                 family_name=family,
-                priority=priority,
+                priority=_family_priority(family_entry),
+                priority_tier=str(family_entry["priority_tier"]),
                 required_specs=required_specs,
             )
     return None
@@ -91,6 +100,7 @@ def annotate_expansion_target(record: dict[str, Any], category: str) -> Expansio
     record["target_family_key"] = match.family_key
     record["target_family_name"] = match.family_name
     record["expansion_priority"] = match.priority
+    record["priority_tier"] = match.priority_tier
     missing = _missing_required_specs(record, match.required_specs)
     if missing:
         existing = record.get("missing_compatibility_fields") or []
@@ -137,17 +147,69 @@ def _record_haystack(record: dict[str, Any]) -> str:
     return _normalize_text(" ".join(str(value) for value in values if value))
 
 
+def _family_entries(category_config: dict[str, Any]) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for index, raw in enumerate(category_config.get("families") or [], start=1):
+        if isinstance(raw, dict):
+            name = str(raw.get("name") or "").strip()
+            tier = str(raw.get("priority_tier") or "current_gen_priority").strip()
+        else:
+            name = str(raw).strip()
+            tier = "current_gen_priority"
+        if not name:
+            continue
+        if tier not in PRIORITY_TIER_WEIGHTS:
+            tier = "current_gen_priority"
+        entries.append({"name": name, "priority_tier": tier, "rank": index})
+    return entries
+
+
+def _family_priority(family_entry: dict[str, Any]) -> int:
+    tier = str(family_entry.get("priority_tier") or "current_gen_priority")
+    rank = int(family_entry.get("rank") or 0)
+    return PRIORITY_TIER_WEIGHTS.get(tier, 0) + rank
+
+
 def _family_matches(category: str, family: str, haystack: str) -> bool:
     family_norm = _normalize_text(family)
-    if category == "RAM":
+    if category in {"RAM", "Storage", "Case"}:
         parts = family_norm.split()
         return all(part in haystack for part in parts)
     if category == "PSU":
         watts = re.search(r"\b(\d{3,4})W\b", family_norm)
         efficiency = "GOLD" if "GOLD" in family_norm else "PLATINUM" if "PLATINUM" in family_norm else ""
-        return bool(watts and watts.group(1) in haystack and (not efficiency or efficiency in haystack))
+        needs_atx3 = "ATX 3 0" in family_norm or "ATX 3 1" in family_norm
+        needs_pcie5 = "PCIE 5" in family_norm or "12VHPWR" in family_norm or "12V2X6" in family_norm
+        atx3_match = not needs_atx3 or any(token in haystack for token in ("ATX 3 0", "ATX 3 1", "ATX3", "ATX31", "ATX30"))
+        pcie5_match = not needs_pcie5 or any(token in haystack for token in ("PCIE 5", "PCIE5", "12VHPWR", "12V 2X6", "12V2X6"))
+        modular_match = "FULLY MODULAR" not in family_norm or "FULLY MODULAR" in haystack
+        return bool(
+            watts
+            and watts.group(1) in haystack
+            and (not efficiency or efficiency in haystack)
+            and atx3_match
+            and pcie5_match
+            and modular_match
+        )
+    if category == "Motherboard":
+        parts = [
+            part
+            for part in family_norm.split()
+            if part not in {"INTEL"}
+        ]
+        return all(part in haystack for part in parts)
     if category == "Cooler" and "AIO" in family_norm:
-        return family_norm.replace(" ", "") in haystack.replace(" ", "") or ("AIO" in haystack and family_norm.split()[0] in haystack)
+        parts = family_norm.split()
+        size = next((part for part in parts if part.endswith("MM")), "")
+        socket_parts = [part for part in parts if part in {"AM5", "LGA1851", "LGA1700"}]
+        return (
+            ("AIO" in haystack or "LIQUID" in haystack)
+            and (not size or size in haystack)
+            and all(part in haystack for part in socket_parts)
+        )
+    if category == "Cooler":
+        parts = family_norm.split()
+        return all(part in haystack for part in parts)
     return family_norm in haystack
 
 
@@ -182,5 +244,10 @@ def _family_key(category: str, family: str) -> str:
 
 def _normalize_text(value: str) -> str:
     text = value.upper().replace("-", " ")
+    text = text.replace("WI FI", "WIFI").replace("WI-FI", "WIFI")
+    text = text.replace("M ATX", "MATX").replace("MICRO ATX", "MATX")
+    text = text.replace("PCI E", "PCIE")
+    text = text.replace("PCIE4", "PCIE 4").replace("PCIE5", "PCIE 5")
+    text = text.replace("12V 2X6", "12V2X6")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
