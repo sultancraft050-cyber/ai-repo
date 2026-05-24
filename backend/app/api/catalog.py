@@ -20,6 +20,8 @@ from app.models.catalog import (
     CatalogFeedImportRequest,
     CatalogFeedImportResponse,
     CatalogFeedRunView,
+    ConfirmedCpuSpecEnrichmentRequest,
+    ConfirmedCpuSpecEnrichmentResponse,
     HybridDataLayerView,
     HybridGraphIntegrityResponse,
     HybridGraphStrategyResponse,
@@ -235,3 +237,11 @@ def attach_canonical_evidence(
     if not result.attached:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return result
+
+
+@router.post("/canonical/enrich-cpu-specs", response_model=ConfirmedCpuSpecEnrichmentResponse)
+def enrich_cpu_specs(
+    request_body: ConfirmedCpuSpecEnrichmentRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> ConfirmedCpuSpecEnrichmentResponse:
+    return repository.enrich_staged_cpu_specs(request_body)

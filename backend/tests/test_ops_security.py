@@ -83,6 +83,7 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     public = endpoint_rule("GET", "/products/search")
     hybrid_integrity = endpoint_rule("GET", "/catalog/hybrid/integrity")
     canonical_evidence = endpoint_rule("POST", "/catalog/canonical/evidence")
+    canonical_cpu_enrich = endpoint_rule("POST", "/catalog/canonical/enrich-cpu-specs")
     canonical_stage = endpoint_rule("POST", "/catalog/import/stage")
     canonical_staged = endpoint_rule("GET", "/catalog/import/staged")
     canonical_clear = endpoint_rule("DELETE", "/catalog/import/staged")
@@ -98,6 +99,7 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     assert prune_execute and prune_execute.role == "admin" and prune_execute.approval_required
     assert hybrid_integrity and hybrid_integrity.role == "analyst"
     assert canonical_evidence and canonical_evidence.role == "admin" and canonical_evidence.risk_level == "level_1"
+    assert canonical_cpu_enrich and canonical_cpu_enrich.role == "admin" and canonical_cpu_enrich.risk_level == "level_1"
     assert canonical_stage and canonical_stage.role == "admin" and canonical_stage.risk_level == "level_1"
     assert canonical_staged and canonical_staged.role == "analyst"
     assert canonical_clear and canonical_clear.role == "admin" and canonical_clear.risk_level == "level_1"

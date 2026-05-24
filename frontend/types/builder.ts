@@ -682,6 +682,7 @@ export type CanonicalImportSourceType =
   | "benchmark_metadata"
   | "community_repository"
   | "kaggle_dataset";
+export type CanonicalImportAdapter = "pc_part_dataset";
 
 export type CanonicalImportReasonCount = {
   reason: string;
@@ -694,6 +695,7 @@ export type CanonicalImportStageRequest = {
   dataset_path: string;
   category: ProductCategory | string;
   batch_limit: number;
+  adapter?: CanonicalImportAdapter | null;
   license_note: string;
   dry_run: boolean;
 };

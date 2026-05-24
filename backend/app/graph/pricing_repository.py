@@ -28,6 +28,9 @@ from app.models.catalog import (
     CatalogFeedImportResponse,
     CatalogFeedImportRow,
     CatalogFeedRunView,
+    ConfirmedCpuSpecEnrichmentItem,
+    ConfirmedCpuSpecEnrichmentRequest,
+    ConfirmedCpuSpecEnrichmentResponse,
     HybridGraphIntegrityResponse,
     HybridIntegrityCheck,
 )
@@ -50,6 +53,7 @@ from app.models.intelligence import HardwareIntelligence
 from app.services.hardware_taxonomy import GLOBAL_HARDWARE_CATEGORIES
 from app.services.pricing_classification import infer_listing_market
 from app.services.pricing_normalization import cpu_model_key_from_title
+from app.services.import_adapters.pc_part_dataset_adapter import load_pc_part_dataset_records
 from app.services.region_config import get_region_config, normalize_region, vendor_region_type, vendor_trust_profile
 
 
@@ -74,6 +78,7 @@ CATALOG_CATEGORY_LABELS = {
 }
 APPROVED_CANONICAL_IMPORT_SOURCES = {
     ("BuildCores/OpenDB", "canonical_specs"),
+    ("pc-part-dataset", "community_repository"),
     ("Kaggle PC Parts Dataset", "kaggle_dataset"),
     ("Kaggle PC Parts Dataset", "benchmark_metadata"),
     ("Kaggle PC parts datasets", "kaggle_dataset"),
@@ -243,14 +248,21 @@ def _normalize_canonical_stage_record(raw: dict[str, Any], category: str, licens
             "aliases": aliases,
             "identity_confidence": confidence,
             "required_specs_present": _catalog_row_has_required_specs(category, specs),
+            "compatibility_ready": raw.get("compatibility_ready"),
+            "compatibility_completeness_score": raw.get("compatibility_completeness_score"),
+            "missing_compatibility_fields": raw.get("missing_compatibility_fields"),
+            "inferred_fields": raw.get("inferred_fields"),
             "validation_status": "pending",
             "rejected_reasons": [],
-            "warning_reasons": [],
+            "warning_reasons": raw.get("warning_reasons") or [],
         }
     )
 
 
 def _normalize_stage_specs(raw: dict[str, Any], category: str) -> dict[str, Any]:
+    raw_specs = raw.get("specs")
+    if isinstance(raw_specs, dict):
+        return _clean_properties(raw_specs)
     if category == "CPU":
         cores = _as_int(_record_get(raw, "cores", "core_count", "total_cores"))
         threads = _as_int(_record_get(raw, "threads", "thread_count"))
@@ -349,6 +361,8 @@ def _stage_identity_confidence(
 ) -> float:
     if not name:
         return 0.0
+    if category == "GPU" and brand and model:
+        return 0.86
     if brand and model and _catalog_row_has_required_specs(category, specs):
         return 0.92
     if _catalog_row_has_required_specs(category, specs):
@@ -1214,6 +1228,8 @@ def _canonical_import_skip_reason(
         return "identity confidence below import threshold"
     if not row.canonical_key:
         return "missing canonical key"
+    if record.get("compatibility_ready") is False:
+        return "not compatibility-ready"
     if not _catalog_row_has_required_specs(request.category, row.specs):
         return "missing required compatibility specs"
     return None
@@ -2580,7 +2596,12 @@ class Neo4jPricingRepository:
         if (request.source_name, request.source_type) not in APPROVED_CANONICAL_IMPORT_SOURCES:
             raise ValueError("unsupported canonical source")
         dataset_path = _resolve_import_dataset_path(request.dataset_path)
-        rows = _load_canonical_dataset_file(dataset_path, request.batch_limit)
+        if request.adapter == "pc_part_dataset":
+            rows = load_pc_part_dataset_records(dataset_path, request.category, request.batch_limit)
+        elif request.adapter is not None:
+            raise ValueError("unsupported canonical import adapter")
+        else:
+            rows = _load_canonical_dataset_file(dataset_path, request.batch_limit)
         run_id = f"canonical-stage-{uuid4()}"
         staged = 0
         rejected = 0
@@ -2957,9 +2978,9 @@ class Neo4jPricingRepository:
             reasons.append("missing canonical key")
         if record.get("category") != request.category:
             reasons.append("category mismatch")
-        if float(record.get("identity_confidence") or 0) < CANONICAL_IDENTITY_CONFIDENCE_MIN:
+        if float(record.get("identity_confidence") or 0) < CANONICAL_IDENTITY_CONFIDENCE_MIN and request.adapter != "pc_part_dataset":
             reasons.append("identity confidence below import threshold")
-        if not bool(record.get("required_specs_present")):
+        if not bool(record.get("required_specs_present")) and request.adapter != "pc_part_dataset":
             reasons.append("missing required compatibility specs")
         bundle_reason = _component_bundle_rejection(str(record.get("raw_name") or record.get("name") or ""))
         if bundle_reason:
@@ -2973,6 +2994,13 @@ class Neo4jPricingRepository:
     ) -> list[str]:
         specs = _extract_staged_specs(record)
         warnings: list[str] = []
+        warnings.extend(str(reason) for reason in record.get("warning_reasons") or [])
+        for field in record.get("missing_compatibility_fields") or []:
+            warnings.append(f"missing compatibility field: {field}")
+        if record.get("compatibility_ready") is False:
+            warnings.append("metadata-only record is not compatibility-ready")
+        if record.get("inferred_fields"):
+            warnings.append("one or more compatibility fields are inferred")
         optional_fields = {
             "CPU": ("tdp_w", "base_clock_ghz", "boost_clock_ghz"),
             "GPU": ("vram_gb", "tdp_w", "length_mm"),
@@ -3556,6 +3584,117 @@ class Neo4jPricingRepository:
             checks=checks,
         )
 
+    def enrich_staged_cpu_specs(self, request: ConfirmedCpuSpecEnrichmentRequest) -> ConfirmedCpuSpecEnrichmentResponse:
+        items: list[ConfirmedCpuSpecEnrichmentItem] = []
+        matched = 0
+        enriched = 0
+        skipped = 0
+        evidence_created = 0
+
+        for incoming in request.records:
+            staged = self._staged_record_by_canonical_key(incoming.canonical_key)
+            confirmed_fields = ["socket", "cores", "threads"]
+            specs = {
+                "socket": incoming.socket,
+                "cores": incoming.cores,
+                "threads": incoming.threads,
+            }
+            if incoming.tdp_w is not None:
+                confirmed_fields.append("tdp_w")
+                specs["tdp_w"] = incoming.tdp_w
+
+            if not staged:
+                skipped += 1
+                items.append(
+                    ConfirmedCpuSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="skipped",
+                        staged_record_found=False,
+                        reason="staged CPU record not found",
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
+                continue
+            if str(staged.get("category") or "") != "CPU":
+                skipped += 1
+                items.append(
+                    ConfirmedCpuSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="skipped",
+                        staged_record_found=True,
+                        reason="staged record is not CPU category",
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
+                continue
+
+            matched += 1
+            merged_specs = _extract_staged_specs(staged)
+            merged_specs.update(specs)
+            missing = [field for field in ("socket", "cores", "threads") if merged_specs.get(field) in (None, "", [])]
+            if missing:
+                skipped += 1
+                items.append(
+                    ConfirmedCpuSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="skipped",
+                        staged_record_found=True,
+                        reason=f"confirmed evidence is missing required field(s): {', '.join(missing)}",
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
+                continue
+
+            if request.dry_run:
+                items.append(
+                    ConfirmedCpuSpecEnrichmentItem(
+                        canonical_key=incoming.canonical_key,
+                        status="would_enrich",
+                        staged_record_found=True,
+                        confirmed_fields=confirmed_fields,
+                    )
+                )
+                continue
+
+            self._apply_confirmed_cpu_specs_to_staged_record(
+                canonical_key=incoming.canonical_key,
+                specs=merged_specs,
+                source_name=request.source_name,
+                license_note=request.license_note,
+                evidence_note=incoming.evidence_note,
+                confirmed_fields=confirmed_fields,
+            )
+            attached = self._attach_confirmed_cpu_spec_evidence(
+                canonical_key=incoming.canonical_key,
+                source_name=request.source_name,
+                license_note=request.license_note,
+                evidence_note=incoming.evidence_note,
+                specs=specs,
+            )
+            if attached:
+                evidence_created += 1
+            enriched += 1
+            items.append(
+                ConfirmedCpuSpecEnrichmentItem(
+                    canonical_key=incoming.canonical_key,
+                    status="enriched",
+                    staged_record_found=True,
+                    evidence_attached=attached,
+                    confirmed_fields=confirmed_fields,
+                )
+            )
+
+        return ConfirmedCpuSpecEnrichmentResponse(
+            source_name=request.source_name,
+            dry_run=request.dry_run,
+            total_records=len(request.records),
+            matched_staged_records=matched,
+            enriched_records=enriched,
+            skipped_records=skipped,
+            evidence_created=evidence_created,
+            items=items,
+        )
+
     def attach_canonical_evidence(self, request: CanonicalEvidenceRequest) -> CanonicalEvidenceResponse:
         evidence_id = f"evidence:{uuid4()}"
         approval_state = "approved" if request.approved_by_founder else "pending_review"
@@ -3618,6 +3757,99 @@ class Neo4jPricingRepository:
             attached=True,
             approval_state=approval_state,
         )
+
+    def _staged_record_by_canonical_key(self, canonical_key: str) -> dict[str, Any] | None:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+            RETURN properties(record) AS record
+            LIMIT 1
+            """,
+            canonical_key=canonical_key,
+            database_=settings.neo4j_database,
+        )
+        if not records:
+            return None
+        return dict(records[0].data().get("record") or {})
+
+    def _apply_confirmed_cpu_specs_to_staged_record(
+        self,
+        *,
+        canonical_key: str,
+        specs: dict[str, Any],
+        source_name: str,
+        license_note: str,
+        evidence_note: str,
+        confirmed_fields: list[str],
+    ) -> None:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+            SET record.specs = $specs_json,
+                record.compatibility_ready = true,
+                record.compatibility_completeness_score = 1.0,
+                record.required_specs_present = true,
+                record.missing_compatibility_fields = [],
+                record.confirmed_compatibility_fields = $confirmed_fields,
+                record.confirmed_spec_source_name = $source_name,
+                record.confirmed_spec_license_note = $license_note,
+                record.confirmed_spec_note = $evidence_note,
+                record.confirmed_spec_updated_at = datetime(),
+                record.import_status = "pending",
+                record.updated_at = datetime()
+            RETURN count(record) AS count
+            """,
+            canonical_key=canonical_key,
+            specs_json=json.dumps(specs, sort_keys=True),
+            confirmed_fields=confirmed_fields,
+            source_name=source_name,
+            license_note=license_note,
+            evidence_note=evidence_note,
+            database_=settings.neo4j_database,
+        )
+        if not records or int(records[0]["count"] or 0) < 1:
+            raise ValueError("staged CPU record not found during enrichment")
+
+    def _attach_confirmed_cpu_spec_evidence(
+        self,
+        *,
+        canonical_key: str,
+        source_name: str,
+        license_note: str,
+        evidence_note: str,
+        specs: dict[str, Any],
+    ) -> bool:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product {canonical_key: $canonical_key})
+            WITH p LIMIT 1
+            MERGE (source:CanonicalSource {name: $source_name})
+            SET source.updated_at = datetime(),
+                source.source_type = "confirmed_cpu_specs",
+                source.license_note = $license_note
+            CREATE (e:CanonicalEvidence)
+            SET e.id = $evidence_id,
+                e.source_name = $source_name,
+                e.evidence_type = "canonical_spec",
+                e.field = "confirmed_cpu_specs",
+                e.value_json = $value_json,
+                e.trust_score = 0.95,
+                e.note = $evidence_note,
+                e.approval_state = "approved",
+                e.created_at = datetime()
+            MERGE (p)-[:HAS_CANONICAL_EVIDENCE]->(e)
+            MERGE (e)-[:FROM_SOURCE]->(source)
+            RETURN e.id AS evidence_id
+            """,
+            canonical_key=canonical_key,
+            source_name=source_name,
+            license_note=license_note,
+            evidence_note=evidence_note,
+            evidence_id=f"evidence:{uuid4()}",
+            value_json=json.dumps({"canonical_key": canonical_key, "specs": specs}, sort_keys=True),
+            database_=settings.neo4j_database,
+        )
+        return bool(records)
 
     def _count_query(self, statement: str, **parameters: Any) -> int:
         records, _, _ = self.driver.execute_query(

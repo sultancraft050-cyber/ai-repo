@@ -85,6 +85,7 @@ CanonicalImportSourceType = Literal[
     "community_repository",
     "kaggle_dataset",
 ]
+CanonicalImportAdapter = Literal["pc_part_dataset"]
 
 
 class CanonicalImportCommitRequest(BaseModel):
@@ -142,6 +143,7 @@ class CanonicalImportStageRequest(BaseModel):
     dataset_path: str = Field(min_length=3, max_length=500)
     category: CatalogCategory
     batch_limit: int = Field(default=100, ge=1, le=100)
+    adapter: CanonicalImportAdapter | None = None
     license_note: str = Field(min_length=3, max_length=500)
     dry_run: bool = True
 
@@ -282,3 +284,46 @@ class CanonicalEvidenceResponse(BaseModel):
     source_name: str
     attached: bool
     approval_state: str
+
+
+class ConfirmedCpuSpecRecord(BaseModel):
+    canonical_key: str = Field(min_length=3, max_length=240)
+    socket: str = Field(min_length=2, max_length=40)
+    cores: int = Field(ge=1, le=512)
+    threads: int = Field(ge=1, le=1024)
+    tdp_w: int | None = Field(default=None, ge=1, le=1000)
+    evidence_note: str = Field(min_length=3, max_length=500)
+
+    @field_validator("canonical_key")
+    @classmethod
+    def require_cpu_key(cls, value: str) -> str:
+        if not value.upper().startswith("CPU|"):
+            raise ValueError("canonical_key must be a CPU canonical key")
+        return value
+
+
+class ConfirmedCpuSpecEnrichmentRequest(BaseModel):
+    source_name: str = Field(min_length=2, max_length=120)
+    license_note: str = Field(min_length=3, max_length=500)
+    records: list[ConfirmedCpuSpecRecord] = Field(default_factory=list, min_length=1, max_length=100)
+    dry_run: bool = True
+
+
+class ConfirmedCpuSpecEnrichmentItem(BaseModel):
+    canonical_key: str
+    status: Literal["would_enrich", "enriched", "skipped"]
+    staged_record_found: bool
+    evidence_attached: bool = False
+    reason: str | None = None
+    confirmed_fields: list[str] = Field(default_factory=list)
+
+
+class ConfirmedCpuSpecEnrichmentResponse(BaseModel):
+    source_name: str
+    dry_run: bool
+    total_records: int
+    matched_staged_records: int
+    enriched_records: int
+    skipped_records: int
+    evidence_created: int
+    items: list[ConfirmedCpuSpecEnrichmentItem] = Field(default_factory=list)

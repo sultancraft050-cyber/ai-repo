@@ -33,6 +33,7 @@ backend/.mypy_cache/
 backend/**/__pycache__/
 backend/*.log
 backend/openapi.json
+backend/pc-part-dataset/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
