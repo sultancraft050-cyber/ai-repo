@@ -4857,6 +4857,10 @@ class Neo4jPricingRepository:
             family_name = _gpu_family_name_from_confirmed_spec(canonical_key, specs)
             target_family_key = _gpu_family_target_key(family_name)
             family_text = family_name.upper()
+            spec_family_values = [
+                json.dumps({"chip_family": value}, sort_keys=True)[1:-1]
+                for value in (family_name, f"GeForce {family_name}", f"Radeon {family_name}")
+            ]
             records, _, _ = self.driver.execute_query(
                 """
                 MATCH (record:StagedCanonicalRecord)
@@ -4864,11 +4868,7 @@ class Neo4jPricingRepository:
                   AND (
                     record.target_family_key = $target_family_key
                     OR toUpper(coalesce(record.target_family_name, "")) = $family_text
-                    OR toUpper(coalesce(record.raw_name, "")) CONTAINS $family_text
-                    OR toUpper(coalesce(record.name, "")) CONTAINS $family_text
-                    OR toUpper(coalesce(record.normalized_name, "")) CONTAINS $normalized_family_text
-                    OR toUpper(coalesce(record.specs, "")) CONTAINS $family_text
-                    OR toUpper(coalesce(record.specs, "")) CONTAINS $normalized_family_text
+                    OR any(value IN $spec_family_values WHERE coalesce(record.specs, "") CONTAINS value)
                   )
                 RETURN properties(record) AS record
                 ORDER BY record.canonical_key ASC
@@ -4876,7 +4876,7 @@ class Neo4jPricingRepository:
                 """,
                 target_family_key=target_family_key,
                 family_text=family_text,
-                normalized_family_text=family_text.replace(" ", "_"),
+                spec_family_values=spec_family_values,
                 database_=settings.neo4j_database,
             )
             return [dict(row.data().get("record") or {}) for row in records]

@@ -583,7 +583,10 @@ def test_current_gen_gpu_family_enrichment_matches_chip_family_inside_staged_spe
     assert response.matched_staged_records == 1
     assert response.items[0].canonical_key == "GPU|ASUS|ASUS_ROG_ASTRAL_OC"
     assert response.items[0].status == "would_enrich"
-    assert any("record.specs" in query for query in driver.queries)
+    family_query = next(call for call in driver.calls if "record.specs" in call["query"])
+    assert "record.raw_name" not in family_query["query"]
+    assert "record.normalized_name" not in family_query["query"]
+    assert '"chip_family": "GeForce RTX 5090"' in family_query["spec_family_values"]
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 
 
