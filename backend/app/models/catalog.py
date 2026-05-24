@@ -147,6 +147,7 @@ class CanonicalImportStageRequest(BaseModel):
     category: CatalogCategory
     batch_limit: int = Field(default=25, ge=1, le=100)
     adapter: CanonicalImportAdapter | None = None
+    target_priority_tier: CatalogExpansionPriorityTier | None = None
     license_note: str = Field(min_length=3, max_length=500)
     dry_run: bool = True
 

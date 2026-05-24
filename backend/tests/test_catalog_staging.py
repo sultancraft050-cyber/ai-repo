@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -430,6 +431,46 @@ def test_phase2_manifest_prioritizes_current_generation_targets() -> None:
     assert legacy_match is not None
     assert legacy_match.priority_tier == "legacy_deprioritized"
     assert gpu_match.priority < legacy_match.priority
+
+
+def test_stage_can_filter_to_current_generation_priority_tier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.graph.pricing_repository as pricing_repository
+
+    import_root = tmp_path / "imports"
+    dataset = import_root / "datasets" / "pc-part-dataset" / "video-card.json"
+    dataset.parent.mkdir(parents=True)
+    dataset.write_text(
+        json.dumps(
+            [
+                {"name": "RTX 5070 AIB Card", "chipset": "GeForce RTX 5070", "memory": 12},
+                {"name": "RTX 4070 Super AIB Card", "chipset": "GeForce RTX 4070 SUPER", "memory": 12},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pricing_repository, "ALLOWED_CANONICAL_IMPORT_DIR", import_root)
+    repository = Neo4jPricingRepository(FakeDriver())  # type: ignore[arg-type]
+
+    response = repository.stage_canonical_import(
+        CanonicalImportStageRequest(
+            source_name="pc-part-dataset",
+            source_type="community_repository",
+            dataset_path="data/imports/datasets/pc-part-dataset/video-card.json",
+            category="GPU",
+            adapter="pc_part_dataset",
+            batch_limit=2,
+            target_priority_tier="current_gen_priority",
+            license_note="pc-part-dataset local fixture for priority tier filtering tests",
+            dry_run=True,
+        )
+    )
+
+    assert response.staged_records == 1
+    assert response.rejected_records == 1
+    assert any(
+        item.reason == "outside current_gen_priority target priority tier"
+        for item in response.top_rejection_reasons
+    )
 
 
 def test_phase2_manifest_prioritizes_modern_core_parts_after_cpu_gpu() -> None:

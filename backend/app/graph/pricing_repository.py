@@ -3016,6 +3016,12 @@ class Neo4jPricingRepository:
             reasons = self._stage_record_rejection_reasons(record, request)
             if request.category in manifest_categories() and target_match is None:
                 reasons.append("outside curated phase2 target manifest")
+            if (
+                request.target_priority_tier
+                and target_match is not None
+                and target_match.priority_tier != request.target_priority_tier
+            ):
+                reasons.append(f"outside {request.target_priority_tier} target priority tier")
             warnings = self._stage_record_warning_reasons(record, request)
             canonical_key = str(record.get("canonical_key") or "")
             duplicates = []
