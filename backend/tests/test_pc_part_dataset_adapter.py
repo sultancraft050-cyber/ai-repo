@@ -281,6 +281,20 @@ def test_ram_speed_modules_parse_capacity_and_ddr_type() -> None:
     assert record["specs"]["kit_config"] == "2x16GB"
 
 
+def test_ram_pc_part_dataset_speed_and_modules_lists_parse_structured_values() -> None:
+    record = adapt_pc_part_dataset_record(
+        {"name": "Corsair Vengeance RGB 32 GB", "speed": [5, 6000], "modules": [2, 16], "cas_latency": 36},
+        "RAM",
+    )
+
+    assert record["specs"]["memory_type"] == "DDR5"
+    assert record["specs"]["speed_mhz"] == 6000
+    assert record["specs"]["capacity_gb"] == 32
+    assert record["specs"]["kit_config"] == "2x16GB"
+    assert record["compatibility_ready"] is True
+    assert not record["inferred_fields"]
+
+
 def test_gpu_requires_confirmed_power_length_and_pcie_for_compatibility_ready() -> None:
     record = adapt_pc_part_dataset_record(
         {"name": "MSI GeForce RTX 4070 Super", "chipset": "GeForce RTX 4070 SUPER", "memory": 12, "length": 261},

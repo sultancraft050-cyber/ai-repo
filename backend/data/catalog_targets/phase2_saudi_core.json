@@ -106,6 +106,9 @@
       "safe_commit_batch_size": 50,
       "required_specs": ["memory_type", "capacity_gb", "speed_mhz", "kit_config"],
       "families": [
+        { "name": "DDR5 2x16GB 6000", "priority_tier": "current_gen_priority" },
+        { "name": "DDR5 2x16GB 6400", "priority_tier": "current_gen_priority" },
+        { "name": "DDR5 2x16GB 7200", "priority_tier": "current_gen_priority" },
         { "name": "DDR5 32GB 6000 EXPO", "priority_tier": "current_gen_priority" },
         { "name": "DDR5 32GB 6000 XMP", "priority_tier": "current_gen_priority" },
         { "name": "DDR5 32GB 6400 EXPO", "priority_tier": "current_gen_priority" },

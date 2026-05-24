@@ -119,15 +119,15 @@ def _map_specs(raw: dict[str, Any], category: str, name: str) -> tuple[dict[str,
         modules = _as_list(_get(raw, "modules"))
         speed_values = _as_list(_get(raw, "speed"))
         capacity_gb, kit_config = _parse_modules(modules)
-        speed_mhz = _first_int(speed_values)
+        memory_type, speed_mhz, memory_type_inferred = _parse_memory_speed(speed_values)
         specs = {
-            "memory_type": _memory_type_from_speed(speed_mhz),
+            "memory_type": memory_type,
             "capacity_gb": capacity_gb,
             "speed_mhz": speed_mhz,
             "kit_config": kit_config,
             "cas_latency": _get(raw, "cas_latency", "cl"),
         }
-        if specs["memory_type"]:
+        if specs["memory_type"] and memory_type_inferred:
             inferred.append(
                 {
                     "field": "memory_type",
@@ -321,6 +321,15 @@ def _memory_type_from_speed(speed_mhz: int | None) -> str | None:
     return None
 
 
+def _parse_memory_speed(speed_values: list[Any]) -> tuple[str | None, int | None, bool]:
+    values = [_as_int(item) for item in speed_values]
+    values = [item for item in values if item]
+    if len(values) >= 2 and values[0] in {3, 4, 5} and values[1] >= 400:
+        return f"DDR{values[0]}", values[1], False
+    speed_mhz = values[0] if values else None
+    return _memory_type_from_speed(speed_mhz), speed_mhz, bool(speed_mhz)
+
+
 def _memory_type_from_value(value: Any) -> str | None:
     if not value:
         return None
@@ -344,6 +353,9 @@ def _parse_modules(modules: list[Any]) -> tuple[int | None, str | None]:
         return count * size, f"{count}x{size}GB"
     values = [_as_int(item) for item in modules]
     values = [item for item in values if item]
+    if len(values) >= 2 and values[0] <= 16 and values[1] >= 1:
+        count, size = values[0], values[1]
+        return count * size, f"{count}x{size}GB"
     if values:
         return sum(values), f"{len(values)}x{values[0]}GB" if len(set(values)) == 1 else None
     return None, None

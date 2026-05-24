@@ -244,6 +244,8 @@ def _family_key(category: str, family: str) -> str:
 
 def _normalize_text(value: str) -> str:
     text = value.upper().replace("-", " ")
+    text = re.sub(r"\b(\d+)\s*GB\b", r"\1 GB", text)
+    text = re.sub(r"\b(\d+)\s*TB\b", r"\1 TB", text)
     text = text.replace("WI FI", "WIFI").replace("WI-FI", "WIFI")
     text = text.replace("M ATX", "MATX").replace("MICRO ATX", "MATX")
     text = text.replace("PCI E", "PCIE")
