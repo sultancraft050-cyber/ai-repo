@@ -124,6 +124,35 @@ class CurrentGenGPUFamilyEnrichmentDriver(FakeDriver):
         return [], None, None
 
 
+class CurrentGenGPUFamilySpecOnlyEnrichmentDriver(FakeDriver):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[dict[str, Any]] = []
+
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        self.calls.append({"query": query, **parameters})
+        if "record.specs" in query and parameters.get("family_text") == "RTX 5090":
+            return [
+                FakeRecord(
+                    record={
+                        "canonical_key": "GPU|ASUS|ASUS_ROG_ASTRAL_OC",
+                        "category": "GPU",
+                        "target_family_key": None,
+                        "target_family_name": None,
+                        "raw_name": "Asus ROG Astral OC",
+                        "specs": json.dumps({"chip_family": "RTX 5090", "vram_gb": 32}),
+                        "compatibility_ready": False,
+                        "compatibility_ready_exact": False,
+                        "compatibility_ready_family": False,
+                    }
+                )
+            ], None, None
+        if "RETURN count(record) AS count" in query:
+            return [FakeRecord(count=1)], None, None
+        return [], None, None
+
+
 class HybridReviewDriver(FakeDriver):
     def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
         self.queries.append(query)
@@ -523,6 +552,38 @@ def test_current_gen_gpu_family_enrichment_matches_multiple_staged_cards_without
     assert all(call["compatibility_ready_exact"] is False for call in update_calls)
     assert all(call["compatibility_ready_family"] is True for call in update_calls)
     assert all("slots" in call["missing_exact_card_fields"] for call in update_calls)
+    assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
+def test_current_gen_gpu_family_enrichment_matches_chip_family_inside_staged_specs() -> None:
+    driver = CurrentGenGPUFamilySpecOnlyEnrichmentDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.enrich_staged_specs(
+        ConfirmedSpecEnrichmentRequest(
+            category="GPU",
+            source_name="founder_confirmed_phase2_specs",
+            license_note="source-attributed current-generation GPU family evidence",
+            records=[
+                {
+                    "canonical_key": "GPU|FAMILY|RTX_5090",
+                    "specs": {
+                        "chip_family": "RTX 5090",
+                        "vram_gb": 32,
+                        "pcie_generation": "PCIe 5.0",
+                        "reference_tdp_w": 575,
+                    },
+                    "evidence_note": "confirmed RTX 5090 family evidence",
+                }
+            ],
+            dry_run=True,
+        )
+    )
+
+    assert response.matched_staged_records == 1
+    assert response.items[0].canonical_key == "GPU|ASUS|ASUS_ROG_ASTRAL_OC"
+    assert response.items[0].status == "would_enrich"
+    assert any("record.specs" in query for query in driver.queries)
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 
 

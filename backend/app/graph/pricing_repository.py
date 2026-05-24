@@ -4861,6 +4861,8 @@ class Neo4jPricingRepository:
                     OR toUpper(coalesce(record.raw_name, "")) CONTAINS $family_text
                     OR toUpper(coalesce(record.name, "")) CONTAINS $family_text
                     OR toUpper(coalesce(record.normalized_name, "")) CONTAINS $normalized_family_text
+                    OR toUpper(coalesce(record.specs, "")) CONTAINS $family_text
+                    OR toUpper(coalesce(record.specs, "")) CONTAINS $normalized_family_text
                   )
                 RETURN properties(record) AS record
                 ORDER BY record.canonical_key ASC
