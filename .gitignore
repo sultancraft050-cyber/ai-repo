@@ -39,6 +39,8 @@ backend/pc-part-dataset/
 .mypy_cache/
 dist/
 build/
+!frontend/app/build/
+!frontend/app/build/**
 *.pyc
 *.tsbuildinfo
 .env
