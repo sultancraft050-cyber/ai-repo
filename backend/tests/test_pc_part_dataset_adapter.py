@@ -152,6 +152,17 @@ def test_ram_speed_modules_parse_capacity_and_ddr_type() -> None:
     assert record["specs"]["kit_config"] == "2x16GB"
 
 
+def test_gpu_requires_confirmed_power_length_and_pcie_for_compatibility_ready() -> None:
+    record = adapt_pc_part_dataset_record(
+        {"name": "MSI GeForce RTX 4070 Super", "chipset": "GeForce RTX 4070 SUPER", "memory": 12, "length": 261},
+        "GPU",
+    )
+
+    assert record["compatibility_ready"] is False
+    assert "tdp_w" in record["missing_compatibility_fields"]
+    assert "pcie_generation" in record["missing_compatibility_fields"]
+
+
 def test_case_missing_clearance_warns_without_fake_defaults() -> None:
     record = adapt_pc_part_dataset_record({"name": "Airflow ATX Case", "motherboard_form_factor": ["ATX"]}, "Case")
 
@@ -197,14 +208,15 @@ def test_pc_part_dataset_stage_accepts_flat_json_without_price_mutation(
             dataset_path="data/imports/datasets/pc-part-dataset/cpu.json",
             category="CPU",
             adapter="pc_part_dataset",
-            batch_limit=50,
+            batch_limit=25,
             license_note="pc-part-dataset local fixture for controlled adapter tests",
             dry_run=False,
         )
     )
 
-    assert response.staged_records == 2
-    assert response.rejected_records == 0
+    assert response.staged_records == 1
+    assert response.rejected_records == 1
+    assert any(item.reason == "outside curated phase2 target manifest" for item in response.top_rejection_reasons)
     assert any(item.reason == "metadata-only record is not compatibility-ready" for item in response.top_warning_reasons)
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 

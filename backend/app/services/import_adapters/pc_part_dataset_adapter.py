@@ -8,6 +8,7 @@ from typing import Any
 
 CRITICAL_FIELDS = {
     "CPU": ("socket",),
+    "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation"),
     "Motherboard": ("socket", "memory_type", "form_factor"),
     "RAM": ("memory_type", "capacity_gb"),
     "Case": ("supported_motherboard_form_factors",),
@@ -80,6 +81,7 @@ def _map_specs(raw: dict[str, Any], category: str, name: str) -> tuple[dict[str,
             "model": _get(raw, "chipset", "model"),
             "vram_gb": _capacity_to_gb(_get(raw, "memory")),
             "length_mm": _as_int(_get(raw, "length")),
+            "pcie_generation": _get(raw, "pcie_generation", "pcie", "interface"),
         }
         tdp = _as_int(_get(raw, "tdp", "power"))
         if tdp:

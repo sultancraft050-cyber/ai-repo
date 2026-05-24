@@ -8,6 +8,7 @@ import {
   cancelAutonomyJob,
   deferRequest,
   getAutonomyQueue,
+  getCatalogExpansionTargets,
   getCatalogGrowthWorkflow,
   getCpuDuplicateCandidates,
   getDeploymentChecklist,
@@ -18,7 +19,7 @@ import {
   previewCanonicalMerge,
   rejectRequest
 } from "@/lib/api";
-import type { ApprovalItem, AutonomyQueue as AutonomyQueueData, CanonicalMergePreviewResponse, CatalogGrowthWorkflowSummary, CpuDuplicateReport, DailyFounderReport, DeploymentChecklist, MvpHealthDashboard } from "@/types/builder";
+import type { ApprovalItem, AutonomyQueue as AutonomyQueueData, CanonicalMergePreviewResponse, CatalogExpansionTargetsResponse, CatalogGrowthWorkflowSummary, CpuDuplicateReport, DailyFounderReport, DeploymentChecklist, MvpHealthDashboard } from "@/types/builder";
 import { ApprovalCenter } from "@/components/ApprovalCenter";
 import { AutonomyQueue } from "@/components/AutonomyQueue";
 import { CanonicalImportStagingPanel } from "@/components/CanonicalImportStagingPanel";
@@ -49,6 +50,7 @@ export function SoloFounderOpsPanel() {
   const [mvpHealth, setMvpHealth] = useState<LoadState<MvpHealthDashboard>>(initialState);
   const [deployment, setDeployment] = useState<LoadState<DeploymentChecklist>>(initialState);
   const [catalogGrowth, setCatalogGrowth] = useState<LoadState<CatalogGrowthWorkflowSummary>>(initialState);
+  const [catalogExpansion, setCatalogExpansion] = useState<LoadState<CatalogExpansionTargetsResponse>>(initialState);
   const [mergePreview, setMergePreview] = useState<CanonicalMergePreviewResponse | null>(null);
   const [actingApprovalId, setActingApprovalId] = useState<string | null>(null);
   const [actingJobId, setActingJobId] = useState<string | null>(null);
@@ -70,15 +72,17 @@ export function SoloFounderOpsPanel() {
     setMvpHealth((current) => ({ ...current, loading: true, error: null }));
     setDeployment((current) => ({ ...current, loading: true, error: null }));
     setCatalogGrowth((current) => ({ ...current, loading: true, error: null }));
+    setCatalogExpansion((current) => ({ ...current, loading: true, error: null }));
 
-    const [briefResult, queueResult, approvalsResult, duplicateResult, mvpResult, deploymentResult, catalogGrowthResult] = await Promise.allSettled([
+    const [briefResult, queueResult, approvalsResult, duplicateResult, mvpResult, deploymentResult, catalogGrowthResult, catalogExpansionResult] = await Promise.allSettled([
       getFounderDailyReport(apiKey, region),
       getAutonomyQueue(apiKey),
       getPendingApprovals(apiKey),
       getCpuDuplicateCandidates(apiKey, region),
       getMvpHealthDashboard(apiKey, region),
       getDeploymentChecklist(apiKey, region),
-      getCatalogGrowthWorkflow(apiKey, region)
+      getCatalogGrowthWorkflow(apiKey, region),
+      getCatalogExpansionTargets(apiKey, region)
     ]);
 
     setBrief((current) =>
@@ -115,6 +119,11 @@ export function SoloFounderOpsPanel() {
       catalogGrowthResult.status === "fulfilled"
         ? { data: catalogGrowthResult.value, loading: false, error: null }
         : { data: current.data, loading: false, error: errorMessage(catalogGrowthResult.reason, "Unable to load catalog growth workflow.") }
+    );
+    setCatalogExpansion((current) =>
+      catalogExpansionResult.status === "fulfilled"
+        ? { data: catalogExpansionResult.value, loading: false, error: null }
+        : { data: current.data, loading: false, error: errorMessage(catalogExpansionResult.reason, "Unable to load catalog expansion targets.") }
     );
   }
 
@@ -261,6 +270,7 @@ export function SoloFounderOpsPanel() {
           <DeploymentChecklistPanel data={deployment.data} loading={deployment.loading} error={deployment.error} />
           <MvpHealthPanel data={mvpHealth.data} loading={mvpHealth.loading} error={mvpHealth.error} />
           <CatalogGrowthPanel data={catalogGrowth.data} loading={catalogGrowth.loading} error={catalogGrowth.error} />
+          <CatalogExpansionPanel data={catalogExpansion.data} loading={catalogExpansion.loading} error={catalogExpansion.error} />
 
           <div className="grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
             <ApprovalCenter
@@ -525,6 +535,74 @@ function CatalogGrowthPanel({ data, loading, error }: { data: CatalogGrowthWorkf
         </div>
       ) : !loading ? (
         <p className="text-sm text-slate-500">Load the command center to see category priorities, URL targets, store quality, and readiness trends.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function CatalogExpansionPanel({ data, loading, error }: { data: CatalogExpansionTargetsResponse | null; loading: boolean; error: string | null }) {
+  const categories = data?.categories ?? [];
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold uppercase text-slate-300">Phase 2 Catalog Expansion</h3>
+        {loading ? <span className="text-xs text-slate-500">Reading targets...</span> : null}
+      </div>
+      {error ? <p className="rounded border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{error}</p> : null}
+      {data ? (
+        <div className="grid gap-3">
+          <div className="grid gap-3 md:grid-cols-4">
+            <Metric label="Canonical" value={data.total_canonical_count} />
+            <Metric label="Ready" value={data.total_compatibility_ready_count} />
+            <Metric label="Saudi priced" value={data.total_saudi_priced_count} />
+            <Metric label="Trusted vendors" value={data.total_trusted_vendor_count} />
+          </div>
+          <div className="overflow-hidden rounded border border-slate-800">
+            <table className="w-full min-w-[720px] text-left text-xs">
+              <thead className="bg-slate-950 text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Priority</th>
+                  <th className="px-3 py-2">Category</th>
+                  <th className="px-3 py-2">Canonical</th>
+                  <th className="px-3 py-2">Ready</th>
+                  <th className="px-3 py-2">Saudi priced</th>
+                  <th className="px-3 py-2">State</th>
+                  <th className="px-3 py-2">Next action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((item) => (
+                  <tr key={item.category} className="border-t border-slate-800">
+                    <td className="px-3 py-2 text-slate-500">{item.priority_order}</td>
+                    <td className="px-3 py-2 font-semibold text-slate-200">{item.category}</td>
+                    <td className="px-3 py-2 text-slate-300">
+                      {item.canonical_count}/{item.target_min}
+                    </td>
+                    <td className="px-3 py-2 text-slate-300">{item.compatibility_ready_count}</td>
+                    <td className="px-3 py-2 text-slate-300">{item.saudi_priced_count}</td>
+                    <td className="px-3 py-2 text-slate-400">{item.readiness_state.replaceAll("_", " ")}</td>
+                    <td className="px-3 py-2 leading-5 text-slate-400">{item.next_action}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {categories.slice(0, 3).map((category) => (
+              <FooterPanel key={category.category} title={`${category.category} target families`}>
+                <p className="text-sm leading-6 text-slate-400">
+                  {category.families
+                    .filter((family) => family.conflict_count || family.metadata_only_count || family.saudi_priced_count === 0)
+                    .slice(0, 5)
+                    .map((family) => `${family.family_name}: ${family.next_action}`)
+                    .join(" ")}
+                </p>
+              </FooterPanel>
+            ))}
+          </div>
+        </div>
+      ) : !loading ? (
+        <p className="text-sm text-slate-500">Load the command center to see target family coverage, metadata-only rows, conflicts, and Saudi pricing gaps.</p>
       ) : null}
     </div>
   );

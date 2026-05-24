@@ -17,6 +17,7 @@ from app.models.catalog import (
     CanonicalStagedClearResponse,
     CanonicalStagedSummaryResponse,
     CatalogCoverageResponse,
+    CatalogExpansionTargetsResponse,
     CatalogFeedImportRequest,
     CatalogFeedImportResponse,
     CatalogFeedRunView,
@@ -146,6 +147,14 @@ def catalog_coverage(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> CatalogCoverageResponse:
     return repository.catalog_coverage(region=resolve_market_region(region))
+
+
+@router.get("/expansion/targets", response_model=CatalogExpansionTargetsResponse)
+def catalog_expansion_targets(
+    region: str | None = "SA",
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> CatalogExpansionTargetsResponse:
+    return repository.catalog_expansion_targets(region=resolve_market_region(region))
 
 
 @router.get("/hybrid/strategy", response_model=HybridGraphStrategyResponse)

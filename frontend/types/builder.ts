@@ -764,6 +764,9 @@ export type HybridImportReviewItem = {
   duplicate_candidates: string[];
   rejected_reasons: string[];
   warning_reasons: string[];
+  target_family_key?: string | null;
+  target_family_name?: string | null;
+  expansion_priority?: number | null;
   commit_eligible: boolean;
   next_action: string;
 };
@@ -782,6 +785,62 @@ export type HybridImportReviewResponse = {
   top_missing_compatibility_fields: CanonicalImportReasonCount[];
   top_inferred_fields: CanonicalImportReasonCount[];
   items: HybridImportReviewItem[];
+};
+
+export type CatalogExpansionReadinessState = "compatibility_ready" | "metadata_only" | "conflict_requires_review";
+
+export type CatalogExpansionTargetFamily = {
+  category: string;
+  family_key: string;
+  family_name: string;
+  priority: number;
+  target_min: number;
+  target_max: number;
+  canonical_count: number;
+  compatibility_ready_count: number;
+  saudi_priced_count: number;
+  trusted_vendor_count: number;
+  staged_count: number;
+  metadata_only_count: number;
+  conflict_count: number;
+  missing_required_specs: string[];
+  readiness_state: CatalogExpansionReadinessState;
+  next_action: string;
+};
+
+export type CatalogExpansionCategorySummary = {
+  category: string;
+  priority_order: number;
+  target_min: number;
+  target_max: number;
+  safe_stage_batch_size: number;
+  safe_commit_batch_size: number;
+  canonical_count: number;
+  compatibility_ready_count: number;
+  saudi_priced_count: number;
+  trusted_vendor_count: number;
+  staged_count: number;
+  metadata_only_count: number;
+  conflict_count: number;
+  missing_required_specs: string[];
+  readiness_state: CatalogExpansionReadinessState;
+  next_action: string;
+  families: CatalogExpansionTargetFamily[];
+};
+
+export type CatalogExpansionTargetsResponse = {
+  region: string;
+  phase: string;
+  first_milestone_min: number;
+  first_milestone_max: number;
+  final_milestone_min: number;
+  final_milestone_max: number;
+  total_canonical_count: number;
+  total_compatibility_ready_count: number;
+  total_saudi_priced_count: number;
+  total_trusted_vendor_count: number;
+  product_states: CatalogExpansionReadinessState[];
+  categories: CatalogExpansionCategorySummary[];
 };
 
 export type ConfirmedSpecEnrichmentRequest = {

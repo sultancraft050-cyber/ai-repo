@@ -66,7 +66,7 @@ def test_clean_canonical_import_record_requires_license_and_specs() -> None:
         source_name="BuildCores/OpenDB",
         source_type="canonical_specs",
         category="CPU",
-        batch_limit=100,
+        batch_limit=25,
         commit=True,
     )
     clean_record = {
@@ -81,6 +81,7 @@ def test_clean_canonical_import_record_requires_license_and_specs() -> None:
         "spec_socket": "AM5",
         "spec_cores": 8,
         "spec_threads": 16,
+        "spec_tdp_w": 120,
     }
 
     row = _catalog_row_from_staged_record(clean_record, "CPU")
@@ -105,6 +106,7 @@ def test_canonical_import_rejects_records_without_attribution_license() -> None:
         "spec_socket": "AM5",
         "spec_cores": 8,
         "spec_threads": 16,
+        "spec_tdp_w": 120,
     }
     row = _catalog_row_from_staged_record(record, "CPU")
 

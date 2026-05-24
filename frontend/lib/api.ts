@@ -19,6 +19,7 @@ import type {
   CanonicalImportStageResponse,
   CanonicalStagedClearResponse,
   CanonicalStagedSummaryResponse,
+  CatalogExpansionTargetsResponse,
   ConfirmedSpecEnrichmentRequest,
   CpuDuplicateReport,
   DailyFounderReport,
@@ -294,6 +295,13 @@ export async function getDeploymentChecklist(apiKey: string, region = "SA"): Pro
 export async function getCatalogGrowthWorkflow(apiKey: string, region = "SA"): Promise<CatalogGrowthWorkflowSummary> {
   const params = new URLSearchParams({ region });
   return requestJson<CatalogGrowthWorkflowSummary>(`/ops/catalog-growth-workflow?${params.toString()}`, {
+    headers: authHeaders(apiKey)
+  });
+}
+
+export async function getCatalogExpansionTargets(apiKey: string, region = "SA"): Promise<CatalogExpansionTargetsResponse> {
+  const params = new URLSearchParams({ region });
+  return requestJson<CatalogExpansionTargetsResponse>(`/catalog/expansion/targets?${params.toString()}`, {
     headers: authHeaders(apiKey)
   });
 }

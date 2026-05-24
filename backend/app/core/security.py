@@ -43,6 +43,7 @@ ENDPOINT_RULES: tuple[EndpointRule, ...] = (
     EndpointRule("GET", "/catalog/import/hybrid-review", "analyst", "level_0"),
     EndpointRule("GET", "/catalog/feeds/runs", "analyst", "level_0"),
     EndpointRule("GET", "/catalog/coverage", "analyst", "level_0"),
+    EndpointRule("GET", "/catalog/expansion/targets", "analyst", "level_0"),
     EndpointRule("GET", "/catalog/hybrid/integrity", "analyst", "level_0"),
     EndpointRule("POST", "/catalog/canonical/evidence", "admin", "level_1"),
     EndpointRule("POST", "/catalog/canonical/enrich-cpu-specs", "admin", "level_1"),

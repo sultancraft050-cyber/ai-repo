@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.services.catalog_expansion import safe_batch_size
+
 
 CatalogCategory = Literal[
     "CPU",
@@ -92,14 +94,15 @@ class CanonicalImportCommitRequest(BaseModel):
     source_name: str = Field(min_length=2, max_length=120)
     source_type: CanonicalImportSourceType
     category: CatalogCategory
-    batch_limit: int = Field(default=50, ge=1, le=100)
+    batch_limit: int = Field(default=25, ge=1, le=100)
     commit: bool = False
     approval_required_for_conflicts: bool = True
 
     @model_validator(mode="after")
     def enforce_controlled_batch_size(self) -> "CanonicalImportCommitRequest":
-        if self.category == "Motherboard" and self.batch_limit > 50:
-            raise ValueError("Motherboard canonical imports are capped at batch_limit=50")
+        cap = safe_batch_size(self.category, operation="commit")
+        if self.batch_limit > cap:
+            raise ValueError(f"{self.category} canonical imports are capped at batch_limit={cap}")
         return self
 
 
@@ -142,15 +145,16 @@ class CanonicalImportStageRequest(BaseModel):
     source_type: CanonicalImportSourceType
     dataset_path: str = Field(min_length=3, max_length=500)
     category: CatalogCategory
-    batch_limit: int = Field(default=100, ge=1, le=100)
+    batch_limit: int = Field(default=25, ge=1, le=100)
     adapter: CanonicalImportAdapter | None = None
     license_note: str = Field(min_length=3, max_length=500)
     dry_run: bool = True
 
     @model_validator(mode="after")
     def enforce_stage_batch_size(self) -> "CanonicalImportStageRequest":
-        if self.category == "Motherboard" and self.batch_limit > 50:
-            raise ValueError("Motherboard canonical staging is capped at batch_limit=50")
+        cap = safe_batch_size(self.category, operation="stage")
+        if self.batch_limit > cap:
+            raise ValueError(f"{self.category} canonical staging is capped at batch_limit={cap}")
         return self
 
 
@@ -213,6 +217,60 @@ class CatalogCoverageResponse(BaseModel):
     priced_product_count: int
     stale_listing_count: int
     categories: list[CatalogCategoryCoverage]
+
+
+class CatalogExpansionTargetFamily(BaseModel):
+    category: str
+    family_key: str
+    family_name: str
+    priority: int
+    target_min: int
+    target_max: int
+    canonical_count: int
+    compatibility_ready_count: int
+    saudi_priced_count: int
+    trusted_vendor_count: int
+    staged_count: int
+    metadata_only_count: int
+    conflict_count: int
+    missing_required_specs: list[str] = Field(default_factory=list)
+    readiness_state: Literal["compatibility_ready", "metadata_only", "conflict_requires_review"]
+    next_action: str
+
+
+class CatalogExpansionCategorySummary(BaseModel):
+    category: str
+    priority_order: int
+    target_min: int
+    target_max: int
+    safe_stage_batch_size: int
+    safe_commit_batch_size: int
+    canonical_count: int
+    compatibility_ready_count: int
+    saudi_priced_count: int
+    trusted_vendor_count: int
+    staged_count: int
+    metadata_only_count: int
+    conflict_count: int
+    missing_required_specs: list[str] = Field(default_factory=list)
+    readiness_state: Literal["compatibility_ready", "metadata_only", "conflict_requires_review"]
+    next_action: str
+    families: list[CatalogExpansionTargetFamily] = Field(default_factory=list)
+
+
+class CatalogExpansionTargetsResponse(BaseModel):
+    region: str
+    phase: str
+    first_milestone_min: int
+    first_milestone_max: int
+    final_milestone_min: int
+    final_milestone_max: int
+    total_canonical_count: int
+    total_compatibility_ready_count: int
+    total_saudi_priced_count: int
+    total_trusted_vendor_count: int
+    product_states: list[Literal["compatibility_ready", "metadata_only", "conflict_requires_review"]]
+    categories: list[CatalogExpansionCategorySummary] = Field(default_factory=list)
 
 
 class HybridDataLayerView(BaseModel):
@@ -356,6 +414,9 @@ class HybridImportReviewItem(BaseModel):
     duplicate_candidates: list[str] = Field(default_factory=list)
     rejected_reasons: list[str] = Field(default_factory=list)
     warning_reasons: list[str] = Field(default_factory=list)
+    target_family_key: str | None = None
+    target_family_name: str | None = None
+    expansion_priority: int | None = None
     commit_eligible: bool = False
     next_action: str
 

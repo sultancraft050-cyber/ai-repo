@@ -11,6 +11,7 @@ from app.graph.pricing_repository import (
     _resolve_import_dataset_path,
 )
 from app.models.catalog import CanonicalImportCommitRequest, CanonicalImportStageRequest
+from app.services.catalog_expansion import match_expansion_target
 
 
 class FakeRecord(dict):
@@ -64,7 +65,7 @@ def _stage_request(**overrides: Any) -> CanonicalImportStageRequest:
         source_type=overrides.get("source_type", "canonical_specs"),
         dataset_path=overrides.get("dataset_path", "samples/cpu_sample.json"),
         category=overrides.get("category", "CPU"),
-        batch_limit=overrides.get("batch_limit", 100),
+        batch_limit=overrides.get("batch_limit", 25),
         license_note=overrides.get("license_note", "Sample fixture for controlled import tests."),
         dry_run=overrides.get("dry_run", True),
     )
@@ -201,7 +202,7 @@ def test_commit_staged_query_consumes_only_valid_records() -> None:
             source_name="BuildCores/OpenDB",
             source_type="canonical_specs",
             category="CPU",
-            batch_limit=100,
+            batch_limit=25,
             commit=True,
         )
     )
@@ -217,3 +218,58 @@ def test_csv_loader_reads_local_sample() -> None:
     rows = _load_canonical_dataset_file(path, 10)
 
     assert rows[0]["name"] == "NVIDIA GeForce RTX 4070 Super"
+
+
+def test_phase2_batch_caps_are_enforced() -> None:
+    with pytest.raises(ValueError, match="CPU canonical staging is capped at batch_limit=25"):
+        _stage_request(batch_limit=26)
+    with pytest.raises(ValueError, match="GPU canonical imports are capped at batch_limit=50"):
+        CanonicalImportCommitRequest(
+            source_name="BuildCores/OpenDB",
+            source_type="canonical_specs",
+            category="GPU",
+            batch_limit=51,
+            commit=True,
+        )
+
+
+def test_catalog_expansion_targets_returns_phase2_manifest_summary() -> None:
+    repository = Neo4jPricingRepository(FakeDriver())  # type: ignore[arg-type]
+
+    response = repository.catalog_expansion_targets(region="SA")
+
+    assert response.phase == "phase2_saudi_core"
+    assert response.product_states == ["compatibility_ready", "metadata_only", "conflict_requires_review"]
+    assert response.categories[0].category == "GPU"
+    assert response.categories[0].safe_stage_batch_size == 50
+    assert any(family.family_name == "RTX 4070 Super" for family in response.categories[0].families)
+
+
+def test_phase2_manifest_prefers_specific_target_family() -> None:
+    match = match_expansion_target(
+        {"name": "NVIDIA GeForce RTX 4070 Super", "brand": "NVIDIA", "model": "GeForce RTX 4070 Super"},
+        "GPU",
+    )
+
+    assert match is not None
+    assert match.family_name == "RTX 4070 Super"
+
+
+def test_stage_rejects_records_outside_phase2_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.graph.pricing_repository as pricing_repository
+
+    import_root = tmp_path / "imports"
+    sample = import_root / "old_gpu.json"
+    import_root.mkdir()
+    sample.write_text(
+        '[{"name":"NVIDIA GeForce GT 710","brand":"NVIDIA","model":"GeForce GT 710","vram_gb":2,"tdp_w":20,"length_mm":145,"pcie_generation":"PCIe 2.0"}]',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pricing_repository, "ALLOWED_CANONICAL_IMPORT_DIR", import_root)
+    repository = Neo4jPricingRepository(FakeDriver())  # type: ignore[arg-type]
+
+    response = repository.stage_canonical_import(_stage_request(dataset_path="old_gpu.json", category="GPU"))
+
+    assert response.staged_records == 0
+    assert response.rejected_records == 1
+    assert "outside curated phase2 target manifest" in {item.reason for item in response.top_rejection_reasons}

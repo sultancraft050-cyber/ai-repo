@@ -1,0 +1,130 @@
+{
+  "phase": "phase2_saudi_core",
+  "region": "SA",
+  "milestone": {
+    "first_min": 500,
+    "first_max": 700,
+    "final_min": 500,
+    "final_max": 2000
+  },
+  "category_order": ["GPU", "CPU", "RAM", "Storage", "PSU", "Motherboard", "Case", "Cooler"],
+  "categories": {
+    "GPU": {
+      "target_min": 120,
+      "target_max": 250,
+      "safe_stage_batch_size": 50,
+      "safe_commit_batch_size": 50,
+      "required_specs": ["vram_gb", "tdp_w", "length_mm", "pcie_generation"],
+      "families": [
+        "RTX 4060",
+        "RTX 4060 Ti",
+        "RTX 4070",
+        "RTX 4070 Super",
+        "RTX 4070 Ti",
+        "RTX 4070 Ti Super",
+        "RTX 4080",
+        "RTX 4080 Super",
+        "RTX 4090",
+        "RTX 3060",
+        "RTX 3060 Ti",
+        "RTX 3070",
+        "RTX 3070 Ti",
+        "RTX 3080",
+        "RTX 3090",
+        "RX 7600",
+        "RX 7700 XT",
+        "RX 7800 XT",
+        "RX 7900 GRE",
+        "RX 7900 XT",
+        "RX 7900 XTX",
+        "RX 6600",
+        "RX 6700 XT",
+        "RX 6800 XT",
+        "RX 6900 XT",
+        "RX 6950 XT"
+      ]
+    },
+    "CPU": {
+      "target_min": 80,
+      "target_max": 150,
+      "safe_stage_batch_size": 25,
+      "safe_commit_batch_size": 25,
+      "required_specs": ["socket", "cores", "threads", "tdp_w"],
+      "families": [
+        "Ryzen 5 7500F",
+        "Ryzen 5 7600",
+        "Ryzen 5 7600X",
+        "Ryzen 7 7700",
+        "Ryzen 7 7700X",
+        "Ryzen 7 7800X3D",
+        "Ryzen 9 7900",
+        "Ryzen 9 7900X",
+        "Ryzen 9 7950X",
+        "Ryzen 7 9800X3D",
+        "Ryzen 5 5600",
+        "Ryzen 5 5600X",
+        "Ryzen 7 5700X",
+        "Ryzen 7 5800X3D",
+        "Ryzen 9 5900X",
+        "Ryzen 9 5950X",
+        "Core i5-12400F",
+        "Core i5-12600K",
+        "Core i7-12700K",
+        "Core i5-13400F",
+        "Core i5-13600K",
+        "Core i7-13700K",
+        "Core i5-14600K",
+        "Core i7-14700K",
+        "Core i9-14900K"
+      ]
+    },
+    "RAM": {
+      "target_min": 80,
+      "target_max": 150,
+      "safe_stage_batch_size": 50,
+      "safe_commit_batch_size": 50,
+      "required_specs": ["memory_type", "capacity_gb", "speed_mhz", "kit_config"],
+      "families": ["DDR5 5600", "DDR5 6000", "DDR5 6400", "DDR5 7200"]
+    },
+    "Storage": {
+      "target_min": 80,
+      "target_max": 150,
+      "safe_stage_batch_size": 50,
+      "safe_commit_batch_size": 50,
+      "required_specs": ["capacity_gb", "interface", "protocol", "form_factor"],
+      "families": ["SN850X", "990 Pro", "980 Pro", "KC3000", "P5 Plus", "NM790", "T500"]
+    },
+    "PSU": {
+      "target_min": 80,
+      "target_max": 150,
+      "safe_stage_batch_size": 25,
+      "safe_commit_batch_size": 25,
+      "required_specs": ["wattage_w", "efficiency_rating", "modularity"],
+      "families": ["650W Gold", "750W Gold", "850W Gold", "1000W Gold", "1200W Platinum"]
+    },
+    "Motherboard": {
+      "target_min": 120,
+      "target_max": 250,
+      "safe_stage_batch_size": 20,
+      "safe_commit_batch_size": 20,
+      "required_specs": ["socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"],
+      "families": ["B650", "B650E", "X670", "X670E", "B760", "Z790"]
+    },
+    "Case": {
+      "target_min": 80,
+      "target_max": 150,
+      "safe_stage_batch_size": 20,
+      "safe_commit_batch_size": 20,
+      "required_specs": ["supported_motherboard_form_factors", "max_gpu_length_mm", "max_cpu_cooler_height_mm"],
+      "families": ["Lian Li", "NZXT", "Corsair", "Fractal", "Montech", "DeepCool"]
+    },
+    "Cooler": {
+      "target_min": 50,
+      "target_max": 120,
+      "safe_stage_batch_size": 20,
+      "safe_commit_batch_size": 20,
+      "required_specs": ["socket_support", "radiator_size_mm", "height_mm"],
+      "families": ["240mm AIO", "360mm AIO", "AM5 Air Cooler", "DeepCool", "Thermalright", "Arctic", "Noctua"]
+    }
+  }
+}

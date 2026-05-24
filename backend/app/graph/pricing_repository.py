@@ -25,6 +25,9 @@ from app.models.catalog import (
     CanonicalStagedSummaryResponse,
     CatalogCategoryCoverage,
     CatalogCoverageResponse,
+    CatalogExpansionCategorySummary,
+    CatalogExpansionTargetFamily,
+    CatalogExpansionTargetsResponse,
     CatalogFeedImportResponse,
     CatalogFeedImportRow,
     CatalogFeedRunView,
@@ -62,6 +65,14 @@ from app.services.hardware_taxonomy import GLOBAL_HARDWARE_CATEGORIES
 from app.services.pricing_classification import infer_listing_market
 from app.services.pricing_normalization import cpu_model_key_from_title
 from app.services.import_adapters.pc_part_dataset_adapter import load_pc_part_dataset_records
+from app.services.catalog_expansion import (
+    CATALOG_PRODUCT_STATES,
+    annotate_expansion_target,
+    expansion_state,
+    load_expansion_manifest,
+    manifest_categories,
+    match_expansion_target,
+)
 from app.services.region_config import get_region_config, normalize_region, vendor_region_type, vendor_trust_profile
 
 
@@ -96,14 +107,14 @@ APPROVED_CANONICAL_IMPORT_SOURCES = {
     ("Community repositories", "community_repository"),
 }
 CONFIRMED_SPEC_REQUIRED_FIELDS = {
-    "CPU": ("socket", "cores", "threads"),
-    "GPU": ("vram_gb",),
-    "Motherboard": ("socket", "memory_type", "form_factor"),
-    "RAM": ("memory_type", "capacity_gb"),
-    "Storage": ("capacity_gb", "interface"),
-    "PSU": ("wattage_w",),
-    "Case": ("supported_motherboard_form_factors",),
-    "Cooler": ("cooler_type",),
+    "CPU": ("socket", "cores", "threads", "tdp_w"),
+    "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation"),
+    "Motherboard": ("socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"),
+    "RAM": ("memory_type", "capacity_gb", "speed_mhz", "kit_config"),
+    "Storage": ("capacity_gb", "interface", "protocol", "form_factor"),
+    "PSU": ("wattage_w", "efficiency_rating", "modularity"),
+    "Case": ("supported_motherboard_form_factors", "max_gpu_length_mm", "max_cpu_cooler_height_mm"),
+    "Cooler": ("socket_support", "radiator_size_mm", "height_mm"),
 }
 CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
 SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
@@ -599,6 +610,13 @@ def _to_datetime(value: Any) -> datetime | None:
 
 def _optional_float(value: Any) -> float | None:
     return float(value) if value is not None else None
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _clamp_score(value: float) -> float:
@@ -1154,14 +1172,14 @@ def _catalog_product_properties(row: CatalogFeedImportRow, category: str, source
 
 def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
     required = {
-        "CPU": ("spec_socket", "spec_cores", "spec_threads"),
-        "Motherboard": ("spec_socket", "spec_memory_type", "spec_form_factor"),
-        "RAM": ("spec_memory_type", "spec_capacity_gb"),
-        "Storage": ("spec_capacity_gb", "spec_interface"),
-        "PSU": ("spec_wattage_w", "spec_efficiency_rating"),
-        "Case": ("spec_supported_motherboard_form_factors",),
-        "Cooler": ("spec_cooler_type",),
-        "GPU": (),
+        "CPU": ("spec_socket", "spec_cores", "spec_threads", "spec_tdp_w"),
+        "Motherboard": ("spec_socket", "spec_memory_type", "spec_form_factor", "spec_m2_slots", "spec_pcie_x16_slots"),
+        "RAM": ("spec_memory_type", "spec_capacity_gb", "spec_speed_mhz", "spec_kit_config"),
+        "Storage": ("spec_capacity_gb", "spec_interface", "spec_protocol", "spec_form_factor"),
+        "PSU": ("spec_wattage_w", "spec_efficiency_rating", "spec_modularity"),
+        "Case": ("spec_supported_motherboard_form_factors", "spec_max_gpu_length_mm", "spec_max_cpu_cooler_height_mm"),
+        "Cooler": ("spec_socket_support", "spec_radiator_size_mm", "spec_height_mm"),
+        "GPU": ("spec_vram_gb", "spec_tdp_w", "spec_length_mm", "spec_pcie_generation"),
     }.get(category, ())
     return all(props.get(key) not in (None, "", []) for key in required)
 
@@ -1372,6 +1390,131 @@ def _coverage_next_action(category: str, priced_count: int, missing_specs: int, 
     if stale_count:
         return f"Refresh approved known URLs for {category} to reduce stale prices."
     return "Keep normal price refresh monitoring."
+
+
+def _initial_expansion_family_stats(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    stats: dict[str, dict[str, Any]] = {}
+    for category, config in dict(manifest.get("categories") or {}).items():
+        for priority, family_name in enumerate(config.get("families") or [], start=1):
+            key = f"{category}|{str(family_name).upper().replace('-', ' ').replace(' ', '_')}"
+            stats[key] = {
+                "category": category,
+                "family_key": key,
+                "family_name": str(family_name),
+                "priority": priority,
+                "required_specs": tuple(str(item) for item in config.get("required_specs") or []),
+                "canonical_count": 0,
+                "compatibility_ready_count": 0,
+                "saudi_priced_count": 0,
+                "trusted_vendor_count": 0,
+                "staged_count": 0,
+                "metadata_only_count": 0,
+                "conflict_count": 0,
+                "missing_required_specs": set(),
+            }
+    return stats
+
+
+def _initial_expansion_category_stats(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    family_stats = _initial_expansion_family_stats(manifest)
+    stats: dict[str, dict[str, Any]] = {}
+    for category, config in dict(manifest.get("categories") or {}).items():
+        stats[category] = {
+            "target_min": int(config.get("target_min") or 0),
+            "target_max": int(config.get("target_max") or 0),
+            "safe_stage_batch_size": int(config.get("safe_stage_batch_size") or 100),
+            "safe_commit_batch_size": int(config.get("safe_commit_batch_size") or 100),
+            "canonical_count": 0,
+            "compatibility_ready_count": 0,
+            "saudi_priced_count": 0,
+            "trusted_vendor_count": 0,
+            "staged_count": 0,
+            "metadata_only_count": 0,
+            "conflict_count": 0,
+            "missing_required_specs": set(),
+            "family_keys": [key for key, value in family_stats.items() if value["category"] == category],
+        }
+    return stats
+
+
+def _target_key_for_props(props: dict[str, Any], category: str) -> str | None:
+    existing = str(props.get("target_family_key") or "").strip()
+    if existing:
+        return existing
+    record = _record_from_product_props(props, category)
+    match = match_expansion_target(record, category)
+    return match.family_key if match else None
+
+
+def _record_from_product_props(props: dict[str, Any], category: str) -> dict[str, Any]:
+    specs = {
+        key.removeprefix("spec_"): value
+        for key, value in props.items()
+        if str(key).startswith("spec_") and value not in (None, "", [])
+    }
+    return {
+        "category": category,
+        "raw_name": props.get("name"),
+        "name": props.get("name"),
+        "normalized_name": props.get("normalized_name"),
+        "canonical_key": props.get("canonical_key"),
+        "brand": props.get("brand"),
+        "model": props.get("model"),
+        "specs": specs,
+    }
+
+
+def _product_category_from_props(props: dict[str, Any], labels: Any, categories: list[str]) -> str | None:
+    category = str(props.get("category") or "")
+    if category in categories:
+        return category
+    label_set = {str(label) for label in labels or []}
+    for candidate in categories:
+        if candidate in label_set:
+            return candidate
+    return None
+
+
+def _product_missing_required_specs(props: dict[str, Any], required_specs: tuple[str, ...]) -> list[str]:
+    missing = []
+    for field in required_specs:
+        if props.get(f"spec_{field}") in (None, "", []):
+            missing.append(field)
+    return missing
+
+
+def _expansion_next_action(
+    *,
+    canonical_count: int,
+    staged_count: int,
+    compatibility_ready_count: int,
+    saudi_priced_count: int,
+    conflict_count: int,
+    missing_required_specs: list[str],
+    family_name: str,
+) -> str:
+    if conflict_count:
+        return f"Review founder conflicts for {family_name} before merging."
+    if canonical_count == 0 and staged_count == 0:
+        return f"Stage curated metadata for {family_name}."
+    if compatibility_ready_count == 0:
+        fields = ", ".join(missing_required_specs[:4]) if missing_required_specs else "confirmed compatibility specs"
+        return f"Attach confirmed evidence for {fields}."
+    if saudi_priced_count == 0:
+        return f"Preview exact Saudi product URLs for {family_name}."
+    return "Keep price refresh monitoring and add second-vendor coverage when available."
+
+
+def _expansion_category_next_action(category: str, stats: dict[str, Any]) -> str:
+    if int(stats["conflict_count"]):
+        return f"Resolve {category} founder review conflicts before larger imports."
+    if int(stats["canonical_count"]) < max(1, int(stats["target_min"]) // 4):
+        return f"Run small curated {category} staging batches from the target manifest."
+    if int(stats["compatibility_ready_count"]) < int(stats["canonical_count"]):
+        return f"Attach confirmed compatibility evidence to metadata-only {category} products."
+    if int(stats["saudi_priced_count"]) < int(stats["compatibility_ready_count"]):
+        return f"Add approved Saudi product URLs for the ready {category} families."
+    return f"{category} is on track; expand the next priority category."
 
 
 def _search_sort_key(product: ProductSearchResult) -> tuple[int, float, float, str]:
@@ -2689,8 +2832,11 @@ class Neo4jPricingRepository:
             record["source_name"] = request.source_name
             record["source_type"] = request.source_type
             record["stage_run_id"] = run_id
+            target_match = annotate_expansion_target(record, request.category)
             categories.add(str(record.get("category") or request.category))
             reasons = self._stage_record_rejection_reasons(record, request)
+            if request.category in manifest_categories() and target_match is None:
+                reasons.append("outside curated phase2 target manifest")
             warnings = self._stage_record_warning_reasons(record, request)
             canonical_key = str(record.get("canonical_key") or "")
             duplicates = []
@@ -2859,6 +3005,10 @@ class Neo4jPricingRepository:
                         "spec_source_type": request.source_type,
                         "spec_license_note": staged.get("license_note"),
                         "identity_confidence": staged.get("identity_confidence"),
+                        "expansion_phase": staged.get("expansion_phase"),
+                        "target_family_key": staged.get("target_family_key"),
+                        "target_family_name": staged.get("target_family_name"),
+                        "expansion_priority": staged.get("expansion_priority"),
                     }
                 )
             )
@@ -3582,6 +3732,9 @@ class Neo4jPricingRepository:
                     duplicate_candidates=duplicates,
                     rejected_reasons=rejected,
                     warning_reasons=warnings,
+                    target_family_key=record.get("target_family_key"),
+                    target_family_name=record.get("target_family_name"),
+                    expansion_priority=_optional_int(record.get("expansion_priority")),
                     commit_eligible=commit_eligible,
                     next_action=_hybrid_review_next_action(classification, missing, conflicts, market_linked),
                 )
@@ -3623,6 +3776,179 @@ class Neo4jPricingRepository:
             category=category,
             deleted_count=deleted,
             status="cleared",
+        )
+
+    def catalog_expansion_targets(self, *, region: str = "SA") -> CatalogExpansionTargetsResponse:
+        region = normalize_region(region)
+        manifest = load_expansion_manifest()
+        categories_config = dict(manifest.get("categories") or {})
+        category_order = [str(item) for item in manifest.get("category_order") or categories_config.keys()]
+        family_stats = _initial_expansion_family_stats(manifest)
+        category_stats = _initial_expansion_category_stats(manifest)
+        categories = list(categories_config.keys())
+
+        product_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product:CanonicalProduct)
+            WHERE p.category IN $categories OR any(label IN labels(p) WHERE label IN $categories)
+            OPTIONAL MATCH (p)-[:HAS_PRICE]->(price:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+            WHERE price.region = $region
+              AND price.currency = "SAR"
+              AND coalesce(price.accepted, true) = true
+            RETURN properties(p) AS product,
+                   labels(p) AS labels,
+                   count(DISTINCT price) AS price_count,
+                   count(DISTINCT CASE
+                     WHEN price IS NOT NULL AND coalesce(price.marketplace_risk_score, 0.5) < 0.45 THEN vendor
+                     ELSE null
+                   END) AS trusted_vendor_count
+            """,
+            categories=categories,
+            region=region,
+            database_=settings.neo4j_database,
+        )
+        for row in product_records:
+            data = row.data()
+            props = dict(data.get("product") or {})
+            category = _product_category_from_props(props, data.get("labels"), categories)
+            if not category:
+                continue
+            target_key = _target_key_for_props(props, category)
+            if not target_key or target_key not in family_stats:
+                continue
+            stats = family_stats[target_key]
+            cat = category_stats[category]
+            price_count = int(data.get("price_count") or 0)
+            trusted_count = int(data.get("trusted_vendor_count") or 0)
+            missing_specs = _product_missing_required_specs(props, tuple(stats["required_specs"]))
+            compatibility_ready = bool(props.get("compatibility_ready")) or not missing_specs
+            stats["canonical_count"] += 1
+            stats["compatibility_ready_count"] += 1 if compatibility_ready else 0
+            stats["saudi_priced_count"] += 1 if price_count > 0 else 0
+            stats["trusted_vendor_count"] += trusted_count
+            stats["missing_required_specs"].update(missing_specs)
+            cat["canonical_count"] += 1
+            cat["compatibility_ready_count"] += 1 if compatibility_ready else 0
+            cat["saudi_priced_count"] += 1 if price_count > 0 else 0
+            cat["trusted_vendor_count"] += trusted_count
+            cat["missing_required_specs"].update(missing_specs)
+
+        staged_records, _, _ = self.driver.execute_query(
+            """
+            MATCH (record:StagedCanonicalRecord)
+            WHERE record.category IN $categories
+              AND coalesce(record.import_status, "pending") <> "imported"
+            RETURN properties(record) AS record
+            """,
+            categories=categories,
+            database_=settings.neo4j_database,
+        )
+        for row in staged_records:
+            record = dict(row.data().get("record") or {})
+            category = str(record.get("category") or "")
+            target_key = str(record.get("target_family_key") or "")
+            if (not target_key or target_key not in family_stats) and category:
+                match = match_expansion_target(record, category)
+                target_key = match.family_key if match else ""
+            if not target_key or target_key not in family_stats:
+                continue
+            stats = family_stats[target_key]
+            cat = category_stats[str(stats["category"])]
+            conflicts = bool(_staged_string_list(record.get("conflict_candidates")))
+            metadata_only = not bool(record.get("compatibility_ready")) and not conflicts
+            missing = _staged_string_list(record.get("missing_compatibility_fields"))
+            stats["staged_count"] += 1
+            stats["conflict_count"] += 1 if conflicts else 0
+            stats["metadata_only_count"] += 1 if metadata_only else 0
+            stats["missing_required_specs"].update(missing)
+            cat["staged_count"] += 1
+            cat["conflict_count"] += 1 if conflicts else 0
+            cat["metadata_only_count"] += 1 if metadata_only else 0
+            cat["missing_required_specs"].update(missing)
+
+        category_views: list[CatalogExpansionCategorySummary] = []
+        for order, category in enumerate(category_order, start=1):
+            if category not in category_stats:
+                continue
+            cat = category_stats[category]
+            family_views: list[CatalogExpansionTargetFamily] = []
+            for key in cat["family_keys"]:
+                stats = family_stats[key]
+                state = expansion_state(
+                    compatibility_ready=bool(stats["compatibility_ready_count"]),
+                    metadata_only_count=int(stats["metadata_only_count"]),
+                    conflict_count=int(stats["conflict_count"]),
+                )
+                missing = sorted(stats["missing_required_specs"])
+                family_views.append(
+                    CatalogExpansionTargetFamily(
+                        category=category,
+                        family_key=key,
+                        family_name=str(stats["family_name"]),
+                        priority=int(stats["priority"]),
+                        target_min=int(cat["target_min"]),
+                        target_max=int(cat["target_max"]),
+                        canonical_count=int(stats["canonical_count"]),
+                        compatibility_ready_count=int(stats["compatibility_ready_count"]),
+                        saudi_priced_count=int(stats["saudi_priced_count"]),
+                        trusted_vendor_count=int(stats["trusted_vendor_count"]),
+                        staged_count=int(stats["staged_count"]),
+                        metadata_only_count=int(stats["metadata_only_count"]),
+                        conflict_count=int(stats["conflict_count"]),
+                        missing_required_specs=missing,
+                        readiness_state=state,
+                        next_action=_expansion_next_action(
+                            canonical_count=int(stats["canonical_count"]),
+                            staged_count=int(stats["staged_count"]),
+                            compatibility_ready_count=int(stats["compatibility_ready_count"]),
+                            saudi_priced_count=int(stats["saudi_priced_count"]),
+                            conflict_count=int(stats["conflict_count"]),
+                            missing_required_specs=missing,
+                            family_name=str(stats["family_name"]),
+                        ),
+                    )
+                )
+            category_state = expansion_state(
+                compatibility_ready=bool(cat["compatibility_ready_count"]),
+                metadata_only_count=int(cat["metadata_only_count"]),
+                conflict_count=int(cat["conflict_count"]),
+            )
+            category_views.append(
+                CatalogExpansionCategorySummary(
+                    category=category,
+                    priority_order=order,
+                    target_min=int(cat["target_min"]),
+                    target_max=int(cat["target_max"]),
+                    safe_stage_batch_size=int(cat["safe_stage_batch_size"]),
+                    safe_commit_batch_size=int(cat["safe_commit_batch_size"]),
+                    canonical_count=int(cat["canonical_count"]),
+                    compatibility_ready_count=int(cat["compatibility_ready_count"]),
+                    saudi_priced_count=int(cat["saudi_priced_count"]),
+                    trusted_vendor_count=int(cat["trusted_vendor_count"]),
+                    staged_count=int(cat["staged_count"]),
+                    metadata_only_count=int(cat["metadata_only_count"]),
+                    conflict_count=int(cat["conflict_count"]),
+                    missing_required_specs=sorted(cat["missing_required_specs"]),
+                    readiness_state=category_state,
+                    next_action=_expansion_category_next_action(category, cat),
+                    families=family_views,
+                )
+            )
+
+        milestone = dict(manifest.get("milestone") or {})
+        return CatalogExpansionTargetsResponse(
+            region=region,
+            phase=str(manifest.get("phase") or "phase2_saudi_core"),
+            first_milestone_min=int(milestone.get("first_min") or 500),
+            first_milestone_max=int(milestone.get("first_max") or 700),
+            final_milestone_min=int(milestone.get("final_min") or 500),
+            final_milestone_max=int(milestone.get("final_max") or 2000),
+            total_canonical_count=sum(item.canonical_count for item in category_views),
+            total_compatibility_ready_count=sum(item.compatibility_ready_count for item in category_views),
+            total_saudi_priced_count=sum(item.saudi_priced_count for item in category_views),
+            total_trusted_vendor_count=sum(item.trusted_vendor_count for item in category_views),
+            product_states=list(CATALOG_PRODUCT_STATES),
+            categories=category_views,
         )
 
     def _upsert_product_family(self, product_id: str, category: str, specs: dict[str, Any], canonical_key: str) -> None:
