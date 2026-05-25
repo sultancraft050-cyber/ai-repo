@@ -72,14 +72,20 @@ def match_expansion_target(record: dict[str, Any], category: str) -> ExpansionTa
     haystack = _record_haystack(record)
     families = _family_entries(category_config)
     required_specs = tuple(str(item) for item in category_config.get("required_specs", []))
-    family_entries = sorted(
-        families,
-        key=lambda item: len(_normalize_text(item["name"])),
-        reverse=True,
-    )
+    if category == "RAM":
+        family_entries = sorted(
+            families,
+            key=lambda item: (_ram_profile_penalty(str(item["name"]), haystack), -len(_normalize_text(item["name"]))),
+        )
+    else:
+        family_entries = sorted(
+            families,
+            key=lambda item: len(_normalize_text(item["name"])),
+            reverse=True,
+        )
     for family_entry in family_entries:
         family = str(family_entry["name"])
-        if _family_matches(category, family, haystack):
+        if _family_matches(category, family, haystack, record):
             return ExpansionTargetMatch(
                 phase=str(manifest.get("phase") or EXPANSION_PHASE),
                 category=category,
@@ -170,9 +176,19 @@ def _family_priority(family_entry: dict[str, Any]) -> int:
     return PRIORITY_TIER_WEIGHTS.get(tier, 0) + rank
 
 
-def _family_matches(category: str, family: str, haystack: str) -> bool:
+def _ram_profile_penalty(family: str, haystack: str) -> int:
     family_norm = _normalize_text(family)
-    if category in {"RAM", "Storage", "Case"}:
+    profile_tokens = {token for token in ("EXPO", "XMP") if token in family_norm}
+    if not profile_tokens:
+        return 0
+    return 0 if any(token in haystack for token in profile_tokens) else 1
+
+
+def _family_matches(category: str, family: str, haystack: str, record: dict[str, Any]) -> bool:
+    family_norm = _normalize_text(family)
+    if category == "RAM":
+        return _ram_family_matches(family_norm, _record_specs(record), haystack)
+    if category in {"Storage", "Case"}:
         parts = family_norm.split()
         return all(part in haystack for part in parts)
     if category == "PSU":
@@ -211,6 +227,62 @@ def _family_matches(category: str, family: str, haystack: str) -> bool:
         parts = family_norm.split()
         return all(part in haystack for part in parts)
     return family_norm in haystack
+
+
+def _record_specs(record: dict[str, Any]) -> dict[str, Any]:
+    specs = record.get("specs")
+    if isinstance(specs, str):
+        try:
+            decoded = json.loads(specs)
+        except json.JSONDecodeError:
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+    return specs if isinstance(specs, dict) else {}
+
+
+def _ram_family_matches(family_norm: str, specs: dict[str, Any], haystack: str) -> bool:
+    if not any(specs.get(field) not in (None, "", []) for field in ("memory_type", "capacity_gb", "speed_mhz", "kit_config")):
+        parts = family_norm.split()
+        return all(part in haystack for part in parts)
+
+    required_memory = re.search(r"\bDDR([45])\b", family_norm)
+    required_speed = next(
+        (int(match.group(1)) for match in re.finditer(r"\b(\d{4})\b", family_norm) if 2133 <= int(match.group(1)) <= 9000),
+        None,
+    )
+    required_kit = re.search(r"\b(\d+)X(\d+)\s*GB\b", family_norm)
+    required_capacity = None
+    if required_kit:
+        required_capacity = int(required_kit.group(1)) * int(required_kit.group(2))
+    else:
+        capacity_match = re.search(r"\b(\d+)\s*GB\b", family_norm)
+        required_capacity = int(capacity_match.group(1)) if capacity_match else None
+
+    memory_type = str(specs.get("memory_type") or "").upper().replace(" ", "")
+    try:
+        capacity_gb = int(specs.get("capacity_gb") or 0)
+    except (TypeError, ValueError):
+        capacity_gb = 0
+    try:
+        speed_mhz = int(specs.get("speed_mhz") or 0)
+    except (TypeError, ValueError):
+        speed_mhz = 0
+    kit_config = _normalize_text(str(specs.get("kit_config") or ""))
+
+    if required_memory and memory_type != f"DDR{required_memory.group(1)}":
+        return False
+    if required_capacity and capacity_gb != required_capacity:
+        return False
+    if required_speed and speed_mhz != required_speed:
+        return False
+    if required_kit:
+        expected_kit = _normalize_text(f"{required_kit.group(1)}x{required_kit.group(2)}GB")
+        if kit_config != expected_kit:
+            return False
+
+    # EXPO/XMP labels are useful as a preference signal but are not required
+    # because pc-part-dataset usually omits those marketing/profile tags.
+    return True
 
 
 def _missing_required_specs(record: dict[str, Any], required_specs: tuple[str, ...]) -> list[str]:

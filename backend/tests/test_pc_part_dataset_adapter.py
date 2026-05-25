@@ -14,6 +14,7 @@ from app.models.catalog import (
     MarketEvidenceLinkRequest,
 )
 from app.services.import_adapters.pc_part_dataset_adapter import adapt_pc_part_dataset_record
+from app.services.catalog_expansion import annotate_expansion_target
 from scripts.prepare_datasets import prepare_pc_part_dataset
 
 
@@ -293,6 +294,45 @@ def test_ram_pc_part_dataset_speed_and_modules_lists_parse_structured_values() -
     assert record["specs"]["kit_config"] == "2x16GB"
     assert record["compatibility_ready"] is True
     assert not record["inferred_fields"]
+
+
+def test_ram_rejects_unrealistic_structured_speed_and_module_ranges() -> None:
+    record = adapt_pc_part_dataset_record(
+        {"name": "Unrealistic Memory Kit", "speed": [3, 1600], "modules": [3, 12]},
+        "RAM",
+    )
+
+    assert "memory_type" not in record["specs"]
+    assert "speed_mhz" not in record["specs"]
+    assert "capacity_gb" not in record["specs"]
+    assert "kit_config" not in record["specs"]
+    assert record["compatibility_ready"] is False
+
+
+def test_ram_target_matching_uses_parsed_specs_not_name_labels() -> None:
+    record = adapt_pc_part_dataset_record(
+        {"name": "Corsair Vengeance RGB 32 GB", "speed": [5, 6000], "modules": [2, 16], "cas_latency": 36},
+        "RAM",
+    )
+
+    match = annotate_expansion_target(record, "RAM")
+
+    assert match is not None
+    assert match.family_name == "DDR5 2x16GB 6000"
+    assert match.priority_tier == "current_gen_priority"
+    assert record["compatibility_ready"] is True
+    assert record["missing_compatibility_fields"] == []
+
+
+def test_ram_target_matching_does_not_match_64gb_kit_to_32gb_target() -> None:
+    record = adapt_pc_part_dataset_record(
+        {"name": "G.Skill Trident Z5 RGB 64 GB", "speed": [5, 6400], "modules": [2, 32]},
+        "RAM",
+    )
+
+    match = annotate_expansion_target(record, "RAM")
+
+    assert match is None
 
 
 def test_gpu_requires_confirmed_power_length_and_pcie_for_compatibility_ready() -> None:

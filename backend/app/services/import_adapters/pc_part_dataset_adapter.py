@@ -314,9 +314,9 @@ def _inference(field: str, value: Any, method: str, confidence: float) -> dict[s
 def _memory_type_from_speed(speed_mhz: int | None) -> str | None:
     if speed_mhz is None:
         return None
-    if speed_mhz >= 4800:
+    if 4800 <= speed_mhz <= 9000:
         return "DDR5"
-    if speed_mhz >= 1600:
+    if 2133 <= speed_mhz < 4800:
         return "DDR4"
     return None
 
@@ -324,8 +324,11 @@ def _memory_type_from_speed(speed_mhz: int | None) -> str | None:
 def _parse_memory_speed(speed_values: list[Any]) -> tuple[str | None, int | None, bool]:
     values = [_as_int(item) for item in speed_values]
     values = [item for item in values if item]
-    if len(values) >= 2 and values[0] in {3, 4, 5} and values[1] >= 400:
-        return f"DDR{values[0]}", values[1], False
+    if len(values) >= 2:
+        generation, speed_mhz = values[0], values[1]
+        if generation in {4, 5} and 2133 <= speed_mhz <= 9000:
+            return f"DDR{generation}", speed_mhz, False
+        return None, None, False
     speed_mhz = values[0] if values else None
     return _memory_type_from_speed(speed_mhz), speed_mhz, bool(speed_mhz)
 
@@ -350,15 +353,23 @@ def _parse_modules(modules: list[Any]) -> tuple[int | None, str | None]:
     if match:
         count = int(match.group(1))
         size = int(match.group(2))
-        return count * size, f"{count}x{size}GB"
+        if _valid_memory_module_pair(count, size):
+            return count * size, f"{count}x{size}GB"
+        return None, None
     values = [_as_int(item) for item in modules]
     values = [item for item in values if item]
-    if len(values) >= 2 and values[0] <= 16 and values[1] >= 1:
+    if len(values) >= 2:
         count, size = values[0], values[1]
-        return count * size, f"{count}x{size}GB"
+        if _valid_memory_module_pair(count, size):
+            return count * size, f"{count}x{size}GB"
+        return None, None
     if values:
         return sum(values), f"{len(values)}x{values[0]}GB" if len(set(values)) == 1 else None
     return None, None
+
+
+def _valid_memory_module_pair(count: int, size_gb: int) -> bool:
+    return count in {1, 2, 4, 8} and size_gb in {4, 8, 16, 24, 32, 48, 64}
 
 
 def _capacity_to_gb(value: Any) -> int | None:
