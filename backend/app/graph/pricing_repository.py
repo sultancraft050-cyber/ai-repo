@@ -5460,7 +5460,9 @@ class Neo4jPricingRepository:
     def _staged_record_by_canonical_key(self, canonical_key: str) -> dict[str, Any] | None:
         records, _, _ = self.driver.execute_query(
             """
-            MATCH (record:StagedCanonicalRecord {canonical_key: $canonical_key})
+            MATCH (record:StagedCanonicalRecord)
+            WHERE record.canonical_key = $canonical_key
+               OR toUpper(record.canonical_key) = toUpper($canonical_key)
             RETURN properties(record) AS record
             LIMIT 1
             """,
