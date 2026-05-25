@@ -2200,6 +2200,31 @@ def _spec_audit_evidence_summary(evidence_by_field: dict[str, list[dict[str, Any
     return summaries[:12]
 
 
+def _spec_audit_evidence_values_conflict(rows: list[dict[str, Any]]) -> bool:
+    normalized = {
+        _spec_audit_normalized(row.get("value"))
+        for row in rows
+        if not _spec_audit_missing(row.get("value"))
+    }
+    return len(normalized) > 1
+
+
+def _spec_audit_safe_fix_details(
+    evidence_by_field: dict[str, list[dict[str, Any]]],
+    safe_fix_fields: list[str],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    values: dict[str, Any] = {}
+    sources: dict[str, str] = {}
+    for field in safe_fix_fields:
+        rows = [row for row in evidence_by_field.get(field, []) if not _spec_audit_missing(row.get("value"))]
+        if not rows or _spec_audit_evidence_values_conflict(rows):
+            continue
+        row = rows[0]
+        values[field] = row.get("value")
+        sources[field] = str(row.get("source_name") or "trusted_mixed_spec_audit")
+    return values, sources
+
+
 def _spec_audit_status(
     *,
     category: str,
@@ -2218,6 +2243,9 @@ def _spec_audit_status(
         value = _spec_audit_value(specs, field)
         evidence_values = evidence_by_field.get(field, [])
         has_evidence = bool(evidence_values)
+        if _spec_audit_evidence_values_conflict(evidence_values):
+            conflicting_fields.append(field)
+            continue
         if field in inferred_fields:
             missing_fields.append(field)
             continue
@@ -5212,6 +5240,8 @@ class Neo4jPricingRepository:
         product_rows = self._spec_audit_product_rows(categories=categories, limit=request.limit)
         product_actions: list[SpecAuditProductAction] = []
         missing_by_category: dict[str, dict[str, int]] = {}
+        safe_fixes_applied_count = 0
+        conflict_reviews_created_count = 0
 
         for row in product_rows:
             product = dict(row.get("product") or {})
@@ -5236,6 +5266,26 @@ class Neo4jPricingRepository:
                     },
                 )
                 action = _spec_audit_fallback_action(product=product, category=category)
+            if request.mode == "apply_safe" and action.status == "safe_fix_available":
+                applied_fields = self._apply_spec_audit_safe_fixes(
+                    product=product,
+                    category=category,
+                    action=action,
+                )
+                if applied_fields:
+                    safe_fixes_applied_count += len(applied_fields)
+                    action = action.model_copy(
+                        update={
+                            "status": "verified_current",
+                            "missing_fields": [],
+                            "safe_fix_applied_fields": applied_fields,
+                            "safe_fix_fields": [],
+                            "next_action": f"Applied safe spec fix(es): {', '.join(applied_fields[:4])}.",
+                        }
+                    )
+            elif request.mode == "apply_safe" and action.status == "spec_conflict_requires_review":
+                if self._create_spec_audit_conflict_review(product=product, category=category, action=action):
+                    conflict_reviews_created_count += 1
             product_actions.append(action)
             if action.missing_fields:
                 bucket = missing_by_category.setdefault(category, {})
@@ -5258,6 +5308,8 @@ class Neo4jPricingRepository:
             conflict_count=sum(1 for action in product_actions if action.status == "spec_conflict_requires_review"),
             stale_or_deprioritized_count=sum(1 for action in product_actions if action.status == "stale_or_deprioritized"),
             safe_fixes_available_count=sum(1 for action in product_actions if action.status == "safe_fix_available"),
+            safe_fixes_applied_count=safe_fixes_applied_count,
+            conflict_reviews_created_count=conflict_reviews_created_count,
             per_category_missing_fields=[
                 SpecAuditCategoryMissingFields(
                     category=category,
@@ -5369,6 +5421,7 @@ class Neo4jPricingRepository:
             required_fields=required_fields,
             evidence_by_field=evidence_by_field,
         )
+        safe_fix_values, safe_fix_sources = _spec_audit_safe_fix_details(evidence_by_field, safe_fixes)
         return SpecAuditProductAction(
             product_id=str(product.get("id") or canonical_key or product.get("name") or "unknown"),
             canonical_key=str(canonical_key) if canonical_key else None,
@@ -5379,10 +5432,170 @@ class Neo4jPricingRepository:
             conflicting_fields=conflicts,
             inferred_fields=inferred,
             safe_fix_fields=safe_fixes,
+            safe_fix_values=safe_fix_values,
+            safe_fix_sources=safe_fix_sources,
             stale_reason=stale_reason,
             evidence_summary=_spec_audit_evidence_summary(evidence_by_field),
             next_action=_spec_audit_next_action(status, missing, conflicts, safe_fixes, stale_reason),
         )
+
+    def _apply_spec_audit_safe_fixes(
+        self,
+        *,
+        product: dict[str, Any],
+        category: str,
+        action: SpecAuditProductAction,
+    ) -> list[str]:
+        product_id = str(product.get("id") or "")
+        if not product_id or action.status != "safe_fix_available":
+            return []
+        fix_values = {
+            field: value
+            for field, value in action.safe_fix_values.items()
+            if field in action.safe_fix_fields and value not in (None, "", [])
+        }
+        if not fix_values:
+            return []
+
+        specs = _spec_audit_specs(product)
+        specs.update(fix_values)
+        if category == "GPU":
+            exact_ready = _gpu_exact_ready(specs)
+            family_ready = _gpu_family_ready(specs)
+            compatibility_ready = exact_ready
+            readiness_state = (
+                "compatibility_ready_exact"
+                if exact_ready
+                else "compatibility_ready_family"
+                if family_ready
+                else "metadata_only"
+            )
+        else:
+            exact_ready = _catalog_row_has_required_specs(category, specs)
+            family_ready = False
+            compatibility_ready = exact_ready
+            readiness_state = "compatibility_ready_exact" if exact_ready else "metadata_only"
+
+        properties = _clean_properties(
+            {
+                **{f"spec_{field}": value for field, value in fix_values.items()},
+                "compatibility_ready": compatibility_ready,
+                "compatibility_ready_exact": exact_ready,
+                "compatibility_ready_family": family_ready,
+                "readiness_state": readiness_state,
+                "spec_source_name": "spec_audit_trusted_mixed",
+                "spec_source_type": "trusted_mixed",
+                "spec_updated_at": datetime.now(UTC),
+            }
+        )
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            SET p += $properties,
+                p.updated_at = datetime()
+            RETURN p.id AS id
+            """,
+            product_id=product_id,
+            properties=properties,
+            database_=settings.neo4j_database,
+        )
+        self._apply_catalog_shape(
+            product_id=product_id,
+            category=category,
+            brand=str(product.get("brand") or "") or None,
+            specs=specs,
+        )
+        for field, value in fix_values.items():
+            self._attach_spec_audit_evidence(
+                product_id=product_id,
+                source_name=action.safe_fix_sources.get(field) or "trusted_mixed_spec_audit",
+                source_type="trusted_mixed",
+                field=field,
+                value=value,
+                trust_score=0.95,
+                approval_state="approved",
+                note="Spec audit safe fix applied from trusted evidence.",
+            )
+        return list(fix_values)
+
+    def _create_spec_audit_conflict_review(
+        self,
+        *,
+        product: dict[str, Any],
+        category: str,
+        action: SpecAuditProductAction,
+    ) -> bool:
+        product_id = str(product.get("id") or "")
+        if not product_id:
+            return False
+        self._attach_spec_audit_evidence(
+            product_id=product_id,
+            source_name="spec_audit_trusted_mixed",
+            source_type="trusted_mixed",
+            field="spec_audit_conflict",
+            value={
+                "category": category,
+                "canonical_key": action.canonical_key,
+                "conflicting_fields": action.conflicting_fields,
+                "name": action.name,
+            },
+            trust_score=0.5,
+            approval_state="pending_review",
+            note="Spec audit conflict requires founder review before any spec overwrite.",
+        )
+        return True
+
+    def _attach_spec_audit_evidence(
+        self,
+        *,
+        product_id: str,
+        source_name: str,
+        source_type: str,
+        field: str,
+        value: Any,
+        trust_score: float,
+        approval_state: str,
+        note: str,
+    ) -> tuple[str, str]:
+        evidence_id = f"evidence:{uuid4()}"
+        approval_id = f"approval:{evidence_id}"
+        self.driver.execute_query(
+            """
+            MATCH (p:Product {id: $product_id})
+            MERGE (source:CanonicalSource {name: $source_name})
+            SET source.source_type = $source_type,
+                source.updated_at = datetime()
+            CREATE (e:CanonicalEvidence)
+            SET e.id = $evidence_id,
+                e.source_name = $source_name,
+                e.source_type = $source_type,
+                e.evidence_type = "canonical_spec",
+                e.field = $field,
+                e.value_json = $value_json,
+                e.trust_score = $trust_score,
+                e.note = $note,
+                e.created_at = datetime()
+            MERGE (p)-[:HAS_CANONICAL_EVIDENCE]->(e)
+            MERGE (e)-[:FROM_SOURCE]->(source)
+            MERGE (approval:FounderApprovalState {id: $approval_id})
+            SET approval.status = $approval_state,
+                approval.source_name = $source_name,
+                approval.updated_at = datetime()
+            MERGE (e)-[:HAS_APPROVAL_STATE]->(approval)
+            """,
+            product_id=product_id,
+            source_name=source_name,
+            source_type=source_type,
+            evidence_id=evidence_id,
+            field=field,
+            value_json=json.dumps(value, sort_keys=True, default=str),
+            trust_score=min(max(trust_score, 0), 1),
+            note=note,
+            approval_id=approval_id,
+            approval_state=approval_state,
+            database_=settings.neo4j_database,
+        )
+        return evidence_id, approval_id
 
     def _persist_spec_audit_response(self, response: SpecAuditRunResponse) -> None:
         payload_json = response.model_dump_json()
@@ -5400,6 +5613,8 @@ class Neo4jPricingRepository:
                 run.conflict_count = $conflict_count,
                 run.stale_or_deprioritized_count = $stale_or_deprioritized_count,
                 run.safe_fixes_available_count = $safe_fixes_available_count,
+                run.safe_fixes_applied_count = $safe_fixes_applied_count,
+                run.conflict_reviews_created_count = $conflict_reviews_created_count,
                 run.price_snapshot_before = $price_snapshot_before,
                 run.price_snapshot_after = $price_snapshot_after,
                 run.regional_price_snapshot_before = $regional_price_snapshot_before,
@@ -5419,6 +5634,8 @@ class Neo4jPricingRepository:
             conflict_count=response.conflict_count,
             stale_or_deprioritized_count=response.stale_or_deprioritized_count,
             safe_fixes_available_count=response.safe_fixes_available_count,
+            safe_fixes_applied_count=response.safe_fixes_applied_count,
+            conflict_reviews_created_count=response.conflict_reviews_created_count,
             price_snapshot_before=response.price_snapshot_count.before,
             price_snapshot_after=response.price_snapshot_count.after,
             regional_price_snapshot_before=response.regional_price_snapshot_count.before,

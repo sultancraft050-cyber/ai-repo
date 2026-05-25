@@ -65,6 +65,16 @@ def _request(category: str = "CPU") -> SpecAuditRunRequest:
     )
 
 
+def _apply_request(category: str = "CPU") -> SpecAuditRunRequest:
+    return SpecAuditRunRequest(
+        region="SA",
+        categories=[category],
+        mode="apply_safe",
+        limit=50,
+        source_policy="trusted_mixed",
+    )
+
+
 def _evidence(field: str, value: Any, *, trust_score: float = 0.95) -> dict[str, Any]:
     return {
         "source_name": "trusted_fixture",
@@ -76,12 +86,12 @@ def _evidence(field: str, value: Any, *, trust_score: float = 0.95) -> dict[str,
     }
 
 
-def test_spec_audit_rejects_non_preview_mode() -> None:
+def test_spec_audit_rejects_unknown_mode() -> None:
     with pytest.raises(ValidationError):
         SpecAuditRunRequest(
             region="SA",
             categories=["CPU"],
-            mode="apply_safe",  # type: ignore[arg-type]
+            mode="delete_all",  # type: ignore[arg-type]
             limit=50,
             source_policy="trusted_mixed",
         )
@@ -126,6 +136,7 @@ def test_spec_audit_preview_writes_only_report_nodes_and_preserves_price_counts(
     assert all(len(str(call["item_id"])) <= 48 for call in item_calls)
     assert not any("CanonicalEvidence" in query and "SpecAudit" not in query for query in write_queries)
     assert not any("MERGE (p:Product:CanonicalProduct" in query for query in write_queries)
+    assert not any("SET p += $properties" in query for query in write_queries)
 
 
 def test_spec_audit_inferred_fields_do_not_count_as_confirmed() -> None:
@@ -234,6 +245,119 @@ def test_spec_audit_reports_conflicting_trusted_evidence_without_overwrite() -> 
     assert response.product_actions[0].status == "spec_conflict_requires_review"
     assert response.product_actions[0].conflicting_fields == ["cores"]
     assert not any("SET p." in query for query in driver.queries)
+    assert not any("spec_audit_conflict" in str(call) for call in driver.calls)
+
+
+def test_spec_audit_apply_safe_updates_missing_confirmed_fields_and_creates_evidence() -> None:
+    driver = SpecAuditDriver(
+        [
+            {
+                "category": "CPU",
+                "product": {
+                    "id": "cpu-apply",
+                    "canonical_key": "CPU|TEST|SAFE_FIX",
+                    "name": "Safe Fix CPU",
+                    "category": "CPU",
+                    "spec_cores": 8,
+                    "spec_threads": 16,
+                    "spec_tdp_w": 120,
+                },
+                "evidence": [
+                    _evidence("socket", "AM5"),
+                    _evidence("cores", 8),
+                    _evidence("threads", 16),
+                    _evidence("tdp_w", 120),
+                ],
+            }
+        ]
+    )
+
+    response = Neo4jPricingRepository(driver).run_spec_audit(_apply_request())
+
+    assert response.safe_fixes_applied_count == 1
+    assert response.safe_fixes_available_count == 0
+    assert response.verified_count == 1
+    assert response.product_actions[0].safe_fix_applied_fields == ["socket"]
+    assert response.price_snapshot_count.before == response.price_snapshot_count.after == 11
+    assert response.regional_price_snapshot_count.before == response.regional_price_snapshot_count.after == 7
+    product_update = next(call for call in driver.calls if "SET p += $properties" in call["query"])
+    assert product_update["properties"]["spec_socket"] == "AM5"
+    assert product_update["properties"]["compatibility_ready"] is True
+    evidence_calls = [call for call in driver.calls if call.get("field") == "socket"]
+    assert evidence_calls
+    assert evidence_calls[-1]["approval_state"] == "approved"
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
+def test_spec_audit_apply_safe_creates_founder_review_for_conflicts_without_overwrite() -> None:
+    driver = SpecAuditDriver(
+        [
+            {
+                "category": "CPU",
+                "product": {
+                    "id": "cpu-conflict",
+                    "canonical_key": "CPU|TEST|CONFLICT",
+                    "name": "Conflict CPU",
+                    "category": "CPU",
+                    "spec_socket": "AM5",
+                    "spec_cores": 8,
+                    "spec_threads": 16,
+                    "spec_tdp_w": 120,
+                },
+                "evidence": [
+                    _evidence("socket", "AM5"),
+                    _evidence("cores", 6),
+                    _evidence("threads", 16),
+                    _evidence("tdp_w", 120),
+                ],
+            }
+        ]
+    )
+
+    response = Neo4jPricingRepository(driver).run_spec_audit(_apply_request())
+
+    assert response.conflict_count == 1
+    assert response.conflict_reviews_created_count == 1
+    assert response.safe_fixes_applied_count == 0
+    assert response.product_actions[0].status == "spec_conflict_requires_review"
+    assert not any("SET p += $properties" in query for query in driver.queries)
+    review_calls = [call for call in driver.calls if call.get("field") == "spec_audit_conflict"]
+    assert review_calls
+    assert review_calls[-1]["approval_state"] == "pending_review"
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
+def test_spec_audit_conflicting_trusted_sources_are_not_safe_fixes() -> None:
+    driver = SpecAuditDriver(
+        [
+            {
+                "category": "CPU",
+                "product": {
+                    "id": "cpu-source-conflict",
+                    "canonical_key": "CPU|TEST|SOURCE_CONFLICT",
+                    "name": "Source Conflict CPU",
+                    "category": "CPU",
+                    "spec_cores": 8,
+                    "spec_threads": 16,
+                    "spec_tdp_w": 120,
+                },
+                "evidence": [
+                    _evidence("socket", "AM5"),
+                    _evidence("socket", "AM4"),
+                    _evidence("cores", 8),
+                    _evidence("threads", 16),
+                    _evidence("tdp_w", 120),
+                ],
+            }
+        ]
+    )
+
+    response = Neo4jPricingRepository(driver).run_spec_audit(_apply_request())
+
+    assert response.conflict_count == 1
+    assert response.safe_fixes_applied_count == 0
+    assert response.product_actions[0].conflicting_fields == ["socket"]
+    assert not any("SET p += $properties" in query for query in driver.queries)
 
 
 def test_spec_audit_reports_missing_trusted_evidence_for_unbacked_specs() -> None:

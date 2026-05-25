@@ -540,7 +540,7 @@ SpecAuditStatus = Literal[
     "spec_conflict_requires_review",
     "stale_or_deprioritized",
 ]
-SpecAuditMode = Literal["preview"]
+SpecAuditMode = Literal["preview", "apply_safe"]
 SpecAuditSourcePolicy = Literal["trusted_mixed"]
 
 
@@ -578,6 +578,9 @@ class SpecAuditProductAction(BaseModel):
     conflicting_fields: list[str] = Field(default_factory=list)
     inferred_fields: list[str] = Field(default_factory=list)
     safe_fix_fields: list[str] = Field(default_factory=list)
+    safe_fix_values: dict[str, Any] = Field(default_factory=dict)
+    safe_fix_sources: dict[str, str] = Field(default_factory=dict)
+    safe_fix_applied_fields: list[str] = Field(default_factory=list)
     stale_reason: str | None = None
     evidence_summary: list[SpecAuditEvidenceSummary] = Field(default_factory=list)
     next_action: str
@@ -607,6 +610,8 @@ class SpecAuditRunResponse(BaseModel):
     conflict_count: int
     stale_or_deprioritized_count: int
     safe_fixes_available_count: int
+    safe_fixes_applied_count: int = 0
+    conflict_reviews_created_count: int = 0
     per_category_missing_fields: list[SpecAuditCategoryMissingFields] = Field(default_factory=list)
     product_actions: list[SpecAuditProductAction] = Field(default_factory=list)
     price_snapshot_count: SpecAuditPriceCountSnapshot
