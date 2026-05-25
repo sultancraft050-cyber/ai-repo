@@ -32,6 +32,10 @@ from app.models.catalog import (
     HybridSourceView,
     MarketEvidenceLinkRequest,
     MarketEvidenceLinkResponse,
+    SpecAuditProductListResponse,
+    SpecAuditRunRequest,
+    SpecAuditRunResponse,
+    SpecAuditStatus,
 )
 from app.services.catalog_expansion import CATALOG_PRODUCT_STATES, load_expansion_manifest
 from app.services.saudi_build_generator import SaudiLocalBuildService
@@ -365,3 +369,31 @@ def link_market_evidence(
     repository: Neo4jPricingRepository = Depends(get_pricing_repository),
 ) -> MarketEvidenceLinkResponse:
     return repository.link_market_evidence(request_body)
+
+
+@router.post("/spec-audit/run", response_model=SpecAuditRunResponse)
+def run_spec_audit(
+    request_body: SpecAuditRunRequest,
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> SpecAuditRunResponse:
+    return repository.run_spec_audit(request_body)
+
+
+@router.get("/spec-audit/report", response_model=SpecAuditRunResponse)
+def spec_audit_report(
+    audit_id: str = Query(min_length=3, max_length=120),
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> SpecAuditRunResponse:
+    report = repository.spec_audit_report(audit_id)
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="spec audit report not found")
+    return report
+
+
+@router.get("/spec-audit/products", response_model=SpecAuditProductListResponse)
+def spec_audit_products(
+    status: SpecAuditStatus | None = Query(default=None),
+    category: str | None = Query(default=None, max_length=80),
+    repository: Neo4jPricingRepository = Depends(get_pricing_repository),
+) -> SpecAuditProductListResponse:
+    return repository.spec_audit_products(status=status, category=category)

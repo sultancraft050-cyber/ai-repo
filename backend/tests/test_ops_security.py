@@ -91,6 +91,9 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     canonical_hybrid_review = endpoint_rule("GET", "/catalog/import/hybrid-review")
     canonical_clear = endpoint_rule("DELETE", "/catalog/import/staged")
     canonical_import = endpoint_rule("POST", "/catalog/import/commit")
+    spec_audit_run = endpoint_rule("POST", "/catalog/spec-audit/run")
+    spec_audit_report = endpoint_rule("GET", "/catalog/spec-audit/report")
+    spec_audit_products = endpoint_rule("GET", "/catalog/spec-audit/products")
     capacity_report = endpoint_rule("GET", "/ops/neo4j-capacity-report")
     prune_preview = endpoint_rule("POST", "/ops/neo4j-prune-preview")
     prune_execute = endpoint_rule("POST", "/ops/neo4j-prune-execute")
@@ -114,6 +117,9 @@ def test_protected_endpoint_rules_classify_mutations() -> None:
     assert canonical_hybrid_review and canonical_hybrid_review.role == "analyst"
     assert canonical_clear and canonical_clear.role == "admin" and canonical_clear.risk_level == "level_1"
     assert canonical_import and canonical_import.role == "admin" and canonical_import.risk_level == "level_1"
+    assert spec_audit_run and spec_audit_run.role == "admin" and spec_audit_run.risk_level == "level_1"
+    assert spec_audit_report and spec_audit_report.role == "admin" and spec_audit_report.risk_level == "level_1"
+    assert spec_audit_products and spec_audit_products.role == "admin" and spec_audit_products.risk_level == "level_1"
     assert public is None
 
 

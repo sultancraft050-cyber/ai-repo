@@ -528,3 +528,90 @@ class MarketEvidenceLinkResponse(BaseModel):
     skipped_count: int
     price_mutation_count: int = 0
     items: list[MarketEvidenceLinkItem] = Field(default_factory=list)
+
+
+SpecAuditStatus = Literal[
+    "verified_current",
+    "safe_fix_available",
+    "missing_trusted_evidence",
+    "spec_conflict_requires_review",
+    "stale_or_deprioritized",
+]
+SpecAuditMode = Literal["preview"]
+SpecAuditSourcePolicy = Literal["trusted_mixed"]
+
+
+class SpecAuditRunRequest(BaseModel):
+    region: str = Field(default="SA", min_length=2, max_length=8)
+    categories: list[CatalogCategory] = Field(default_factory=list, min_length=1, max_length=8)
+    mode: SpecAuditMode = "preview"
+    limit: int = Field(default=50, ge=1, le=500)
+    source_policy: SpecAuditSourcePolicy = "trusted_mixed"
+
+    @field_validator("categories")
+    @classmethod
+    def require_pc_component_categories(cls, value: list[CatalogCategory]) -> list[CatalogCategory]:
+        allowed = {"CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"}
+        invalid = [category for category in value if category not in allowed]
+        if invalid:
+            raise ValueError(f"spec audit only supports PC component categories: {', '.join(invalid)}")
+        return list(dict.fromkeys(value))
+
+
+class SpecAuditEvidenceSummary(BaseModel):
+    source_name: str
+    field: str
+    trust_score: float | None = None
+    approval_state: str | None = None
+
+
+class SpecAuditProductAction(BaseModel):
+    product_id: str
+    canonical_key: str | None = None
+    name: str
+    category: str
+    status: SpecAuditStatus
+    missing_fields: list[str] = Field(default_factory=list)
+    conflicting_fields: list[str] = Field(default_factory=list)
+    inferred_fields: list[str] = Field(default_factory=list)
+    safe_fix_fields: list[str] = Field(default_factory=list)
+    stale_reason: str | None = None
+    evidence_summary: list[SpecAuditEvidenceSummary] = Field(default_factory=list)
+    next_action: str
+
+
+class SpecAuditCategoryMissingFields(BaseModel):
+    category: str
+    fields: list[CanonicalImportReasonCount] = Field(default_factory=list)
+
+
+class SpecAuditPriceCountSnapshot(BaseModel):
+    before: int
+    after: int
+    unchanged: bool
+
+
+class SpecAuditRunResponse(BaseModel):
+    audit_id: str
+    region: str
+    mode: SpecAuditMode
+    source_policy: SpecAuditSourcePolicy
+    categories: list[str]
+    limit: int
+    audited_product_count: int
+    verified_count: int
+    missing_evidence_count: int
+    conflict_count: int
+    stale_or_deprioritized_count: int
+    safe_fixes_available_count: int
+    per_category_missing_fields: list[SpecAuditCategoryMissingFields] = Field(default_factory=list)
+    product_actions: list[SpecAuditProductAction] = Field(default_factory=list)
+    price_snapshot_count: SpecAuditPriceCountSnapshot
+    regional_price_snapshot_count: SpecAuditPriceCountSnapshot
+
+
+class SpecAuditProductListResponse(BaseModel):
+    audit_id: str | None = None
+    status: SpecAuditStatus | None = None
+    category: str | None = None
+    products: list[SpecAuditProductAction] = Field(default_factory=list)

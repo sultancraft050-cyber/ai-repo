@@ -9,10 +9,13 @@ import pytest
 from app.graph.pricing_repository import (
     Neo4jPricingRepository,
     _load_canonical_dataset_file,
+    _normalize_canonical_stage_record,
     _resolve_import_dataset_path,
+    _stage_preselection_sort_key,
 )
 from app.models.catalog import CanonicalImportCommitRequest, CanonicalImportStageRequest
-from app.services.catalog_expansion import match_expansion_target
+from app.services.catalog_expansion import annotate_expansion_target, match_expansion_target
+from app.services.import_adapters.pc_part_dataset_adapter import adapt_pc_part_dataset_record
 
 
 class FakeRecord(dict):
@@ -509,6 +512,59 @@ def test_phase2_manifest_prioritizes_modern_core_parts_after_cpu_gpu() -> None:
         match = match_expansion_target(record, category)
         assert match is not None, category
         assert match.priority_tier == tier
+
+
+def test_motherboard_target_matching_prioritizes_am5_ddr5_wifi_fixture_boards() -> None:
+    fixture_rows = [
+        "Asus TUF GAMING B650-PLUS WIFI",
+        "Asus PRIME B650-PLUS WIFI",
+        "MSI MAG B650 TOMAHAWK WIFI",
+        "Gigabyte B650 AORUS ELITE AX",
+        "ASRock B650M Pro RS WiFi",
+    ]
+
+    for name in fixture_rows:
+        record = {
+            "name": name,
+            "raw_name": name,
+            "brand": name.split()[0],
+            "category": "Motherboard",
+            "specs": {"socket": "AM5", "form_factor": "ATX"},
+        }
+        match = match_expansion_target(record, "Motherboard")
+        assert match is not None, name
+        assert match.priority_tier == "current_gen_priority"
+
+
+def test_motherboard_preselection_prefers_fixture_targets_over_ddr4_legacy() -> None:
+    raw_rows = [
+        {"name": "Gigabyte B660 AORUS Master DDR4", "socket": "LGA1700", "form_factor": "ATX"},
+        {"name": "Gigabyte B660 DS3H DDR4", "socket": "LGA1700", "form_factor": "ATX"},
+        {"name": "MSI B760 GAMING PLUS WIFI DDR4", "socket": "LGA1700", "form_factor": "ATX"},
+        {"name": "Asus TUF GAMING B650-PLUS WIFI", "socket": "AM5", "form_factor": "ATX"},
+        {"name": "Asus PRIME B650-PLUS WIFI", "socket": "AM5", "form_factor": "ATX"},
+        {"name": "MSI MAG B650 TOMAHAWK WIFI", "socket": "AM5", "form_factor": "ATX"},
+        {"name": "Gigabyte B650 AORUS ELITE AX", "socket": "AM5", "form_factor": "ATX"},
+        {"name": "ASRock B650M Pro RS WiFi", "socket": "AM5", "form_factor": "Micro ATX"},
+    ]
+    records = []
+    for raw in raw_rows:
+        adapted = adapt_pc_part_dataset_record(raw, "Motherboard")
+        record = _normalize_canonical_stage_record(adapted, "Motherboard", "pc-part-dataset fixture")
+        annotate_expansion_target(record, "Motherboard")
+        records.append(record)
+
+    selected = sorted(records, key=_stage_preselection_sort_key)[:5]
+    selected_names = [str(record["name"]) for record in selected]
+
+    assert selected_names == [
+        "Asus TUF GAMING B650-PLUS WIFI",
+        "Asus PRIME B650-PLUS WIFI",
+        "MSI MAG B650 TOMAHAWK WIFI",
+        "Gigabyte B650 AORUS ELITE AX",
+        "ASRock B650M Pro RS WiFi",
+    ]
+    assert all("DDR4" not in name for name in selected_names)
 
 
 def test_phase2_low_risk_categories_can_scale_to_fifty_item_batches() -> None:

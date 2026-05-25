@@ -215,12 +215,7 @@ def _family_matches(category: str, family: str, haystack: str, record: dict[str,
             and modular_match
         )
     if category == "Motherboard":
-        parts = [
-            part
-            for part in family_norm.split()
-            if part not in {"INTEL"}
-        ]
-        return all(part in haystack for part in parts)
+        return _motherboard_family_matches(family_norm, _record_specs(record), haystack)
     if category == "Cooler" and "AIO" in family_norm:
         parts = family_norm.split()
         size = next((part for part in parts if part.endswith("MM")), "")
@@ -268,6 +263,16 @@ def _near_family_match(category: str, family: str, haystack: str, record: dict[s
     if category == "PSU":
         watts = re.search(r"\b(\d{3,4})W\b", family_norm)
         return bool(watts and watts.group(1) in haystack)
+    if category == "Motherboard":
+        if _family_matches(category, family, haystack, record):
+            return False
+        chipset = _motherboard_required_chipset(family_norm)
+        socket = _motherboard_required_socket(family_norm)
+        return bool(
+            chipset
+            and _motherboard_chipset_matches(chipset, haystack)
+            and (not socket or _motherboard_socket_matches(socket, _record_specs(record), haystack))
+        )
     tokens = [part for part in family_norm.split() if len(part) >= 3]
     if not tokens:
         return False
@@ -329,6 +334,77 @@ def _ram_family_matches(family_norm: str, specs: dict[str, Any], haystack: str) 
     # EXPO/XMP labels are useful as a preference signal but are not required
     # because pc-part-dataset usually omits those marketing/profile tags.
     return True
+
+
+def _motherboard_family_matches(family_norm: str, specs: dict[str, Any], haystack: str) -> bool:
+    if "DDR4" in haystack or re.search(r"\bD4\b", haystack):
+        return "DDR4" in family_norm
+
+    chipset = _motherboard_required_chipset(family_norm)
+    socket = _motherboard_required_socket(family_norm)
+    requires_wifi = any(token in family_norm for token in ("WIFI", "AX"))
+    requires_ddr5 = "DDR5" in family_norm
+
+    if "DDR4" in family_norm:
+        return "DDR4" in haystack or re.search(r"\bD4\b", haystack) is not None
+    if chipset and not _motherboard_chipset_matches(chipset, haystack):
+        return False
+    if socket and not _motherboard_socket_matches(socket, specs, haystack):
+        return False
+    if requires_wifi and not _motherboard_wifi_matches(haystack):
+        return False
+    if requires_ddr5 and not _motherboard_ddr5_compatible(specs, haystack):
+        return False
+
+    family_tokens = [
+        token
+        for token in family_norm.split()
+        if token not in {"AM5", "INTEL", "DDR5", "WIFI", "MOTHERBOARD"}
+    ]
+    return all(_motherboard_token_matches(token, haystack) for token in family_tokens)
+
+
+def _motherboard_required_chipset(family_norm: str) -> str | None:
+    for chipset in ("B650E", "B650M", "B650", "X870E", "X870", "B860", "Z890", "X670E", "X670", "B760", "Z790", "B660", "Z690"):
+        if re.search(rf"\b{re.escape(chipset)}\b", family_norm):
+            return chipset
+    return None
+
+
+def _motherboard_required_socket(family_norm: str) -> str | None:
+    if "AM5" in family_norm or any(chipset in family_norm for chipset in ("B650", "B650E", "B650M", "X870", "X870E", "B850")):
+        return "AM5"
+    if "B860" in family_norm or "Z890" in family_norm or "LGA1851" in family_norm:
+        return "LGA1851"
+    return None
+
+
+def _motherboard_socket_matches(socket: str, specs: dict[str, Any], haystack: str) -> bool:
+    actual = str(specs.get("socket") or "").upper().replace(" ", "")
+    required = socket.upper().replace(" ", "")
+    return actual == required or required in haystack
+
+
+def _motherboard_chipset_matches(chipset: str, haystack: str) -> bool:
+    return re.search(rf"\b{re.escape(chipset)}\b", haystack) is not None
+
+
+def _motherboard_token_matches(token: str, haystack: str) -> bool:
+    return re.search(rf"\b{re.escape(token)}\b", haystack) is not None
+
+
+def _motherboard_wifi_matches(haystack: str) -> bool:
+    return any(token in haystack for token in ("WIFI", "WIFI6", "WIFI6E", "WIFI7")) or re.search(r"\bAX\b", haystack) is not None
+
+
+def _motherboard_ddr5_compatible(specs: dict[str, Any], haystack: str) -> bool:
+    memory_type = str(specs.get("memory_type") or "").upper().replace(" ", "")
+    socket = str(specs.get("socket") or "").upper().replace(" ", "")
+    if memory_type == "DDR5" or "DDR5" in haystack or re.search(r"\bD5\b", haystack):
+        return True
+    if "DDR4" in haystack or re.search(r"\bD4\b", haystack):
+        return False
+    return socket in {"AM5", "LGA1851"}
 
 
 def _missing_required_specs(record: dict[str, Any], required_specs: tuple[str, ...]) -> list[str]:

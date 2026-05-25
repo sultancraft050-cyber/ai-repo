@@ -44,6 +44,13 @@ from app.models.catalog import (
     MarketEvidenceLinkItem,
     MarketEvidenceLinkRequest,
     MarketEvidenceLinkResponse,
+    SpecAuditCategoryMissingFields,
+    SpecAuditEvidenceSummary,
+    SpecAuditPriceCountSnapshot,
+    SpecAuditProductAction,
+    SpecAuditProductListResponse,
+    SpecAuditRunRequest,
+    SpecAuditRunResponse,
 )
 from app.models.pricing import (
     CpuSpecsImportResponse,
@@ -82,6 +89,18 @@ logger = logging.getLogger("pc_builder.pricing_repository")
 
 ACTIVE_PRICE_AVAILABILITY = {"in_stock", "preorder", "backorder"}
 ACTIVE_BUILD_CATEGORIES = {"CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler"}
+SPEC_AUDIT_CATEGORIES = ("CPU", "GPU", "Motherboard", "RAM", "Storage", "PSU", "Case", "Cooler")
+SPEC_AUDIT_REQUIRED_FIELDS = {
+    "CPU": ("socket", "cores", "threads", "tdp_w"),
+    "Motherboard": ("socket", "chipset", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"),
+    "RAM": ("memory_type", "capacity_gb", "speed_mhz", "kit_config"),
+    "Storage": ("capacity_gb", "interface", "protocol", "form_factor"),
+    "PSU": ("wattage_w", "efficiency_rating", "modularity"),
+    "Case": ("supported_motherboard_form_factors", "max_gpu_length_mm", "max_cpu_cooler_height_mm"),
+    "Cooler": ("socket_support", "radiator_size_mm", "height_mm"),
+}
+SPEC_AUDIT_GPU_FAMILY_FIELDS = ("chip_family", "vram_gb", "pcie_generation", "reference_tdp_w")
+SPEC_AUDIT_GPU_EXACT_FIELDS = ("board_power_w", "length_mm", "slots", "power_connectors")
 CATALOG_CATEGORY_LABELS = {
     "CPU": "CPU",
     "GPU": "GPU",
@@ -1970,6 +1989,279 @@ def _cpu_specs_evidence(product: CpuSpecsImportedProduct) -> list[dict[str, str]
     return evidence
 
 
+def _spec_audit_fixture_evidence() -> dict[str, dict[str, Any]]:
+    evidence: dict[str, dict[str, Any]] = {}
+    base = Path(__file__).resolve().parents[2] / "data" / "canonical_specs"
+    if not base.exists():
+        return evidence
+    for path in base.glob("*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        source_name = str(payload.get("source_name") or path.stem)
+        for key, value in payload.items():
+            if not key.endswith("_records") or not isinstance(value, list):
+                continue
+            for row in value:
+                if not isinstance(row, dict):
+                    continue
+                canonical_key = str(row.get("canonical_key") or "").strip()
+                specs = row.get("specs")
+                if canonical_key and isinstance(specs, dict):
+                    evidence.setdefault(canonical_key, {})
+                    for field, spec_value in specs.items():
+                        evidence[canonical_key].setdefault(field, []).append(
+                            {
+                                "value": spec_value,
+                                "source_name": source_name,
+                                "field": str(field),
+                                "trust_score": 0.95,
+                                "approval_state": "approved",
+                            }
+                        )
+    return evidence
+
+
+def _spec_audit_category(product: dict[str, Any], selected_categories: list[str]) -> str:
+    category = str(product.get("category") or "").strip()
+    if category in selected_categories:
+        return category
+    labels = product.get("labels") or []
+    if isinstance(labels, list):
+        for label in labels:
+            if str(label) in selected_categories:
+                return str(label)
+    return category
+
+
+def _spec_audit_specs(product: dict[str, Any]) -> dict[str, Any]:
+    specs: dict[str, Any] = {}
+    summary = product.get("summary_specs")
+    if isinstance(summary, str):
+        try:
+            decoded = json.loads(summary)
+        except json.JSONDecodeError:
+            decoded = {}
+        if isinstance(decoded, dict):
+            specs.update(decoded)
+    elif isinstance(summary, dict):
+        specs.update(summary)
+    for key, value in product.items():
+        if str(key).startswith("spec_"):
+            specs[str(key).removeprefix("spec_")] = value
+    for field in {
+        *SPEC_AUDIT_GPU_FAMILY_FIELDS,
+        *SPEC_AUDIT_GPU_EXACT_FIELDS,
+        "socket",
+        "cores",
+        "threads",
+        "tdp_w",
+        "chipset",
+        "memory_type",
+        "form_factor",
+        "m2_slots",
+        "pcie_x16_slots",
+        "capacity",
+        "capacity_gb",
+        "interface",
+        "protocol",
+        "wattage_w",
+        "efficiency_rating",
+        "modularity",
+        "supported_motherboard_form_factors",
+        "max_gpu_length_mm",
+        "max_cpu_cooler_height_mm",
+        "socket_support",
+        "radiator_size_mm",
+        "height_mm",
+    }:
+        if field in product and field not in specs:
+            specs[field] = product[field]
+    if "capacity_gb" not in specs and "capacity" in specs:
+        specs["capacity_gb"] = specs["capacity"]
+    return {key: value for key, value in specs.items() if value not in (None, "", [])}
+
+
+def _spec_audit_required_fields(category: str) -> tuple[str, ...]:
+    if category == "GPU":
+        return (*SPEC_AUDIT_GPU_FAMILY_FIELDS, *SPEC_AUDIT_GPU_EXACT_FIELDS)
+    if category == "Cooler":
+        return ("socket_support", "radiator_size_or_height")
+    return SPEC_AUDIT_REQUIRED_FIELDS.get(category, ())
+
+
+def _spec_audit_value(specs: dict[str, Any], field: str) -> Any:
+    if field == "radiator_size_or_height":
+        return specs.get("radiator_size_mm") or specs.get("height_mm")
+    if field == "capacity_gb":
+        return specs.get("capacity_gb") or specs.get("capacity")
+    if field == "board_power_w":
+        return specs.get("board_power_w") or specs.get("tdp_w")
+    return specs.get(field)
+
+
+def _spec_audit_missing(value: Any) -> bool:
+    return value in (None, "", [])
+
+
+def _spec_audit_normalized(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, default=str).upper()
+    return re.sub(r"\s+", " ", str(value)).strip().upper()
+
+
+def _spec_audit_values_match(left: Any, right: Any) -> bool:
+    return _spec_audit_normalized(left) == _spec_audit_normalized(right)
+
+
+def _spec_audit_inferred_fields(product: dict[str, Any]) -> list[str]:
+    raw_values = [
+        product.get("inferred_fields"),
+        product.get("spec_inferred_fields"),
+        product.get("inferred_compatibility_fields"),
+    ]
+    fields: list[str] = []
+    for raw in raw_values:
+        if isinstance(raw, str):
+            try:
+                decoded = json.loads(raw)
+            except json.JSONDecodeError:
+                decoded = [raw]
+        else:
+            decoded = raw
+        if isinstance(decoded, list):
+            for item in decoded:
+                if isinstance(item, dict) and item.get("field"):
+                    fields.append(str(item["field"]))
+                elif isinstance(item, str):
+                    fields.append(item)
+    return list(dict.fromkeys(fields))
+
+
+def _spec_audit_evidence_by_field(
+    canonical_key: str | None,
+    evidence_rows: list[dict[str, Any]],
+    fixture_evidence: dict[str, dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    by_field: dict[str, list[dict[str, Any]]] = {}
+    for evidence in evidence_rows:
+        trust_score = _optional_float(evidence.get("trust_score"))
+        if trust_score is not None and trust_score < 0.7:
+            continue
+        if str(evidence.get("evidence_type") or "canonical_spec") != "canonical_spec":
+            continue
+        field = str(evidence.get("field") or "").strip()
+        value_json = evidence.get("value_json")
+        value = None
+        if isinstance(value_json, str):
+            try:
+                value = json.loads(value_json)
+            except json.JSONDecodeError:
+                value = value_json
+        if isinstance(value, dict) and isinstance(value.get("specs"), dict):
+            for spec_field, spec_value in value["specs"].items():
+                by_field.setdefault(str(spec_field), []).append({**evidence, "field": str(spec_field), "value": spec_value})
+        elif field:
+            by_field.setdefault(field, []).append({**evidence, "value": value})
+    if canonical_key and canonical_key in fixture_evidence:
+        for field, values in fixture_evidence[canonical_key].items():
+            by_field.setdefault(field, []).extend(values)
+    return by_field
+
+
+def _spec_audit_evidence_summary(evidence_by_field: dict[str, list[dict[str, Any]]]) -> list[SpecAuditEvidenceSummary]:
+    summaries: list[SpecAuditEvidenceSummary] = []
+    seen: set[tuple[str, str]] = set()
+    for field, rows in evidence_by_field.items():
+        for row in rows:
+            source_name = str(row.get("source_name") or "unknown")
+            key = (source_name, field)
+            if key in seen:
+                continue
+            seen.add(key)
+            summaries.append(
+                SpecAuditEvidenceSummary(
+                    source_name=source_name,
+                    field=field,
+                    trust_score=_optional_float(row.get("trust_score")),
+                    approval_state=row.get("approval_state"),
+                )
+            )
+    return summaries[:12]
+
+
+def _spec_audit_status(
+    *,
+    category: str,
+    product: dict[str, Any],
+    specs: dict[str, Any],
+    required_fields: tuple[str, ...],
+    evidence_by_field: dict[str, list[dict[str, Any]]],
+) -> tuple[str, list[str], list[str], list[str], list[str], str | None]:
+    inferred_fields = _spec_audit_inferred_fields(product)
+    missing_fields: list[str] = []
+    conflicting_fields: list[str] = []
+    safe_fix_fields: list[str] = []
+    unbacked_fields: list[str] = []
+
+    for field in required_fields:
+        value = _spec_audit_value(specs, field)
+        evidence_values = evidence_by_field.get(field, [])
+        has_evidence = bool(evidence_values)
+        if field in inferred_fields:
+            missing_fields.append(field)
+            continue
+        if _spec_audit_missing(value):
+            missing_fields.append(field)
+            if has_evidence:
+                safe_fix_fields.append(field)
+            continue
+        if not has_evidence:
+            unbacked_fields.append(field)
+            continue
+        if not any(_spec_audit_values_match(value, row.get("value")) for row in evidence_values):
+            conflicting_fields.append(field)
+
+    stale_reason = _spec_audit_stale_reason(category, product, specs)
+    if conflicting_fields:
+        return "spec_conflict_requires_review", missing_fields, conflicting_fields, inferred_fields, safe_fix_fields, stale_reason
+    if safe_fix_fields:
+        return "safe_fix_available", missing_fields, conflicting_fields, inferred_fields, safe_fix_fields, stale_reason
+    if missing_fields or unbacked_fields:
+        return "missing_trusted_evidence", list(dict.fromkeys([*missing_fields, *unbacked_fields])), conflicting_fields, inferred_fields, safe_fix_fields, stale_reason
+    if stale_reason:
+        return "stale_or_deprioritized", missing_fields, conflicting_fields, inferred_fields, safe_fix_fields, stale_reason
+    return "verified_current", missing_fields, conflicting_fields, inferred_fields, safe_fix_fields, stale_reason
+
+
+def _spec_audit_stale_reason(category: str, product: dict[str, Any], specs: dict[str, Any]) -> str | None:
+    record = {
+        "name": product.get("name"),
+        "raw_name": product.get("name"),
+        "brand": product.get("brand"),
+        "model": product.get("model"),
+        "canonical_key": product.get("canonical_key"),
+        "specs": specs,
+    }
+    match = match_expansion_target(record, category)
+    if match and match.priority_tier == "legacy_deprioritized":
+        return f"Phase 2 target tier is legacy_deprioritized: {match.family_name}"
+    return None
+
+
+def _spec_audit_next_action(status: str, missing: list[str], conflicts: list[str], safe_fixes: list[str], stale_reason: str | None) -> str:
+    if status == "verified_current":
+        return "No action needed."
+    if status == "safe_fix_available":
+        return f"Review trusted evidence and apply safe enrichment for {', '.join(safe_fixes[:4])}."
+    if status == "spec_conflict_requires_review":
+        return f"Founder review required for conflicting fields: {', '.join(conflicts[:4])}."
+    if status == "stale_or_deprioritized":
+        return stale_reason or "Review whether this legacy product should stay prioritized."
+    return f"Attach trusted spec evidence for {', '.join(missing[:4])}."
+
+
 def _intelligence_from_record(data: dict[str, Any]) -> HardwareIntelligence:
     return HardwareIntelligence.model_validate_json(data["payload_json"])
 
@@ -2012,6 +2304,10 @@ class Neo4jPricingRepository:
             "FOR (n:ProductURL) REQUIRE n.normalized_url IS UNIQUE",
             "CREATE CONSTRAINT hardware_intelligence_id IF NOT EXISTS "
             "FOR (n:HardwareIntelligence) REQUIRE n.id IS UNIQUE",
+            "CREATE CONSTRAINT spec_audit_run_id IF NOT EXISTS "
+            "FOR (n:SpecAuditRun) REQUIRE n.audit_id IS UNIQUE",
+            "CREATE CONSTRAINT spec_audit_item_id IF NOT EXISTS "
+            "FOR (n:SpecAuditItem) REQUIRE n.id IS UNIQUE",
             "CREATE CONSTRAINT gpu_family_key IF NOT EXISTS "
             "FOR (n:GPUFamily) REQUIRE n.family_key IS UNIQUE",
             "CREATE CONSTRAINT cpu_family_key IF NOT EXISTS "
@@ -2046,6 +2342,10 @@ class Neo4jPricingRepository:
             "FOR (n:StagedCanonicalRecord) ON (n.source_name, n.source_type, n.category)",
             "CREATE INDEX hardware_intelligence_generated_at IF NOT EXISTS "
             "FOR (n:HardwareIntelligence) ON (n.generated_at)",
+            "CREATE INDEX spec_audit_run_created_at IF NOT EXISTS "
+            "FOR (n:SpecAuditRun) ON (n.created_at)",
+            "CREATE INDEX spec_audit_item_lookup IF NOT EXISTS "
+            "FOR (n:SpecAuditItem) ON (n.audit_id, n.status, n.category)",
         ]
         for statement in statements:
             self.driver.execute_query(statement, database_=settings.neo4j_database)
@@ -4855,6 +5155,244 @@ class Neo4jPricingRepository:
             price_mutation_count=0,
             items=items,
         )
+
+    def run_spec_audit(self, request: SpecAuditRunRequest) -> SpecAuditRunResponse:
+        region = normalize_region(request.region)
+        categories = [str(category) for category in request.categories if str(category) in SPEC_AUDIT_CATEGORIES]
+        before_price = self._count_query("MATCH (s:PriceSnapshot) RETURN count(s) AS count")
+        before_regional = self._count_query("MATCH (s:RegionalPriceSnapshot) RETURN count(s) AS count")
+        fixture_evidence = _spec_audit_fixture_evidence()
+        product_rows = self._spec_audit_product_rows(categories=categories, limit=request.limit)
+        product_actions: list[SpecAuditProductAction] = []
+        missing_by_category: dict[str, dict[str, int]] = {}
+
+        for row in product_rows:
+            product = dict(row.get("product") or {})
+            category = str(row.get("category") or _spec_audit_category(product, categories))
+            if category not in categories:
+                continue
+            evidence = [dict(item) for item in row.get("evidence") or [] if isinstance(item, dict)]
+            action = self._spec_audit_action(
+                product=product,
+                category=category,
+                evidence=evidence,
+                fixture_evidence=fixture_evidence,
+            )
+            product_actions.append(action)
+            if action.missing_fields:
+                bucket = missing_by_category.setdefault(category, {})
+                for field in action.missing_fields:
+                    bucket[field] = bucket.get(field, 0) + 1
+
+        after_price = self._count_query("MATCH (s:PriceSnapshot) RETURN count(s) AS count")
+        after_regional = self._count_query("MATCH (s:RegionalPriceSnapshot) RETURN count(s) AS count")
+        audit_id = f"spec-audit:{uuid4()}"
+        response = SpecAuditRunResponse(
+            audit_id=audit_id,
+            region=region,
+            mode=request.mode,
+            source_policy=request.source_policy,
+            categories=categories,
+            limit=request.limit,
+            audited_product_count=len(product_actions),
+            verified_count=sum(1 for action in product_actions if action.status == "verified_current"),
+            missing_evidence_count=sum(1 for action in product_actions if action.status == "missing_trusted_evidence"),
+            conflict_count=sum(1 for action in product_actions if action.status == "spec_conflict_requires_review"),
+            stale_or_deprioritized_count=sum(1 for action in product_actions if action.status == "stale_or_deprioritized"),
+            safe_fixes_available_count=sum(1 for action in product_actions if action.status == "safe_fix_available"),
+            per_category_missing_fields=[
+                SpecAuditCategoryMissingFields(
+                    category=category,
+                    fields=[
+                        CanonicalImportReasonCount(reason=field, count=count)
+                        for field, count in sorted(fields.items(), key=lambda item: (-item[1], item[0]))
+                    ],
+                )
+                for category, fields in sorted(missing_by_category.items())
+            ],
+            product_actions=product_actions,
+            price_snapshot_count=SpecAuditPriceCountSnapshot(
+                before=before_price,
+                after=after_price,
+                unchanged=before_price == after_price,
+            ),
+            regional_price_snapshot_count=SpecAuditPriceCountSnapshot(
+                before=before_regional,
+                after=after_regional,
+                unchanged=before_regional == after_regional,
+            ),
+        )
+        self._persist_spec_audit_response(response)
+        return response
+
+    def spec_audit_report(self, audit_id: str) -> SpecAuditRunResponse | None:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (run:SpecAuditRun {audit_id: $audit_id})
+            RETURN run.payload_json AS payload_json
+            LIMIT 1
+            """,
+            audit_id=audit_id,
+            database_=settings.neo4j_database,
+        )
+        if not records:
+            return None
+        return SpecAuditRunResponse.model_validate_json(str(records[0]["payload_json"]))
+
+    def spec_audit_products(self, status: str | None = None, category: str | None = None) -> SpecAuditProductListResponse:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (run:SpecAuditRun)
+            WITH run
+            ORDER BY run.created_at DESC
+            LIMIT 1
+            OPTIONAL MATCH (run)-[:HAS_SPEC_AUDIT_ITEM]->(item:SpecAuditItem)
+            WHERE ($status IS NULL OR item.status = $status)
+              AND ($category IS NULL OR item.category = $category)
+            RETURN run.audit_id AS audit_id,
+                   item.payload_json AS payload_json
+            ORDER BY item.category ASC, item.name ASC
+            """,
+            status=status,
+            category=category,
+            database_=settings.neo4j_database,
+        )
+        audit_id: str | None = None
+        products: list[SpecAuditProductAction] = []
+        for record in records:
+            if record.get("audit_id"):
+                audit_id = str(record["audit_id"])
+            payload = record.get("payload_json")
+            if payload:
+                products.append(SpecAuditProductAction.model_validate_json(str(payload)))
+        return SpecAuditProductListResponse(audit_id=audit_id, status=status, category=category, products=products)
+
+    def _spec_audit_product_rows(self, *, categories: list[str], limit: int) -> list[dict[str, Any]]:
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p:Product:CanonicalProduct)
+            WITH p, [label IN labels(p) WHERE label IN $categories][0] AS label_category
+            WITH p, coalesce(p.category, label_category) AS category
+            WHERE category IN $categories
+            OPTIONAL MATCH (p)-[:HAS_CANONICAL_EVIDENCE]->(e:CanonicalEvidence)
+            WITH p, category, collect(e {.*}) AS evidence
+            RETURN p {.*, labels: labels(p)} AS product,
+                   category,
+                   evidence
+            ORDER BY category ASC, coalesce(p.name, p.canonical_key) ASC
+            LIMIT $limit
+            """,
+            categories=categories,
+            limit=limit,
+            database_=settings.neo4j_database,
+        )
+        return [record.data() for record in records]
+
+    def _spec_audit_action(
+        self,
+        *,
+        product: dict[str, Any],
+        category: str,
+        evidence: list[dict[str, Any]],
+        fixture_evidence: dict[str, dict[str, Any]],
+    ) -> SpecAuditProductAction:
+        canonical_key = product.get("canonical_key")
+        specs = _spec_audit_specs(product)
+        required_fields = _spec_audit_required_fields(category)
+        evidence_by_field = _spec_audit_evidence_by_field(
+            str(canonical_key) if canonical_key else None,
+            evidence,
+            fixture_evidence,
+        )
+        status, missing, conflicts, inferred, safe_fixes, stale_reason = _spec_audit_status(
+            category=category,
+            product=product,
+            specs=specs,
+            required_fields=required_fields,
+            evidence_by_field=evidence_by_field,
+        )
+        return SpecAuditProductAction(
+            product_id=str(product.get("id") or canonical_key or product.get("name") or "unknown"),
+            canonical_key=str(canonical_key) if canonical_key else None,
+            name=str(product.get("name") or canonical_key or "Unknown product"),
+            category=category,
+            status=status,  # type: ignore[arg-type]
+            missing_fields=missing,
+            conflicting_fields=conflicts,
+            inferred_fields=inferred,
+            safe_fix_fields=safe_fixes,
+            stale_reason=stale_reason,
+            evidence_summary=_spec_audit_evidence_summary(evidence_by_field),
+            next_action=_spec_audit_next_action(status, missing, conflicts, safe_fixes, stale_reason),
+        )
+
+    def _persist_spec_audit_response(self, response: SpecAuditRunResponse) -> None:
+        payload_json = response.model_dump_json()
+        self.driver.execute_query(
+            """
+            MERGE (run:SpecAuditRun {audit_id: $audit_id})
+            SET run.region = $region,
+                run.mode = $mode,
+                run.source_policy = $source_policy,
+                run.categories = $categories,
+                run.limit = $limit,
+                run.audited_product_count = $audited_product_count,
+                run.verified_count = $verified_count,
+                run.missing_evidence_count = $missing_evidence_count,
+                run.conflict_count = $conflict_count,
+                run.stale_or_deprioritized_count = $stale_or_deprioritized_count,
+                run.safe_fixes_available_count = $safe_fixes_available_count,
+                run.price_snapshot_before = $price_snapshot_before,
+                run.price_snapshot_after = $price_snapshot_after,
+                run.regional_price_snapshot_before = $regional_price_snapshot_before,
+                run.regional_price_snapshot_after = $regional_price_snapshot_after,
+                run.payload_json = $payload_json,
+                run.created_at = datetime()
+            """,
+            audit_id=response.audit_id,
+            region=response.region,
+            mode=response.mode,
+            source_policy=response.source_policy,
+            categories=response.categories,
+            limit=response.limit,
+            audited_product_count=response.audited_product_count,
+            verified_count=response.verified_count,
+            missing_evidence_count=response.missing_evidence_count,
+            conflict_count=response.conflict_count,
+            stale_or_deprioritized_count=response.stale_or_deprioritized_count,
+            safe_fixes_available_count=response.safe_fixes_available_count,
+            price_snapshot_before=response.price_snapshot_count.before,
+            price_snapshot_after=response.price_snapshot_count.after,
+            regional_price_snapshot_before=response.regional_price_snapshot_count.before,
+            regional_price_snapshot_after=response.regional_price_snapshot_count.after,
+            payload_json=payload_json,
+            database_=settings.neo4j_database,
+        )
+        for action in response.product_actions:
+            self.driver.execute_query(
+                """
+                MATCH (run:SpecAuditRun {audit_id: $audit_id})
+                MERGE (item:SpecAuditItem {id: $item_id})
+                SET item.audit_id = $audit_id,
+                    item.product_id = $product_id,
+                    item.canonical_key = $canonical_key,
+                    item.name = $name,
+                    item.category = $category,
+                    item.status = $status,
+                    item.payload_json = $payload_json,
+                    item.created_at = datetime()
+                MERGE (run)-[:HAS_SPEC_AUDIT_ITEM]->(item)
+                """,
+                audit_id=response.audit_id,
+                item_id=f"{response.audit_id}:{action.product_id}",
+                product_id=action.product_id,
+                canonical_key=action.canonical_key,
+                name=action.name,
+                category=action.category,
+                status=action.status,
+                payload_json=action.model_dump_json(),
+                database_=settings.neo4j_database,
+            )
 
     def attach_canonical_evidence(self, request: CanonicalEvidenceRequest) -> CanonicalEvidenceResponse:
         evidence_id = f"evidence:{uuid4()}"
