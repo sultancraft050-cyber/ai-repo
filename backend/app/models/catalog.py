@@ -437,6 +437,8 @@ class HybridImportReviewItem(BaseModel):
     target_family_key: str | None = None
     target_family_name: str | None = None
     expansion_priority: int | None = None
+    import_status: str | None = None
+    already_imported: bool = False
     commit_eligible: bool = False
     next_action: str
 
@@ -448,6 +450,7 @@ class HybridImportReviewResponse(BaseModel):
     total_staged: int
     classification_counts: dict[str, int] = Field(default_factory=dict)
     market_linked_count: int
+    imported_count: int = 0
     metadata_only_count: int
     conflict_count: int
     reject_count: int

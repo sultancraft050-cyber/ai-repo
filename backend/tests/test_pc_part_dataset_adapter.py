@@ -286,6 +286,23 @@ class MotherboardHybridReviewDriver(FakeDriver):
         return super().execute_query(query, **parameters)
 
 
+class ImportedMotherboardHybridReviewDriver(MotherboardHybridReviewDriver):
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        records, summary, keys = super().execute_query(query, **parameters)
+        if records and "MATCH (record:StagedCanonicalRecord)" in query and "price_snapshot_count" in query:
+            record = dict(records[0]["record"])
+            record["import_status"] = "imported"
+            return [
+                FakeRecord(
+                    record=record,
+                    market_product_id=records[0].get("market_product_id"),
+                    price_snapshot_count=records[0].get("price_snapshot_count"),
+                    cheapest=records[0].get("cheapest"),
+                )
+            ], summary, keys
+        return records, summary, keys
+
+
 class MarketLinkDriver(FakeDriver):
     def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
         self.queries.append(query)
@@ -596,6 +613,22 @@ def test_hybrid_review_marks_confirmed_motherboard_ready_as_commit_eligible() ->
     assert response.items[0].readiness_state == "compatibility_ready_exact"
     assert response.items[0].commit_eligible is True
     assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
+def test_hybrid_review_separates_imported_rows_from_commit_eligibility() -> None:
+    driver = ImportedMotherboardHybridReviewDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.hybrid_import_review(source_name="pc-part-dataset", category="Motherboard", region="SA")
+
+    assert response.imported_count == 1
+    assert response.commit_eligible_count == 0
+    assert response.metadata_only_count == 0
+    assert response.conflict_count == 0
+    assert response.items[0].already_imported is True
+    assert response.items[0].import_status == "imported"
+    assert response.items[0].commit_eligible is False
+    assert response.items[0].next_action == "Already imported into the canonical catalog."
 
 
 def test_general_confirmed_spec_enrichment_dry_run_writes_nothing() -> None:

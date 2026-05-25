@@ -302,6 +302,7 @@ def test_commit_staged_query_consumes_only_valid_records() -> None:
 
     staged_queries = [query for query in driver.queries if "MATCH (record:StagedCanonicalRecord)" in query]
     assert any('record.validation_status = "valid"' in query for query in staged_queries)
+    assert any('coalesce(record.import_status, "pending") <> "imported"' in query for query in staged_queries)
     assert not any("SET s:" in query or "SET snapshot" in query for query in driver.queries)
 
 

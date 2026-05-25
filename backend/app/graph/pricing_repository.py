@@ -4310,9 +4310,12 @@ class Neo4jPricingRepository:
         missing_exact_card_fields: list[str] = []
         inferred_fields: list[str] = []
         classification_counts: dict[str, int] = {}
+        imported_count = 0
         for row in records:
             data = row.data()
             record = dict(data.get("record") or {})
+            import_status = str(record.get("import_status") or "pending")
+            already_imported = import_status == "imported"
             specs = _extract_staged_specs(record)
             missing = _staged_string_list(record.get("missing_compatibility_fields"))
             exact_missing = _staged_string_list(record.get("missing_exact_card_fields"))
@@ -4351,7 +4354,14 @@ class Neo4jPricingRepository:
             )
 
             validation_status = str(record.get("validation_status") or "")
-            if validation_status == "deferred" and not rejected:
+            if already_imported:
+                imported_count += 1
+                commit_eligible = False
+                if compatibility_ready:
+                    classification = "canonical_ready_and_market_linked" if market_linked else "canonical_ready_no_saudi_price"
+                else:
+                    classification = "metadata_only_needs_enrichment"
+            elif validation_status == "deferred" and not rejected:
                 classification = "metadata_only_needs_enrichment"
                 commit_eligible = False
             elif validation_status != "valid" or rejected:
@@ -4374,7 +4384,8 @@ class Neo4jPricingRepository:
             missing_fields.extend(missing)
             missing_exact_card_fields.extend(exact_missing)
             inferred_fields.extend(inferred)
-            classification_counts[classification] = classification_counts.get(classification, 0) + 1
+            if not already_imported:
+                classification_counts[classification] = classification_counts.get(classification, 0) + 1
             items.append(
                 HybridImportReviewItem(
                     staged_id=record.get("staged_id"),
@@ -4401,8 +4412,14 @@ class Neo4jPricingRepository:
                     target_family_key=record.get("target_family_key"),
                     target_family_name=record.get("target_family_name"),
                     expansion_priority=_optional_int(record.get("expansion_priority")),
+                    import_status=import_status,
+                    already_imported=already_imported,
                     commit_eligible=commit_eligible,
-                    next_action=_hybrid_review_next_action(classification, missing, conflicts, market_linked),
+                    next_action=(
+                        "Already imported into the canonical catalog."
+                        if already_imported
+                        else _hybrid_review_next_action(classification, missing, conflicts, market_linked)
+                    ),
                 )
             )
 
@@ -4413,13 +4430,14 @@ class Neo4jPricingRepository:
             total_staged=len(items),
             classification_counts=classification_counts,
             market_linked_count=sum(1 for item in items if item.market_linked),
+            imported_count=imported_count,
             metadata_only_count=classification_counts.get("metadata_only_needs_enrichment", 0),
             conflict_count=classification_counts.get("conflict_requires_founder_review", 0),
             reject_count=classification_counts.get("reject", 0),
             exact_ready_count=sum(1 for item in items if item.compatibility_ready_exact),
             family_ready_count=sum(1 for item in items if item.compatibility_ready_family and not item.compatibility_ready_exact),
             card_dimension_missing_count=sum(1 for item in items if "length_mm" in item.missing_exact_card_fields),
-            commit_eligible_count=sum(1 for item in items if item.commit_eligible),
+            commit_eligible_count=sum(1 for item in items if item.commit_eligible and not item.already_imported),
             top_missing_compatibility_fields=_count_reasons(missing_fields),
             top_missing_exact_card_fields=_count_reasons(missing_exact_card_fields),
             top_inferred_fields=_count_reasons(inferred_fields),
