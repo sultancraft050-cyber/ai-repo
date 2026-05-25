@@ -73,6 +73,7 @@ from app.services.catalog_expansion import (
     load_expansion_manifest,
     manifest_categories,
     match_expansion_target,
+    near_expansion_target_count,
 )
 from app.services.region_config import get_region_config, normalize_region, vendor_region_type, vendor_trust_profile
 
@@ -1470,6 +1471,47 @@ def _count_reasons(rows: list[str]) -> list[CanonicalImportReasonCount]:
     return [
         CanonicalImportReasonCount(reason=reason, count=count)
         for reason, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8]
+    ]
+
+
+def _stage_preselection_sort_key(record: dict[str, Any]) -> tuple[int, int, int, str]:
+    category = str(record.get("category") or "")
+    match = match_expansion_target(record, category)
+    if match:
+        missing_count = len(_missing_required_specs_for_stage(record))
+        return (
+            PRIORITY_TIER_WEIGHTS.get(match.priority_tier, 9000),
+            missing_count,
+            match.priority,
+            str(record.get("normalized_name") or record.get("name") or ""),
+        )
+    near_count = int(record.get("near_match_count") or near_expansion_target_count(record, category))
+    return (
+        8000 if near_count else 9000,
+        999,
+        9000,
+        str(record.get("normalized_name") or record.get("name") or ""),
+    )
+
+
+def _missing_required_specs_for_stage(record: dict[str, Any]) -> list[str]:
+    category = str(record.get("category") or "")
+    specs = _extract_staged_specs(record)
+    required_fields = {
+        "CPU": ("socket", "cores", "threads", "tdp_w"),
+        "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation"),
+        "Motherboard": ("socket", "memory_type", "form_factor", "chipset", "m2_slots", "pcie_x16_slots"),
+        "RAM": ("memory_type", "capacity_gb", "speed_mhz", "kit_config"),
+        "Storage": ("capacity_gb", "interface", "protocol", "form_factor"),
+        "PSU": ("wattage_w", "efficiency_rating", "modularity"),
+        "Case": ("supported_motherboard_form_factors", "max_gpu_length_mm", "max_cpu_cooler_height_mm"),
+        "Cooler": ("socket_support", "radiator_size_mm", "height_mm"),
+    }.get(category, ())
+    inferred_names = _staged_inferred_field_names(record.get("inferred_fields"))
+    return [
+        field
+        for field in required_fields
+        if specs.get(field) in (None, "", []) or field in inferred_names
     ]
 
 
@@ -2990,7 +3032,7 @@ class Neo4jPricingRepository:
             raise ValueError("unsupported canonical source")
         dataset_path = _resolve_import_dataset_path(request.dataset_path)
         if request.adapter == "pc_part_dataset":
-            rows = load_pc_part_dataset_records(dataset_path, request.category, request.batch_limit)
+            rows = load_pc_part_dataset_records(dataset_path, request.category, None)
         elif request.adapter is not None:
             raise ValueError("unsupported canonical import adapter")
         else:
@@ -3005,23 +3047,44 @@ class Neo4jPricingRepository:
         warning_reasons: list[str] = []
         seen_keys: set[str] = set()
         prepared_records: list[dict[str, Any]] = []
+        deferred = 0
+        near_match_count = 0
+        accepted_current_gen_count = 0
+        accepted_value_fallback_count = 0
 
+        candidate_records: list[dict[str, Any]] = []
         for raw in rows:
             record = _normalize_canonical_stage_record(raw, request.category, request.license_note)
             record["source_name"] = request.source_name
             record["source_type"] = request.source_type
             record["stage_run_id"] = run_id
             target_match = annotate_expansion_target(record, request.category)
+            record["near_match_count"] = near_expansion_target_count(record, request.category) if target_match is None else 0
             categories.add(str(record.get("category") or request.category))
+            candidate_records.append(record)
+
+        if request.adapter == "pc_part_dataset" and request.category in manifest_categories():
+            candidate_records = sorted(candidate_records, key=_stage_preselection_sort_key)[: request.batch_limit]
+
+        for record in candidate_records:
+            target_match = match_expansion_target(record, request.category)
             reasons = self._stage_record_rejection_reasons(record, request)
+            if target_match is not None and "low_identity_confidence" in reasons:
+                # A curated manifest match is enough to stage a metadata-only
+                # candidate for enrichment review, but not enough to commit it.
+                reasons = [reason for reason in reasons if reason != "low_identity_confidence"]
             if request.category in manifest_categories() and target_match is None:
-                reasons.append("outside curated phase2 target manifest")
+                if int(record.get("near_match_count") or 0) > 0:
+                    reasons.append("target_alias_missing")
+                    near_match_count += 1
+                else:
+                    reasons.append("outside_manifest")
             if (
                 request.target_priority_tier
                 and target_match is not None
                 and target_match.priority_tier != request.target_priority_tier
             ):
-                reasons.append(f"outside {request.target_priority_tier} target priority tier")
+                reasons.append("outside_manifest")
             warnings = self._stage_record_warning_reasons(record, request)
             canonical_key = str(record.get("canonical_key") or "")
             duplicates = []
@@ -3038,13 +3101,21 @@ class Neo4jPricingRepository:
                 conflict_fields = _canonical_conflict_fields(dict(existing.get("properties") or {}), props)
             if duplicates:
                 duplicate_candidates += 1
-                warnings.append("duplicate candidate")
+                warnings.append("duplicate_candidate")
             if conflict_fields:
                 conflict_candidates += 1
-                warnings.append("canonical conflict candidate")
+                warnings.append("conflict_candidate")
             seen_keys.add(canonical_key)
 
-            record["validation_status"] = "valid" if not reasons else "rejected"
+            deferred_missing_specs = (
+                target_match is not None
+                and not reasons
+                and not bool(record.get("required_specs_present"))
+                and not (request.category == "GPU" and _gpu_family_ready(_extract_staged_specs(record)))
+            )
+            if deferred_missing_specs:
+                warnings.append("missing_required_specs")
+            record["validation_status"] = "deferred" if deferred_missing_specs else "valid" if not reasons else "rejected"
             record["rejected_reasons"] = reasons
             record["warning_reasons"] = warnings
             record["duplicate_candidates"] = list(dict.fromkeys(duplicates))
@@ -3055,8 +3126,15 @@ class Neo4jPricingRepository:
             if reasons:
                 rejected += 1
                 rejection_reasons.extend(reasons)
+            elif deferred_missing_specs:
+                deferred += 1
+                warning_reasons.append("missing_required_specs")
             else:
                 staged += 1
+                if target_match and target_match.priority_tier == "current_gen_priority":
+                    accepted_current_gen_count += 1
+                if target_match and target_match.priority_tier == "value_fallback":
+                    accepted_value_fallback_count += 1
             warning_reasons.extend(warnings)
 
         if not request.dry_run:
@@ -3097,6 +3175,11 @@ class Neo4jPricingRepository:
             total_records_seen=len(rows),
             staged_records=staged,
             rejected_records=rejected,
+            true_rejected_count=rejected,
+            deferred_records=deferred,
+            near_match_count=near_match_count,
+            accepted_current_gen_count=accepted_current_gen_count,
+            accepted_value_fallback_count=accepted_value_fallback_count,
             duplicate_candidates=duplicate_candidates,
             conflict_candidates=conflict_candidates,
             categories=sorted(categories),
@@ -3413,8 +3496,8 @@ class Neo4jPricingRepository:
             reasons.append("missing canonical key")
         if record.get("category") != request.category:
             reasons.append("category mismatch")
-        if float(record.get("identity_confidence") or 0) < CANONICAL_IDENTITY_CONFIDENCE_MIN and request.adapter != "pc_part_dataset":
-            reasons.append("identity confidence below import threshold")
+        if float(record.get("identity_confidence") or 0) < CANONICAL_IDENTITY_CONFIDENCE_MIN:
+            reasons.append("low_identity_confidence")
         specs = _extract_staged_specs(record)
         inferred_names = _staged_inferred_field_names(record.get("inferred_fields"))
         family_ready_gpu = (
@@ -3423,7 +3506,7 @@ class Neo4jPricingRepository:
             and not inferred_names.intersection({"reference_tdp_w", "pcie_generation"})
         )
         if not bool(record.get("required_specs_present")) and request.adapter != "pc_part_dataset" and not family_ready_gpu:
-            reasons.append("missing required compatibility specs")
+            reasons.append("missing_required_specs")
         bundle_reason = _component_bundle_rejection(str(record.get("raw_name") or record.get("name") or ""))
         if bundle_reason:
             reasons.append(bundle_reason)
@@ -3938,7 +4021,11 @@ class Neo4jPricingRepository:
                 or cheapest.get("price")
             )
 
-            if str(record.get("validation_status") or "") != "valid" or rejected:
+            validation_status = str(record.get("validation_status") or "")
+            if validation_status == "deferred" and not rejected:
+                classification = "metadata_only_needs_enrichment"
+                commit_eligible = False
+            elif validation_status != "valid" or rejected:
                 classification = "reject"
                 commit_eligible = False
             elif conflicts:

@@ -17,12 +17,13 @@ CRITICAL_FIELDS = {
 }
 
 
-def load_pc_part_dataset_records(path: Path, category: str, limit: int) -> list[dict[str, Any]]:
+def load_pc_part_dataset_records(path: Path, category: str, limit: int | None) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     rows = payload.get("records") if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
         raise ValueError("pc_part_dataset JSON must contain a list or records list")
-    return [adapt_pc_part_dataset_record(dict(row), category) for row in rows[:limit] if isinstance(row, dict)]
+    selected_rows = rows if limit is None else rows[:limit]
+    return [adapt_pc_part_dataset_record(dict(row), category) for row in selected_rows if isinstance(row, dict)]
 
 
 def adapt_pc_part_dataset_record(raw: dict[str, Any], category: str) -> dict[str, Any]:

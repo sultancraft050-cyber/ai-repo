@@ -401,7 +401,7 @@ def test_pc_part_dataset_stage_accepts_flat_json_without_price_mutation(
 
     assert response.staged_records == 1
     assert response.rejected_records == 1
-    assert any(item.reason == "outside curated phase2 target manifest" for item in response.top_rejection_reasons)
+    assert response.true_rejected_count == 1
     assert any(item.reason == "metadata-only record is not compatibility-ready" for item in response.top_warning_reasons)
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 

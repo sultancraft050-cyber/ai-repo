@@ -28,6 +28,7 @@ class ExpansionTargetMatch:
     category: str
     family_key: str
     family_name: str
+    matched_alias: str
     priority: int
     priority_tier: str
     required_specs: tuple[str, ...]
@@ -85,12 +86,15 @@ def match_expansion_target(record: dict[str, Any], category: str) -> ExpansionTa
         )
     for family_entry in family_entries:
         family = str(family_entry["name"])
-        if _family_matches(category, family, haystack, record):
+        aliases = [family, *[str(alias) for alias in family_entry.get("aliases") or []]]
+        matched_alias = next((alias for alias in aliases if _family_matches(category, alias, haystack, record)), None)
+        if matched_alias:
             return ExpansionTargetMatch(
                 phase=str(manifest.get("phase") or EXPANSION_PHASE),
                 category=category,
                 family_key=_family_key(category, family),
                 family_name=family,
+                matched_alias=matched_alias,
                 priority=_family_priority(family_entry),
                 priority_tier=str(family_entry["priority_tier"]),
                 required_specs=required_specs,
@@ -105,6 +109,7 @@ def annotate_expansion_target(record: dict[str, Any], category: str) -> Expansio
     record["expansion_phase"] = match.phase
     record["target_family_key"] = match.family_key
     record["target_family_name"] = match.family_name
+    record["target_matched_alias"] = match.matched_alias
     record["expansion_priority"] = match.priority
     record["priority_tier"] = match.priority_tier
     missing = _missing_required_specs(record, match.required_specs)
@@ -159,14 +164,16 @@ def _family_entries(category_config: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(raw, dict):
             name = str(raw.get("name") or "").strip()
             tier = str(raw.get("priority_tier") or "current_gen_priority").strip()
+            aliases = [str(alias).strip() for alias in raw.get("aliases") or [] if str(alias).strip()]
         else:
             name = str(raw).strip()
             tier = "current_gen_priority"
+            aliases = []
         if not name:
             continue
         if tier not in PRIORITY_TIER_WEIGHTS:
             tier = "current_gen_priority"
-        entries.append({"name": name, "priority_tier": tier, "rank": index})
+        entries.append({"name": name, "priority_tier": tier, "rank": index, "aliases": aliases})
     return entries
 
 
@@ -227,6 +234,45 @@ def _family_matches(category: str, family: str, haystack: str, record: dict[str,
         parts = family_norm.split()
         return all(part in haystack for part in parts)
     return family_norm in haystack
+
+
+def near_expansion_target_count(record: dict[str, Any], category: str) -> int:
+    manifest = load_expansion_manifest()
+    category_config = manifest.get("categories", {}).get(category)
+    if not category_config:
+        return 0
+    haystack = _record_haystack(record)
+    family_entries = _family_entries(category_config)
+    return sum(1 for entry in family_entries if _near_family_match(category, str(entry["name"]), haystack, record))
+
+
+def _near_family_match(category: str, family: str, haystack: str, record: dict[str, Any]) -> bool:
+    if _family_matches(category, family, haystack, record):
+        return False
+    family_norm = _normalize_text(family)
+    specs = _record_specs(record)
+    if category == "RAM":
+        required_memory = re.search(r"\bDDR([45])\b", family_norm)
+        required_speed = next(
+            (int(match.group(1)) for match in re.finditer(r"\b(\d{4})\b", family_norm) if 2133 <= int(match.group(1)) <= 9000),
+            None,
+        )
+        return bool(
+            required_memory
+            and str(specs.get("memory_type") or "").upper().replace(" ", "") == f"DDR{required_memory.group(1)}"
+            and (not required_speed or int(specs.get("speed_mhz") or 0) == required_speed)
+        )
+    if category == "Storage":
+        tokens = [part for part in family_norm.split() if part not in {"NVME", "PCIE", "4", "5", "0", "1", "2", "TB"}]
+        return bool(tokens and sum(1 for token in tokens if token in haystack) >= max(1, len(tokens) - 1))
+    if category == "PSU":
+        watts = re.search(r"\b(\d{3,4})W\b", family_norm)
+        return bool(watts and watts.group(1) in haystack)
+    tokens = [part for part in family_norm.split() if len(part) >= 3]
+    if not tokens:
+        return False
+    hits = sum(1 for token in tokens if token in haystack)
+    return hits >= max(1, len(tokens) - 1)
 
 
 def _record_specs(record: dict[str, Any]) -> dict[str, Any]:

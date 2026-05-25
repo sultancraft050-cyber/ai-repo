@@ -267,7 +267,7 @@ def test_stage_rejects_invalid_category_specs(tmp_path: Path, monkeypatch: pytes
 
     assert response.staged_records == 0
     assert response.rejected_records == 1
-    assert "missing required compatibility specs" in {item.reason for item in response.top_rejection_reasons}
+    assert "missing_required_specs" in {item.reason for item in response.top_rejection_reasons}
 
 
 def test_staged_summary_and_clear_work() -> None:
@@ -465,12 +465,10 @@ def test_stage_can_filter_to_current_generation_priority_tier(tmp_path: Path, mo
         )
     )
 
-    assert response.staged_records == 1
+    assert response.staged_records == 0
+    assert response.deferred_records == 1
     assert response.rejected_records == 1
-    assert any(
-        item.reason == "outside current_gen_priority target priority tier"
-        for item in response.top_rejection_reasons
-    )
+    assert any(item.reason == "outside_manifest" for item in response.top_rejection_reasons)
 
 
 def test_phase2_manifest_prioritizes_modern_core_parts_after_cpu_gpu() -> None:
@@ -551,4 +549,82 @@ def test_stage_rejects_records_outside_phase2_manifest(tmp_path: Path, monkeypat
 
     assert response.staged_records == 0
     assert response.rejected_records == 1
-    assert "outside curated phase2 target manifest" in {item.reason for item in response.top_rejection_reasons}
+    assert "outside_manifest" in {item.reason for item in response.top_rejection_reasons}
+
+
+def test_pc_part_dataset_preselects_manifest_targets_before_batch_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.graph.pricing_repository as pricing_repository
+
+    import_root = tmp_path / "imports"
+    dataset = import_root / "datasets" / "pc-part-dataset" / "internal-hard-drive.json"
+    dataset.parent.mkdir(parents=True)
+    dataset.write_text(
+        json.dumps(
+            [
+                {"name": "Seagate Barracuda Compute 2TB", "capacity": "2 TB", "interface": "SATA 6.0 Gb/s", "form_factor": "3.5\""},
+                {"name": "Old Laptop Hard Drive", "capacity": "500 GB", "interface": "SATA 3.0 Gb/s", "form_factor": "2.5\""},
+                {"name": "Samsung 990 Pro 2TB", "capacity": "2 TB", "interface": "M.2 PCIe 4.0 X4", "form_factor": "M.2-2280"},
+                {"name": "Western Digital WD_Black SN850X 2TB", "capacity": "2 TB", "interface": "M.2 PCIe 4.0 X4", "form_factor": "M.2-2280"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pricing_repository, "ALLOWED_CANONICAL_IMPORT_DIR", import_root)
+    repository = Neo4jPricingRepository(FakeDriver())  # type: ignore[arg-type]
+
+    response = repository.stage_canonical_import(
+        CanonicalImportStageRequest(
+            source_name="pc-part-dataset",
+            source_type="community_repository",
+            dataset_path="data/imports/datasets/pc-part-dataset/internal-hard-drive.json",
+            category="Storage",
+            adapter="pc_part_dataset",
+            batch_limit=2,
+            license_note="pc-part-dataset local fixture for preselection tests",
+            dry_run=True,
+        )
+    )
+
+    assert response.total_records_seen == 4
+    assert response.staged_records == 2
+    assert response.rejected_records == 0
+    assert response.accepted_current_gen_count == 2
+    assert not response.top_rejection_reasons
+
+
+def test_target_family_with_missing_specs_is_deferred_not_accepted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.graph.pricing_repository as pricing_repository
+
+    import_root = tmp_path / "imports"
+    dataset = import_root / "datasets" / "pc-part-dataset" / "internal-hard-drive.json"
+    dataset.parent.mkdir(parents=True)
+    dataset.write_text(
+        json.dumps([{"name": "Samsung 990 Pro 2TB", "capacity": "2 TB", "form_factor": "M.2-2280"}]),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pricing_repository, "ALLOWED_CANONICAL_IMPORT_DIR", import_root)
+    repository = Neo4jPricingRepository(FakeDriver())  # type: ignore[arg-type]
+
+    response = repository.stage_canonical_import(
+        CanonicalImportStageRequest(
+            source_name="pc-part-dataset",
+            source_type="community_repository",
+            dataset_path="data/imports/datasets/pc-part-dataset/internal-hard-drive.json",
+            category="Storage",
+            adapter="pc_part_dataset",
+            batch_limit=1,
+            license_note="pc-part-dataset local fixture for deferred state tests",
+            dry_run=True,
+        )
+    )
+
+    assert response.staged_records == 0
+    assert response.deferred_records == 1
+    assert response.rejected_records == 0
+    assert any(item.reason == "missing_required_specs" for item in response.top_warning_reasons)

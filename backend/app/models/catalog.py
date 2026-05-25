@@ -170,6 +170,11 @@ class CanonicalImportStageResponse(BaseModel):
     total_records_seen: int
     staged_records: int
     rejected_records: int
+    true_rejected_count: int = 0
+    deferred_records: int = 0
+    near_match_count: int = 0
+    accepted_current_gen_count: int = 0
+    accepted_value_fallback_count: int = 0
     duplicate_candidates: int
     conflict_candidates: int
     categories: list[str] = Field(default_factory=list)
