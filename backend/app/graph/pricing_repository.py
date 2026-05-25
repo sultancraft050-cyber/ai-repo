@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from datetime import UTC, datetime
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -2260,6 +2261,12 @@ def _spec_audit_next_action(status: str, missing: list[str], conflicts: list[str
     if status == "stale_or_deprioritized":
         return stale_reason or "Review whether this legacy product should stay prioritized."
     return f"Attach trusted spec evidence for {', '.join(missing[:4])}."
+
+
+def _spec_audit_item_id(audit_id: str, action: SpecAuditProductAction) -> str:
+    source_key = action.canonical_key or action.product_id or action.name
+    digest = hashlib.sha256(f"{audit_id}|{source_key}".encode("utf-8")).hexdigest()[:32]
+    return f"spec-audit-item:{digest}"
 
 
 def _intelligence_from_record(data: dict[str, Any]) -> HardwareIntelligence:
@@ -5384,7 +5391,7 @@ class Neo4jPricingRepository:
                 MERGE (run)-[:HAS_SPEC_AUDIT_ITEM]->(item)
                 """,
                 audit_id=response.audit_id,
-                item_id=f"{response.audit_id}:{action.product_id}",
+                item_id=_spec_audit_item_id(response.audit_id, action),
                 product_id=action.product_id,
                 canonical_key=action.canonical_key,
                 name=action.name,

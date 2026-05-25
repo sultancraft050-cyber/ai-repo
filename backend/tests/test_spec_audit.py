@@ -120,6 +120,10 @@ def test_spec_audit_preview_writes_only_report_nodes_and_preserves_price_counts(
     write_queries = [query for query in driver.queries if "SET " in query or "CREATE " in query or "MERGE " in query]
     assert any("SpecAuditRun" in query for query in write_queries)
     assert any("SpecAuditItem" in query for query in write_queries)
+    item_calls = [call for call in driver.calls if "MERGE (item:SpecAuditItem" in call["query"]]
+    assert item_calls
+    assert all(str(call["item_id"]).startswith("spec-audit-item:") for call in item_calls)
+    assert all(len(str(call["item_id"])) <= 48 for call in item_calls)
     assert not any("CanonicalEvidence" in query and "SpecAudit" not in query for query in write_queries)
     assert not any("MERGE (p:Product:CanonicalProduct" in query for query in write_queries)
 
