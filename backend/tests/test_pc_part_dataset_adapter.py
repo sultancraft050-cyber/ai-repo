@@ -59,6 +59,33 @@ class EnrichmentDriver(FakeDriver):
         return [], None, None
 
 
+class MotherboardEnrichmentDriver(FakeDriver):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[dict[str, Any]] = []
+
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        self.calls.append({"query": query, **parameters})
+        if "RETURN properties(record) AS record" in query:
+            return [
+                FakeRecord(
+                    record={
+                        "canonical_key": parameters["canonical_key"],
+                        "category": "Motherboard",
+                        "specs": json.dumps({"socket": "AM5", "form_factor": "ATX"}),
+                        "compatibility_ready": False,
+                        "missing_compatibility_fields": ["chipset", "memory_type", "m2_slots", "pcie_x16_slots"],
+                    }
+                )
+            ], None, None
+        if "RETURN count(record) AS count" in query:
+            return [FakeRecord(count=1)], None, None
+        if "CREATE (e:CanonicalEvidence)" in query:
+            return [FakeRecord(evidence_id="evidence:motherboard")], None, None
+        return [], None, None
+
+
 class GPUFamilyEnrichmentDriver(FakeDriver):
     def __init__(self) -> None:
         super().__init__()
@@ -536,6 +563,79 @@ def test_general_confirmed_spec_enrichment_dry_run_writes_nothing() -> None:
     assert not any("CREATE (e:CanonicalEvidence)" in query for query in driver.queries)
 
 
+def test_motherboard_confirmed_enrichment_requires_chipset() -> None:
+    driver = MotherboardEnrichmentDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.enrich_staged_specs(
+        ConfirmedSpecEnrichmentRequest(
+            category="Motherboard",
+            source_name="founder_confirmed_phase2_motherboard_specs",
+            license_note="source-attributed AM5 motherboard compatibility evidence",
+            records=[
+                {
+                    "canonical_key": "Motherboard|ASUS|ASUS_TUF_GAMING_B650_PLUS_WIFI",
+                    "specs": {
+                        "socket": "AM5",
+                        "memory_type": "DDR5",
+                        "form_factor": "ATX",
+                        "m2_slots": 3,
+                        "pcie_x16_slots": 2,
+                    },
+                    "evidence_note": "confirmed motherboard spec evidence",
+                }
+            ],
+            dry_run=True,
+        )
+    )
+
+    assert response.items[0].status == "skipped"
+    assert "chipset" in response.items[0].missing_required_fields
+    assert response.enriched_records == 0
+    assert not any("SET record.specs" in query for query in driver.queries)
+    assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
+def test_motherboard_confirmed_enrichment_marks_exact_ready_without_price_mutation() -> None:
+    driver = MotherboardEnrichmentDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.enrich_staged_specs(
+        ConfirmedSpecEnrichmentRequest(
+            category="Motherboard",
+            source_name="founder_confirmed_phase2_motherboard_specs",
+            license_note="source-attributed AM5 motherboard compatibility evidence",
+            records=[
+                {
+                    "canonical_key": "Motherboard|ASUS|ASUS_TUF_GAMING_B650_PLUS_WIFI",
+                    "specs": {
+                        "chipset": "B650",
+                        "socket": "AM5",
+                        "memory_type": "DDR5",
+                        "form_factor": "ATX",
+                        "m2_slots": 3,
+                        "pcie_x16_slots": 2,
+                        "wifi": True,
+                        "bios_flashback": True,
+                    },
+                    "evidence_note": "confirmed motherboard spec evidence",
+                }
+            ],
+            dry_run=False,
+        )
+    )
+
+    update_call = next(call for call in driver.calls if "record.compatibility_ready" in call["query"])
+    assert response.enriched_records == 1
+    assert response.evidence_created == 1
+    assert response.items[0].status == "enriched"
+    assert update_call["compatibility_ready"] is True
+    assert update_call["compatibility_ready_exact"] is True
+    assert update_call["readiness_state"] == "compatibility_ready_exact"
+    assert update_call["missing_compatibility_fields"] == []
+    assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
+
+
 def test_gpu_family_enrichment_does_not_create_exact_card_readiness() -> None:
     driver = GPUFamilyEnrichmentDriver()
     repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
@@ -656,6 +756,24 @@ def test_phase2_current_gen_fixture_keeps_ambiguous_gpu_variants_out_of_family_e
     assert ambiguous_targets == {"RTX 5060 Ti", "RX 9060 XT"}
     assert "CPU|AMD|RYZEN_7_9800X3D" in cpu_keys
     assert "CPU|INTEL|CORE_ULTRA_9_285K" in cpu_keys
+
+
+def test_phase2_motherboard_fixture_has_required_confirmed_fields_only_for_narrow_am5_targets() -> None:
+    fixture = json.loads(Path("backend/data/canonical_specs/phase2_motherboard_confirmed_specs.json").read_text())
+    required = {"chipset", "socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"}
+    records = fixture["motherboard_records"]
+
+    assert 5 <= len(records) <= 10
+    assert fixture["source_name"] == "founder_confirmed_phase2_motherboard_specs"
+    for record in records:
+        specs = record["specs"]
+        assert record["canonical_key"].startswith("Motherboard|")
+        assert required.issubset(specs)
+        assert specs["socket"] == "AM5"
+        assert specs["memory_type"] == "DDR5"
+        assert specs["chipset"] in {"B650", "B650E", "X870", "X870E"}
+        assert record["source_urls"]
+        assert "price" not in specs
 
 
 def test_market_evidence_link_dry_run_preserves_prices() -> None:

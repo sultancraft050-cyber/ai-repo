@@ -1,0 +1,94 @@
+{
+  "source_name": "founder_confirmed_phase2_motherboard_specs",
+  "license_note": "Source-attributed AM5 motherboard compatibility facts for controlled Phase 2 enrichment; prices are not included.",
+  "motherboard_records": [
+    {
+      "canonical_key": "Motherboard|ASUS|ASUS_TUF_GAMING_B650_PLUS_WIFI",
+      "specs": {
+        "chipset": "B650",
+        "socket": "AM5",
+        "memory_type": "DDR5",
+        "form_factor": "ATX",
+        "m2_slots": 3,
+        "pcie_x16_slots": 2,
+        "wifi": true,
+        "bios_flashback": true,
+        "vrm_quality_hint": "midrange AM5 gaming"
+      },
+      "evidence_note": "ASUS TUF GAMING B650-PLUS WIFI official specifications confirm AM5, AMD B650, DDR5, ATX, three M.2 slots, two PCIe x16 physical slots, Wi-Fi, and BIOS FlashBack.",
+      "source_urls": [
+        "https://www.asus.com/us/motherboards-components/motherboards/tuf-gaming/tuf-gaming-b650-plus-wifi/techspec/"
+      ]
+    },
+    {
+      "canonical_key": "Motherboard|ASUS|ASUS_PRIME_B650_PLUS_WIFI",
+      "specs": {
+        "chipset": "B650",
+        "socket": "AM5",
+        "memory_type": "DDR5",
+        "form_factor": "ATX",
+        "m2_slots": 2,
+        "pcie_x16_slots": 2,
+        "wifi": true,
+        "bios_flashback": true,
+        "vrm_quality_hint": "mainstream AM5"
+      },
+      "evidence_note": "ASUS PRIME B650-PLUS WIFI official specifications confirm AM5, AMD B650, DDR5, ATX, two M.2 slots, two PCIe x16 physical slots, Wi-Fi, and BIOS FlashBack.",
+      "source_urls": [
+        "https://www.asus.com/motherboards-components/motherboards/prime/prime-b650-plus-wifi/techspec/"
+      ]
+    },
+    {
+      "canonical_key": "Motherboard|MSI|MSI_MAG_B650_TOMAHAWK_WIFI",
+      "specs": {
+        "chipset": "B650",
+        "socket": "AM5",
+        "memory_type": "DDR5",
+        "form_factor": "ATX",
+        "m2_slots": 3,
+        "pcie_x16_slots": 2,
+        "wifi": true,
+        "vrm_quality_hint": "strong AM5 midrange"
+      },
+      "evidence_note": "MSI MAG B650 TOMAHAWK WIFI official specifications confirm AM5, AMD B650, DDR5, ATX, three M.2 slots, two PCIe x16 physical slots, and Wi-Fi 6E.",
+      "source_urls": [
+        "https://www.msi.com/Motherboard/MAG-B650-TOMAHAWK-WIFI/Specification"
+      ]
+    },
+    {
+      "canonical_key": "Motherboard|GIGABYTE|GIGABYTE_B650_AORUS_ELITE_AX",
+      "specs": {
+        "chipset": "B650",
+        "socket": "AM5",
+        "memory_type": "DDR5",
+        "form_factor": "ATX",
+        "m2_slots": 3,
+        "pcie_x16_slots": 3,
+        "wifi": true,
+        "vrm_quality_hint": "strong AM5 midrange"
+      },
+      "evidence_note": "Gigabyte B650 AORUS ELITE AX official specifications confirm AM5, AMD B650, DDR5, ATX, three M.2 connectors, three PCIe x16 physical slots, and Wi-Fi 6E.",
+      "source_urls": [
+        "https://www.gigabyte.com/us/Motherboard/B650-AORUS-ELITE-AX-rev-12/sp"
+      ]
+    },
+    {
+      "canonical_key": "Motherboard|ASROCK|ASROCK_B650M_PRO_RS_WIFI",
+      "specs": {
+        "chipset": "B650",
+        "socket": "AM5",
+        "memory_type": "DDR5",
+        "form_factor": "Micro ATX",
+        "m2_slots": 3,
+        "pcie_x16_slots": 2,
+        "wifi": true,
+        "bios_flashback": true,
+        "vrm_quality_hint": "value AM5 mATX"
+      },
+      "evidence_note": "ASRock B650M Pro RS WiFi official specifications confirm AM5, AMD B650, DDR5, Micro ATX, three M.2 storage sockets, two PCIe x16 physical slots, Wi-Fi 6E, and BIOS Flashback.",
+      "source_urls": [
+        "https://www.asrock.com/mb/AMD/B650M%20Pro%20RS%20WiFi/index.asp"
+      ]
+    }
+  ]
+}

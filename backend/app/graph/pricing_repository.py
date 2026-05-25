@@ -111,7 +111,7 @@ APPROVED_CANONICAL_IMPORT_SOURCES = {
 CONFIRMED_SPEC_REQUIRED_FIELDS = {
     "CPU": ("socket", "cores", "threads", "tdp_w"),
     "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation"),
-    "Motherboard": ("socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"),
+    "Motherboard": ("chipset", "socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"),
     "RAM": ("memory_type", "capacity_gb", "speed_mhz", "kit_config"),
     "Storage": ("capacity_gb", "interface", "protocol", "form_factor"),
     "PSU": ("wattage_w", "efficiency_rating", "modularity"),
@@ -190,7 +190,7 @@ def _catalog_canonical_key(category: str, name: str, brand: str | None, model: s
 
 def _brand_from_name(name: str) -> str | None:
     match = re.search(
-        r"\b(AMD|Intel|NVIDIA|ASUS|MSI|Gigabyte|Corsair|Kingston|Samsung|WD|Crucial|DeepCool|NZXT|Seasonic|Thermalright|Cooler Master)\b",
+        r"\b(AMD|Intel|NVIDIA|ASUS|MSI|Gigabyte|ASRock|Corsair|Kingston|Samsung|WD|Crucial|DeepCool|NZXT|Seasonic|Thermalright|Cooler Master)\b",
         name,
         flags=re.IGNORECASE,
     )
