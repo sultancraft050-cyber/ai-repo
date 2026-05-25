@@ -2263,6 +2263,20 @@ def _spec_audit_next_action(status: str, missing: list[str], conflicts: list[str
     return f"Attach trusted spec evidence for {', '.join(missing[:4])}."
 
 
+def _spec_audit_fallback_action(product: dict[str, Any], category: str) -> SpecAuditProductAction:
+    canonical_key = product.get("canonical_key")
+    missing = list(_spec_audit_required_fields(category))
+    return SpecAuditProductAction(
+        product_id=str(product.get("id") or canonical_key or product.get("name") or "unknown"),
+        canonical_key=str(canonical_key) if canonical_key else None,
+        name=str(product.get("name") or canonical_key or "Unknown product"),
+        category=category,
+        status="missing_trusted_evidence",
+        missing_fields=missing,
+        next_action="Review product metadata and attach trusted spec evidence.",
+    )
+
+
 def _spec_audit_item_id(audit_id: str, action: SpecAuditProductAction) -> str:
     source_key = action.canonical_key or action.product_id or action.name
     digest = hashlib.sha256(f"{audit_id}|{source_key}".encode("utf-8")).hexdigest()[:32]
@@ -5178,13 +5192,24 @@ class Neo4jPricingRepository:
             category = str(row.get("category") or _spec_audit_category(product, categories))
             if category not in categories:
                 continue
-            evidence = [dict(item) for item in row.get("evidence") or [] if isinstance(item, dict)]
-            action = self._spec_audit_action(
-                product=product,
-                category=category,
-                evidence=evidence,
-                fixture_evidence=fixture_evidence,
-            )
+            try:
+                evidence = [dict(item) for item in row.get("evidence") or [] if isinstance(item, dict)]
+                action = self._spec_audit_action(
+                    product=product,
+                    category=category,
+                    evidence=evidence,
+                    fixture_evidence=fixture_evidence,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "spec_audit_product_evaluation_failed",
+                    extra={
+                        "category": category,
+                        "canonical_key": product.get("canonical_key"),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                action = _spec_audit_fallback_action(product=product, category=category)
             product_actions.append(action)
             if action.missing_fields:
                 bucket = missing_by_category.setdefault(category, {})

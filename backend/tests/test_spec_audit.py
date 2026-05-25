@@ -266,3 +266,32 @@ def test_spec_audit_reports_missing_trusted_evidence_for_unbacked_specs() -> Non
         "speed_mhz",
         "kit_config",
     }
+
+
+def test_spec_audit_preview_isolates_unparseable_product_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    driver = SpecAuditDriver(
+        [
+            {
+                "category": "PSU",
+                "product": {
+                    "id": "psu-1",
+                    "canonical_key": "PSU|TEST|ODD",
+                    "name": "Odd PSU",
+                    "category": "PSU",
+                },
+                "evidence": [],
+            }
+        ]
+    )
+
+    def raise_for_product(*args: Any, **kwargs: Any) -> None:
+        raise TypeError("unexpected live row shape")
+
+    monkeypatch.setattr(Neo4jPricingRepository, "_spec_audit_action", raise_for_product)
+
+    response = Neo4jPricingRepository(driver).run_spec_audit(_request("PSU"))
+
+    assert response.audited_product_count == 1
+    assert response.missing_evidence_count == 1
+    assert response.product_actions[0].status == "missing_trusted_evidence"
+    assert set(response.product_actions[0].missing_fields) == {"wattage_w", "efficiency_rating", "modularity"}
