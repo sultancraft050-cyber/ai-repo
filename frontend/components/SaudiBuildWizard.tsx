@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Cpu, Loader2, Scale, SlidersHorizontal, Wand2 } from "lucide-react";
+import { Cpu, Loader2, Scale, Wand2 } from "lucide-react";
 import { BuildRecommendationCard } from "@/components/BuildRecommendationCard";
 import { DataCompletenessPanel } from "@/components/DataCompletenessPanel";
 import { useRegion } from "@/components/RegionProvider";
+import { CalmNotice, StateBadge, cx, focusRing, interactiveButton, motionSafeSpin } from "@/components/ui/PublicUi";
 import { addWatchlistItem, generateSaudiLocalBuild, getSaudiBuildDataCompleteness, saveBuild } from "@/lib/api";
+import { summarizeBuyerNotes } from "@/lib/uiText";
 import { getIdentity, rememberRecentBuild } from "@/lib/userSession";
 import type {
   SaudiBuildDataCompleteness,
@@ -199,18 +201,22 @@ export function SaudiBuildWizard() {
           <div>
             <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase text-signal">
               <Cpu size={15} aria-hidden />
-              Saudi local PC build generator
+              Saudi build generator
             </div>
             <h2 className="text-lg font-semibold text-ink">Build Around Your Saudi Budget</h2>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              Uses Saudi-region pricing only. If a category is missing, the system stops and suggests dry-run discovery instead of inventing a build.
+              Uses Saudi prices only. If data is missing, it shows what to add next.
             </p>
           </div>
           {!isSaudiRegion ? (
             <button
               type="button"
               onClick={() => setRegion("SA")}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-signal bg-teal-50 px-3 text-sm font-semibold text-signal"
+              className={cx(
+                "inline-flex h-9 items-center justify-center rounded-md border border-signal bg-teal-50 px-3 text-sm font-semibold text-signal hover:bg-teal-100 active:bg-teal-50",
+                interactiveButton,
+                focusRing
+              )}
             >
               Switch to Saudi Arabia
             </button>
@@ -228,7 +234,10 @@ export function SaudiBuildWizard() {
               value={budget}
               onChange={(event) => setBudget(event.target.value)}
               inputMode="numeric"
-              className="h-10 rounded-md border border-line bg-white px-3 text-sm font-normal text-ink outline-none focus:border-signal"
+                className={cx(
+                  "h-10 rounded-md border border-line bg-white px-3 text-sm font-normal text-ink outline-none hover:border-signal/60",
+                  focusRing
+                )}
             />
           </label>
           <SelectField label="Use case" value={useCase} onChange={(value) => setUseCase(value as SaudiBuildUseCase)} options={useCases} />
@@ -241,7 +250,7 @@ export function SaudiBuildWizard() {
         </div>
 
         <details className="mt-4 rounded-md border border-line bg-panel px-3 py-2">
-          <summary className="cursor-pointer text-sm font-semibold text-ink">More options</summary>
+          <summary className={cx("cursor-pointer text-sm font-semibold text-ink", focusRing)}>More options</summary>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <SelectField
               label="Refresh target"
@@ -269,9 +278,12 @@ export function SaudiBuildWizard() {
                     key={brand}
                     type="button"
                     onClick={() => toggleBrand(brand)}
-                    className={`rounded-md border px-3 py-2 text-sm font-semibold ${
+                    className={cx(
+                      "rounded-md border px-3 py-2 text-sm font-semibold hover:border-signal hover:text-ink active:bg-white",
+                      interactiveButton,
+                      focusRing,
                       brands.includes(brand) ? "border-signal bg-teal-50 text-signal" : "border-line bg-panel text-muted"
-                    }`}
+                    )}
                   >
                     {brand}
                   </button>
@@ -279,16 +291,16 @@ export function SaudiBuildWizard() {
               </div>
             </div>
             <div className="flex flex-wrap gap-3 md:col-span-3">
-              <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-                <input type="checkbox" checked={includeMonitor} onChange={(event) => setIncludeMonitor(event.target.checked)} />
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
+                <input className={cx("cursor-pointer", focusRing)} type="checkbox" checked={includeMonitor} onChange={(event) => setIncludeMonitor(event.target.checked)} />
                 Include monitor
               </label>
-              <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-                <input type="checkbox" checked={includePeripherals} onChange={(event) => setIncludePeripherals(event.target.checked)} />
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
+                <input className={cx("cursor-pointer", focusRing)} type="checkbox" checked={includePeripherals} onChange={(event) => setIncludePeripherals(event.target.checked)} />
                 Include peripherals
               </label>
-              <label className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
-                <input type="checkbox" checked={strictBudget} onChange={(event) => setStrictBudget(event.target.checked)} />
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold text-ink">
+                <input className={cx("cursor-pointer", focusRing)} type="checkbox" checked={strictBudget} onChange={(event) => setStrictBudget(event.target.checked)} />
                 Strict budget
               </label>
             </div>
@@ -300,21 +312,24 @@ export function SaudiBuildWizard() {
             type="button"
             onClick={generateBuild}
             disabled={generating || !isSaudiRegion || !budgetValid}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-4 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            className={cx(
+              "inline-flex h-10 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-4 text-sm font-semibold text-slate-950 hover:bg-signal/90 active:bg-signal/80",
+              interactiveButton,
+              focusRing
+            )}
           >
-            {generating ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Wand2 size={16} aria-hidden />}
+            {generating ? <Loader2 size={16} className={motionSafeSpin} aria-hidden /> : <Wand2 size={16} aria-hidden />}
             Generate Saudi Build
           </button>
         </div>
 
         {error ? (
-          <div className="mt-4 flex items-start gap-2 rounded-md border border-caution/40 bg-amber-50 px-3 py-2 text-sm text-caution">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
-            <span>{error}</span>
-          </div>
+          <CalmNotice title="Some details need review" tone="caution" className="mt-4">
+            {calmGeneratorError(error)}
+          </CalmNotice>
         ) : null}
         {shareMessage ? (
-          <div className="mt-4 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-signal">
+          <div className="mt-4 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-signal" aria-live="polite">
             {shareMessage}
           </div>
         ) : null}
@@ -323,11 +338,11 @@ export function SaudiBuildWizard() {
       {generating ? (
         <div className="rounded-lg border border-line bg-white p-4 text-sm text-muted shadow-tight" aria-live="polite">
           <div className="mb-2 flex items-center gap-2 font-semibold text-ink">
-            <Loader2 size={16} className="animate-spin" aria-hidden />
-            Checking Saudi-market build options
+            <Loader2 size={16} className={motionSafeSpin} aria-hidden />
+            Checking Saudi options
           </div>
           <p className="leading-6">
-            The generator is validating compatibility, budget fit, warnings, and Saudi-only price snapshots. No US price fallback is used.
+            Checking compatibility, budget, and local prices.
           </p>
         </div>
       ) : null}
@@ -335,49 +350,26 @@ export function SaudiBuildWizard() {
       <DataCompletenessPanel completeness={completeness} loading={loadingCompleteness} error={error} onRetry={loadCompleteness} />
 
       {response?.build_status === "incomplete_data" ? (
-        <div className="rounded-lg border border-caution/30 bg-amber-50 p-4 text-caution">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <SlidersHorizontal size={16} aria-hidden />
-            Not enough Saudi data for a full build yet
-          </div>
-          <div className="grid gap-1 text-sm leading-6">
-            {response.missing_data_warnings.slice(0, 6).map((warning) => (
-              <span key={warning}>{warning}</span>
-            ))}
-          </div>
-        </div>
+        <ResponseNotice
+          title="Some data needs review"
+          notes={response.missing_data_warnings}
+          summary="A few category details are still needed before this can generate confidently."
+        />
       ) : null}
 
       {response?.build_status === "no_budget_fit" ? (
-        <div className="rounded-lg border border-caution/30 bg-amber-50 p-4 text-caution">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <SlidersHorizontal size={16} aria-hidden />
-            No valid build fits this strict budget yet
-          </div>
-          <div className="grid gap-1 text-sm leading-6">
-            {response.missing_data_warnings.slice(0, 4).map((warning) => (
-              <span key={warning}>{warning}</span>
-            ))}
-          </div>
-        </div>
+        <ResponseNotice
+          title="Try a higher budget or fewer extras"
+          notes={response.missing_data_warnings}
+          summary="This strict budget does not have a clean match yet."
+          legacyLabel="No valid build fits this strict budget yet"
+        />
       ) : null}
 
       {response?.build_status === "no_budget_fit" && response.strict_budget_failure ? (
-        <div className="rounded-lg border border-caution/30 bg-amber-50 p-4 text-caution">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <SlidersHorizontal size={16} aria-hidden />
-            Strict budget guidance
-          </div>
-          <div className="grid gap-2 text-sm leading-6">
-            <span>{response.strict_budget_failure.reason}</span>
-            <span>
-              Missing cheaper categories: {response.strict_budget_failure.missing_cheaper_categories.join(", ")}
-            </span>
-            <span>
-              Suggested product families: {response.strict_budget_failure.suggested_products_to_add.slice(0, 5).join(", ")}
-            </span>
-          </div>
-        </div>
+        <CalmNotice title="Budget guidance" tone="caution">
+          {response.strict_budget_failure.reason} Try fewer extras or a small budget increase.
+        </CalmNotice>
       ) : null}
 
       {response?.recommended_discovery_jobs.length ? (
@@ -407,20 +399,23 @@ export function SaudiBuildWizard() {
                 key={item.label}
                 type="button"
                 onClick={() => setSelectedBuildLabel(item.label)}
-                className={`rounded-md border p-3 text-left text-sm ${
+                className={cx(
+                  "rounded-md border p-3 text-left text-sm hover:border-signal hover:bg-white active:bg-panel",
+                  interactiveButton,
+                  focusRing,
                   selectedBuildLabel === item.label ? "border-signal bg-teal-50" : "border-line bg-panel"
-                }`}
+                )}
               >
                 <div className="mb-2 flex flex-wrap gap-1">
                   {item.cheapest_option ? (
-                    <span className="rounded border border-teal-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-signal">
+                    <StateBadge tone="success" className="rounded bg-white px-1.5 py-0.5">
                       Cheapest
-                    </span>
+                    </StateBadge>
                   ) : null}
                   {item.safest_option ? (
-                    <span className="rounded border border-teal-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-signal">
+                    <StateBadge tone="success" className="rounded bg-white px-1.5 py-0.5">
                       Safest
-                    </span>
+                    </StateBadge>
                   ) : null}
                 </div>
                 <div className="font-semibold text-ink">{buildModeLabels[item.label] ?? item.title}</div>
@@ -448,9 +443,12 @@ export function SaudiBuildWizard() {
                 key={build.label}
                 type="button"
                 onClick={() => setSelectedBuildLabel(build.label)}
-                className={`rounded-md border px-3 py-2 text-sm font-semibold ${
+                className={cx(
+                  "rounded-md border px-3 py-2 text-sm font-semibold hover:border-signal hover:text-ink active:bg-panel",
+                  interactiveButton,
+                  focusRing,
                   selectedBuildLabel === build.label ? "border-signal bg-teal-50 text-signal" : "border-line bg-white text-muted"
-                }`}
+                )}
               >
                 {buildModeLabels[build.label] ?? build.label.replaceAll("_", " ")}
               </button>
@@ -491,7 +489,11 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-md border border-line bg-white px-3 text-sm font-normal text-ink outline-none focus:border-signal"
+        className={cx(
+          "h-10 cursor-pointer rounded-md border border-line bg-white px-3 text-sm font-normal text-ink outline-none hover:border-signal/60",
+          interactiveButton,
+          focusRing
+        )}
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -501,6 +503,36 @@ function SelectField({
       </select>
     </label>
   );
+}
+
+function ResponseNotice({ title, notes, summary, legacyLabel }: { title: string; notes: string[]; summary: string; legacyLabel?: string }) {
+  const buyerNotes = summarizeBuyerNotes(notes, { summary, fallback: summary });
+  return (
+    <div aria-label={legacyLabel}>
+      <CalmNotice
+        title={title}
+        tone="caution"
+        details={
+          buyerNotes.hasDetails ? (
+            <ul className="grid gap-1">
+              {buyerNotes.details.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null
+        }
+      >
+        {buyerNotes.visible.length ? buyerNotes.visible.join(" ") : summary}
+      </CalmNotice>
+    </div>
+  );
+}
+
+function calmGeneratorError(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("budget")) return "Try a higher budget or fewer extras.";
+  if (lower.includes("missing") || lower.includes("not enough")) return "Some details need review before a clean build can be generated.";
+  return message;
 }
 
 function formatSar(value?: number | null) {

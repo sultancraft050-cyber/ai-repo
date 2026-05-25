@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { StateBadge, cx, focusRing, interactiveButton } from "@/components/ui/PublicUi";
 import type { SaudiBuildDataCompleteness } from "@/types/builder";
 
 type DataCompletenessPanelProps = {
@@ -14,10 +15,10 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
   if (loading) {
     return (
       <section className="rounded-lg border border-line bg-white p-4 shadow-tight">
-        <div className="mb-3 h-5 w-48 animate-pulse rounded bg-slate-200" />
+        <div className="mb-3 h-5 w-48 rounded bg-slate-200 motion-safe:animate-pulse motion-reduce:animate-none" />
         <div className="grid gap-2 md:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="h-20 animate-pulse rounded-md border border-line bg-panel" />
+            <div key={index} className="h-20 rounded-md border border-line bg-panel motion-safe:animate-pulse motion-reduce:animate-none" />
           ))}
         </div>
       </section>
@@ -45,30 +46,30 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
     <section className="rounded-lg border border-line bg-white p-4 shadow-tight">
       <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <PanelTitle />
-        <span className="inline-flex w-fit items-center rounded border border-line bg-panel px-2 py-1 text-xs font-semibold text-ink">
+        <StateBadge className="w-fit rounded px-2 py-1 text-ink">
           {readinessPercent}% ready
-        </span>
+        </StateBadge>
       </div>
       {error ? <InlineError message={error} onRetry={onRetry} /> : null}
       <div className={`rounded-md border px-3 py-3 ${canGenerate ? "border-teal-200 bg-teal-50" : "border-caution/30 bg-amber-50"}`}>
         <div className={`mb-1 flex items-center gap-2 text-sm font-semibold ${canGenerate ? "text-signal" : "text-caution"}`}>
           {canGenerate ? <CheckCircle2 size={16} aria-hidden /> : <AlertTriangle size={16} aria-hidden />}
-          {canGenerate ? "Ready to generate a Saudi build" : "Some data is still missing"}
+          {canGenerate ? "Ready to generate a Saudi build" : "Some data needs review"}
         </div>
         <p className="text-sm leading-6 text-muted">{completeness.message}</p>
-        <div className="mt-3 h-2 overflow-hidden rounded bg-white">
-          <div className="h-full rounded bg-signal" style={{ width: `${Math.max(4, readinessPercent)}%` }} />
+        <div className="mt-3 h-2 overflow-hidden rounded bg-white" role="meter" aria-label={`Saudi build readiness ${readinessPercent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={readinessPercent}>
+          <div className="h-2 rounded bg-signal" style={{ width: `${Math.max(4, readinessPercent)}%` }} />
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-          <span className="rounded border border-line bg-panel px-2 py-1">{readyCount} ready</span>
-          {warningCount ? <span className="rounded border border-caution/30 bg-amber-50 px-2 py-1 text-caution">{warningCount} usable with warnings</span> : null}
-          {notReady.length ? <span className="rounded border border-caution/30 bg-amber-50 px-2 py-1 text-caution">{notReady.length} not ready</span> : null}
+          <StateBadge>{readyCount} ready</StateBadge>
+          {warningCount ? <StateBadge tone="caution">{warningCount} usable</StateBadge> : null}
+          {notReady.length ? <StateBadge tone="caution">{notReady.length} need data</StateBadge> : null}
         </div>
       </div>
 
       {attention.length ? (
         <div className="mt-3 grid gap-2">
-          <div className="text-sm font-semibold text-ink">Needs attention</div>
+          <div className="text-sm font-semibold text-ink">Review next</div>
           {attention.slice(0, 3).map((coverage) => (
             <div key={coverage.category} className="rounded-md border border-line bg-panel px-3 py-2 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -82,7 +83,7 @@ export function DataCompletenessPanel({ completeness, loading = false, error, on
       ) : null}
 
       <details className="mt-3 rounded-md border border-line bg-panel px-3 py-2">
-        <summary className="cursor-pointer text-sm font-semibold text-ink">Advanced readiness details</summary>
+        <summary className={cx("cursor-pointer text-sm font-semibold text-ink", focusRing)}>Advanced readiness details</summary>
         <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           {completeness.category_coverage.map((coverage) => (
             <div key={coverage.category} className="rounded-md border border-line bg-white px-3 py-2">
@@ -115,7 +116,7 @@ function PanelTitle() {
   return (
     <div>
       <h2 className="text-base font-semibold text-ink">Saudi Build Readiness</h2>
-      <p className="mt-1 text-sm text-muted">Checks whether each required category has usable Saudi market prices.</p>
+      <p className="mt-1 text-sm text-muted">Checks category readiness for Saudi build generation.</p>
     </div>
   );
 }
@@ -138,9 +139,9 @@ function ReadinessBadge({ level }: { level: SaudiBuildDataCompleteness["category
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-caution">
+    <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-caution" aria-label="Not ready">
       <AlertTriangle size={13} aria-hidden />
-      Not ready
+      Needs data
     </span>
   );
 }
@@ -150,7 +151,11 @@ function InlineError({ message, onRetry }: { message: string; onRetry?: () => vo
     <div className="mb-3 flex flex-col gap-2 rounded-md border border-caution/40 bg-amber-50 px-3 py-2 text-sm text-caution sm:flex-row sm:items-center sm:justify-between">
       <span>{message}</span>
       {onRetry ? (
-        <button type="button" onClick={onRetry} className="rounded border border-caution/40 px-2 py-1 text-xs font-semibold">
+        <button
+          type="button"
+          onClick={onRetry}
+          className={cx("rounded border border-caution/40 px-2 py-1 text-xs font-semibold hover:bg-white", interactiveButton, focusRing)}
+        >
           Retry
         </button>
       ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, Heart, Store } from "lucide-react";
+import { StateBadge, cx, focusRing, interactiveButton } from "@/components/ui/PublicUi";
 import type { SaudiBuildComponent } from "@/types/builder";
 
 type BuildComponentRowProps = {
@@ -18,12 +19,12 @@ export function BuildComponentRow({ component, onWatch }: BuildComponentRowProps
           </span>
           <StockBadge stock={component.stock_badge} />
         </div>
-        <h4 className="truncate text-sm font-semibold text-ink">{component.name}</h4>
+        <h4 className="break-words text-sm font-semibold text-ink">{component.name}</h4>
         <p className="mt-1 text-xs leading-5 text-muted">{component.reason_selected}</p>
         {component.warnings.length ? (
           <div className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-caution">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
-            <span>{component.warnings[0]}</span>
+            <span>{calmComponentWarning(component.warnings[0])}</span>
           </div>
         ) : null}
       </div>
@@ -41,7 +42,7 @@ export function BuildComponentRow({ component, onWatch }: BuildComponentRowProps
             <Store size={13} aria-hidden />
             Vendor
           </span>
-          <strong className="max-w-[160px] truncate text-right text-ink">{component.recommended_vendor ?? "Unknown"}</strong>
+          <strong className="max-w-[160px] break-words text-right text-ink">{component.recommended_vendor ?? "Unknown"}</strong>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <MetaBadge value={component.vat_status} />
@@ -52,7 +53,11 @@ export function BuildComponentRow({ component, onWatch }: BuildComponentRowProps
           <button
             type="button"
             onClick={() => onWatch(component)}
-            className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-line bg-white px-2 text-xs font-semibold text-ink"
+            className={cx(
+              "inline-flex h-8 items-center justify-center gap-2 rounded-md border border-line bg-white px-2 text-xs font-semibold text-ink hover:border-signal hover:bg-panel active:bg-white",
+              interactiveButton,
+              focusRing
+            )}
           >
             <Heart size={13} aria-hidden />
             Watch price
@@ -71,11 +76,20 @@ function StockBadge({ stock }: { stock: SaudiBuildComponent["stock_badge"] }) {
       : stock === "imported"
         ? "border-amber-200 bg-amber-50 text-amber-700"
         : "border-line bg-white text-muted";
-  return <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${classes}`}>{label}</span>;
+  return <StateBadge className={classes}>{label}</StateBadge>;
 }
 
 function MetaBadge({ value }: { value: string }) {
-  return <span className="rounded border border-line bg-white px-2 py-0.5 text-[11px] font-semibold text-muted">{value.replaceAll("_", " ")}</span>;
+  return <StateBadge>{value.replaceAll("_", " ")}</StateBadge>;
+}
+
+function calmComponentWarning(value: string) {
+  const lower = value.toLowerCase();
+  if (lower.includes("vat") && lower.includes("unknown")) return "VAT may need a store check.";
+  if (lower.includes("shipping") && lower.includes("unknown")) return "Delivery details may need a store check.";
+  if (lower.includes("warranty") && lower.includes("unknown")) return "Warranty details may need a store check.";
+  if (value.length > 120) return `${value.slice(0, 117).trim()}...`;
+  return value;
 }
 
 function formatSar(value?: number | null) {

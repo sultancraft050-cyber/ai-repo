@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -15,7 +15,9 @@ import {
   X,
   Zap
 } from "lucide-react";
+import { CalmNotice, IconButton, StateBadge, cx, focusRing, interactiveButton, motionSafeSpin } from "@/components/ui/PublicUi";
 import { searchProducts, validateAndMeasure } from "@/lib/api";
+import { summarizeBuyerNotes } from "@/lib/uiText";
 import {
   componentOrder,
   selectionKeyByKind,
@@ -73,6 +75,8 @@ export function ManualPartPicker() {
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
+  const openerKindRef = useRef<ComponentKind | null>(null);
 
   const selectedCount = Object.keys(selected).length;
   const missingCategories = componentOrder.filter((kind) => !selected[kind]);
@@ -99,9 +103,13 @@ export function ManualPartPicker() {
   const missingPrices = priceRows.filter((row) => !row.price).map((row) => row.product.category);
   const visibleWarnings = [
     ...Object.entries(failures).map(([kind, message]) => `${kind}: ${message}`),
-    ...missingPrices.map((category) => `${category}: no SAR price available, so it is not included in the total.`),
+    ...missingPrices.map((category) => `${category}: price not listed yet.`),
     ...(compatibility?.checks.filter((check) => check.status !== "pass").map((check) => check.details) ?? [])
   ];
+  const buyerNotes = summarizeBuyerNotes(visibleWarnings, {
+    fallback: "Pick all required parts to see price, wattage, and FPS estimates.",
+    summary: "Some build details need review."
+  });
   const missingSpecCount = selectedRows.filter((product) => hasSpecGap(product)).length;
   const exactReadyCount = selectedRows.filter((product) => product.compatibility_ready_exact).length;
   const familyReadyCount = selectedRows.filter((product) => product.compatibility_ready_family && !product.compatibility_ready_exact).length;
@@ -206,7 +214,34 @@ export function ManualPartPicker() {
 
   function chooseProduct(kind: ComponentKind, product: ProductSearchResult) {
     setSelected((current) => ({ ...current, [kind]: product }));
+    closePicker();
+  }
+
+  function openPicker(kind: ComponentKind, opener: HTMLButtonElement) {
+    openerRef.current = opener;
+    openerKindRef.current = kind;
+    setActiveKind(kind);
+  }
+
+  function closePicker() {
     setActiveKind(null);
+    restorePickerFocus();
+  }
+
+  function restorePickerFocus() {
+    const restore = () => {
+      const opener =
+        openerRef.current?.isConnected
+          ? openerRef.current
+          : openerKindRef.current
+            ? document.querySelector<HTMLButtonElement>(`[data-picker-trigger="${openerKindRef.current}"]`)
+            : null;
+      opener?.focus({ preventScroll: true });
+    };
+    window.requestAnimationFrame(() => {
+      restore();
+      window.setTimeout(restore, 0);
+    });
   }
 
   function removeProduct(kind: ComponentKind) {
@@ -235,7 +270,11 @@ export function ManualPartPicker() {
               <select
                 value={resolution}
                 onChange={(event) => setResolution(event.target.value as Resolution)}
-                className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#111827] px-3 text-sm font-semibold normal-case text-white"
+                className={cx(
+                  "mt-1 h-10 w-full cursor-pointer rounded-md border border-slate-700 bg-[#111827] px-3 text-sm font-semibold normal-case text-white hover:border-signal/60",
+                  interactiveButton,
+                  focusRing
+                )}
               >
                 <option value="1080p">1080p</option>
                 <option value="1440p">1440p</option>
@@ -247,7 +286,11 @@ export function ManualPartPicker() {
               <select
                 value={refreshRate}
                 onChange={(event) => setRefreshRate(Number(event.target.value) as (typeof refreshOptions)[number])}
-                className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#111827] px-3 text-sm font-semibold normal-case text-white"
+                className={cx(
+                  "mt-1 h-10 w-full cursor-pointer rounded-md border border-slate-700 bg-[#111827] px-3 text-sm font-semibold normal-case text-white hover:border-signal/60",
+                  interactiveButton,
+                  focusRing
+                )}
               >
                 {refreshOptions.map((rate) => (
                   <option key={rate} value={rate}>
@@ -277,7 +320,7 @@ export function ManualPartPicker() {
               selected={selected[kind]}
               loading={loading}
               failure={failures[kind]}
-              onAdd={() => setActiveKind(kind)}
+              onAdd={(opener) => openPicker(kind, opener)}
               onRemove={() => removeProduct(kind)}
             />
           ))}
@@ -287,7 +330,7 @@ export function ManualPartPicker() {
           <div className="rounded-lg border border-slate-800 bg-[#111827] p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">Build summary</h3>
-              {validating ? <Loader2 size={18} className="animate-spin text-signal" aria-label="Calculating build" /> : null}
+              {validating ? <Loader2 size={18} className={cx(motionSafeSpin, "text-signal")} aria-label="Calculating build" /> : null}
             </div>
             <div className="grid gap-2">
               <SummaryMetric label="Selected" value={`${selectedCount}/8 parts`} />
@@ -344,26 +387,28 @@ export function ManualPartPicker() {
               </p>
             ) : (
               <p className="text-sm leading-6 text-slate-400">
-                Manual-only warning: all parts can be reviewed here, but missing prices or exact specs should be fixed before trusting automated recommendations.
+                Review before relying on automation: a few prices or specs still need confirmation.
               </p>
             )}
             {validationError ? <p className="mt-2 text-sm leading-6 text-danger">{validationError}</p> : null}
           </div>
 
-          <div className="rounded-lg border border-slate-800 bg-[#111827] p-4">
-            <div className="mb-2 text-sm font-semibold text-white">Build notes</div>
-            {visibleWarnings.length ? (
-              <ul className="grid gap-2 text-sm leading-5 text-slate-400">
-                {visibleWarnings.slice(0, 6).map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm leading-6 text-slate-400">
-                Pick all required parts to see compatibility, wattage, and FPS estimates.
-              </p>
-            )}
-          </div>
+          <CalmNotice
+            title={buyerNotes.summary}
+            tone={buyerNotes.count ? "caution" : "info"}
+            className="border-slate-800 bg-[#111827]"
+            details={
+              buyerNotes.hasDetails ? (
+                <ul className="grid gap-1">
+                  {buyerNotes.details.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : null
+            }
+          >
+            {buyerNotes.visible.length ? buyerNotes.visible.join(" ") : "Pick parts to see the build summary."}
+          </CalmNotice>
         </aside>
       </div>
 
@@ -376,7 +421,7 @@ export function ManualPartPicker() {
           buildWattage={compatibility?.total_power_draw_w ?? 0}
           loading={loading}
           failure={failures[activeKind]}
-          onClose={() => setActiveKind(null)}
+          onClose={closePicker}
           onSelect={(product) => chooseProduct(activeKind, product)}
           onLoadMore={() => loadMoreProducts(activeKind)}
           loadingMore={Boolean(loadingMore[activeKind])}
@@ -401,7 +446,7 @@ function PartRow({
   selected?: ProductSearchResult;
   loading: boolean;
   failure?: string;
-  onAdd: () => void;
+  onAdd: (opener: HTMLButtonElement) => void;
   onRemove: () => void;
 }) {
   const price = selected ? bestSarPrice(selected) : null;
@@ -426,9 +471,9 @@ function PartRow({
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-white">{displayProductName(selected)}</div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
-                <span>{price ? formatSar(price.amount) : "No SAR price"}</span>
+                <span>{price ? formatSar(price.amount) : "Price not listed yet"}</span>
                 <span>{displayStoreName(price?.vendor ?? selected.current_recommended_vendor ?? selected.lowest_market_vendor)}</span>
-                {state ? <span className={`rounded-full px-2 py-0.5 font-semibold ${state.className}`}>{state.label}</span> : null}
+                {state ? <StateBadge tone={state.tone}>{state.label}</StateBadge> : null}
               </div>
             </div>
           </div>
@@ -444,7 +489,11 @@ function PartRow({
           <button
             type="button"
             onClick={onRemove}
-            className="grid h-8 w-8 place-items-center rounded-md border border-slate-700 bg-[#111827] text-slate-400 hover:text-danger"
+            className={cx(
+              "grid h-8 w-8 place-items-center rounded-md border border-slate-700 bg-[#111827] text-slate-400 hover:border-danger/50 hover:text-danger active:bg-[#0b101d]",
+              interactiveButton,
+              focusRing
+            )}
             aria-label={`Remove ${kind}`}
             title={`Remove ${kind}`}
           >
@@ -453,9 +502,14 @@ function PartRow({
         ) : null}
         <button
           type="button"
-          onClick={onAdd}
+          data-picker-trigger={kind}
+          onClick={(event) => onAdd(event.currentTarget)}
           disabled={loading || Boolean(failure)}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-[#202633] px-3 text-sm font-semibold text-white hover:border-signal disabled:cursor-not-allowed disabled:opacity-60"
+          className={cx(
+            "inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-700 bg-[#202633] px-3 text-sm font-semibold text-white hover:border-signal hover:bg-[#263041] active:bg-[#111827]",
+            interactiveButton,
+            focusRing
+          )}
         >
           <Plus size={15} aria-hidden />
           {selected ? `Change ${kind}` : `Add ${kind}`}
@@ -492,6 +546,9 @@ function ProductPickerModal({
   loadingMore: boolean;
   hasMore: boolean;
 }) {
+  const headingId = useId();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortMode>("recommended");
   const [brand, setBrand] = useState<string>("all");
@@ -509,12 +566,34 @@ function ProductPickerModal({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+      if (event.key === "Tab" && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), details summary, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((element) => !element.hasAttribute("disabled") && !element.getAttribute("aria-hidden"));
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     }
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [onClose]);
@@ -619,8 +698,16 @@ function ProductPickerModal({
   }, [groupedProducts, sort]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/76 p-2 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-label={`Add ${kind}`}>
-      <div className="mx-auto grid h-full min-h-0 max-w-7xl overflow-hidden rounded-lg border border-line bg-[#0b101d] shadow-tight lg:grid-cols-[250px_1fr]">
+    <div
+      className="fixed inset-0 z-50 bg-black/76 p-2 backdrop-blur-sm sm:p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={headingId}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div ref={dialogRef} className="mx-auto grid h-full min-h-0 max-w-7xl overflow-hidden rounded-lg border border-line bg-[#0b101d] shadow-tight lg:grid-cols-[250px_1fr]">
         <aside className="hidden overflow-y-auto border-r border-line bg-[#080d18] p-4 lg:block">
           <div className="mb-5 flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-signal text-slate-950">
@@ -646,8 +733,8 @@ function ProductPickerModal({
             <SlidersHorizontal size={16} aria-hidden />
             Filters
           </div>
-          <label className="mt-3 flex items-center gap-2 rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink">
-            <input type="checkbox" checked={onlyPriced} onChange={(event) => setOnlyPriced(event.target.checked)} />
+          <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink transition-colors hover:border-signal/60 focus-within:border-signal focus-within:ring-2 focus-within:ring-signal/60 motion-reduce:transition-none">
+            <input className={cx("cursor-pointer", focusRing)} type="checkbox" checked={onlyPriced} onChange={(event) => setOnlyPriced(event.target.checked)} />
             In-stock/priced
           </label>
 
@@ -663,14 +750,14 @@ function ProductPickerModal({
                 value={minPrice}
                 onChange={(event) => setMinPrice(event.target.value.replace(/[^\d]/g, ""))}
                 placeholder="Min SAR"
-                className="h-9 rounded-md border border-line bg-[#050915] px-2 text-sm text-ink placeholder:text-muted"
+                className={cx("h-9 rounded-md border border-line bg-[#050915] px-2 text-sm text-ink placeholder:text-muted hover:border-signal/60", focusRing)}
               />
               <input
                 inputMode="numeric"
                 value={maxPrice}
                 onChange={(event) => setMaxPrice(event.target.value.replace(/[^\d]/g, ""))}
                 placeholder="Max SAR"
-                className="h-9 rounded-md border border-line bg-[#050915] px-2 text-sm text-ink placeholder:text-muted"
+                className={cx("h-9 rounded-md border border-line bg-[#050915] px-2 text-sm text-ink placeholder:text-muted hover:border-signal/60", focusRing)}
               />
             </div>
           </div>
@@ -681,7 +768,12 @@ function ProductPickerModal({
               <button
                 type="button"
                 onClick={() => setBrand("all")}
-                className={`rounded-md border px-3 py-2 text-left text-sm ${brand === "all" ? "border-signal text-signal" : "border-line text-muted"}`}
+                className={cx(
+                  "rounded-md border px-3 py-2 text-left text-sm hover:border-signal/60 hover:text-ink active:bg-[#111827]",
+                  interactiveButton,
+                  focusRing,
+                  brand === "all" ? "border-signal text-signal" : "border-line text-muted"
+                )}
               >
                 All brands
               </button>
@@ -690,7 +782,12 @@ function ProductPickerModal({
                   key={item}
                   type="button"
                   onClick={() => setBrand(item)}
-                  className={`rounded-md border px-3 py-2 text-left text-sm ${brand === item ? "border-signal text-signal" : "border-line text-muted"}`}
+                  className={cx(
+                    "rounded-md border px-3 py-2 text-left text-sm hover:border-signal/60 hover:text-ink active:bg-[#111827]",
+                    interactiveButton,
+                    focusRing,
+                    brand === item ? "border-signal text-signal" : "border-line text-muted"
+                  )}
                 >
                   {item}
                 </button>
@@ -712,46 +809,43 @@ function ProductPickerModal({
         <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
             <div>
-              <h3 className="text-lg font-semibold text-ink">Showing {visible.length} market products</h3>
+              <h3 id={headingId} className="text-lg font-semibold text-ink">Showing {visible.length} market products</h3>
               <p className="text-sm text-muted">
                 one card per product, cheapest seller price shown from {browserProducts.length} loaded listings
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="grid h-9 w-9 place-items-center rounded-md border border-line bg-panel text-muted hover:text-ink"
-              aria-label="Close product picker"
-            >
+            <IconButton label="Close product picker" onClick={onClose}>
               <X size={18} aria-hidden />
-            </button>
+            </IconButton>
           </div>
 
           <div className="grid gap-3 border-b border-line p-4 md:grid-cols-[180px_1fr]">
-            <label className="flex h-10 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm text-muted">
+            <label className={cx("flex h-10 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm text-muted hover:border-signal/60", focusRing)}>
               <ArrowUpDown size={16} aria-hidden />
-              <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="w-full bg-transparent text-ink outline-none">
+              <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} className="w-full cursor-pointer bg-transparent text-ink outline-none">
                 <option value="recommended">Recommended</option>
                 <option value="cheapest">Cheapest</option>
                 <option value="newest">Newest</option>
                 <option value="name">Name</option>
               </select>
             </label>
-            <label className="flex h-10 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm text-muted">
+            <label className={cx("flex h-10 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm text-muted hover:border-signal/60", focusRing)}>
               <Search size={16} aria-hidden />
               <input
+                ref={searchInputRef}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={`Search ${categoryCopy[kind]}...`}
                 className="w-full bg-transparent text-ink outline-none placeholder:text-muted"
-                autoFocus
               />
             </label>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {failure || browserError ? (
-              <div className="rounded-md border border-danger/30 bg-red-50 px-3 py-2 text-sm text-danger">{failure ?? browserError}</div>
+              <CalmNotice title="Products could not load" tone="danger">
+                {failure ?? browserError}
+              </CalmNotice>
             ) : loading || browserLoading ? (
               <div className="grid place-items-center rounded-lg border border-line bg-panel px-3 py-16 text-sm text-muted">
                 Loading Saudi market products...
@@ -778,7 +872,11 @@ function ProductPickerModal({
                   type="button"
                   onClick={loadMoreFilteredProducts}
                   disabled={loadingMore || browserLoadingMore}
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-line bg-[#2d2d30] px-4 text-sm font-bold text-white transition hover:border-signal disabled:cursor-wait disabled:opacity-60"
+                  className={cx(
+                    "inline-flex h-10 items-center justify-center rounded-md border border-line bg-[#2d2d30] px-4 text-sm font-bold text-white hover:border-signal hover:bg-[#36363a] active:bg-[#242428] disabled:cursor-wait",
+                    interactiveButton,
+                    focusRing
+                  )}
                 >
                   {loadingMore || browserLoadingMore ? "Loading more..." : "Load more products"}
                 </button>
@@ -798,29 +896,34 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
   const state = productCatalogState(product);
   const missingExactFields = product.missing_exact_card_fields ?? [];
   return (
-    <article className={`flex min-h-[380px] flex-col overflow-hidden rounded-md border bg-[#1c1c1e] shadow-[0_18px_40px_rgba(0,0,0,0.22)] transition hover:-translate-y-0.5 hover:border-signal/70 ${selected ? "border-signal" : "border-[#2f3137]"}`}>
-      <div className="grid aspect-[4/3] place-items-center bg-white p-4">
+    <article
+      className={cx(
+        "flex min-h-[430px] flex-col overflow-hidden rounded-md border bg-[#1c1c1e] shadow-[0_18px_40px_rgba(0,0,0,0.22)] transition-colors duration-150 hover:border-signal/70 motion-reduce:transition-none",
+        selected ? "border-signal" : "border-[#2f3137]"
+      )}
+    >
+      <div className="grid h-48 place-items-center bg-white p-4">
         <ProductArtwork product={product} productName={productName} />
       </div>
-      <div className="grid flex-1 gap-3 bg-[#1c1c1e] p-3.5">
-        <div>
+      <div className="grid flex-1 grid-rows-[minmax(80px,auto)_minmax(42px,auto)_minmax(96px,auto)_minmax(48px,auto)_auto] gap-3 bg-[#1c1c1e] p-3.5">
+        <div className="min-h-20">
           <h4 className="line-clamp-2 min-h-10 text-sm font-bold leading-5 text-white" title={productName}>
             {productName}
           </h4>
           <div className="mt-2 flex flex-wrap gap-2 text-xs text-[#a1a1aa]">
             {product.brand ? <span>{product.brand}</span> : null}
             <span>{product.region}</span>
-            <span className={`rounded-full px-2 py-0.5 font-semibold ${state.className}`}>{state.label}</span>
+            <StateBadge tone={state.tone}>{state.label}</StateBadge>
           </div>
         </div>
-        <div className="flex items-start justify-between gap-3">
-          <div className="text-base font-bold text-[#4ade80]">{price ? formatSar(price.amount) : "No SAR price"}</div>
+        <div className="flex min-h-10 items-start justify-between gap-3">
+          <div className="text-base font-bold text-[#4ade80]">{price ? formatSar(price.amount) : "Price not listed yet"}</div>
           <div className="max-w-[45%] truncate text-right text-xs font-semibold text-[#b8beca]">
             {displayStoreName(price?.vendor ?? product.current_recommended_vendor ?? product.lowest_market_vendor)}
           </div>
         </div>
         {specs.length ? (
-          <dl className="grid grid-cols-2 gap-x-5 gap-y-2.5 text-xs">
+          <dl className="grid min-h-24 grid-cols-2 gap-x-5 gap-y-2.5 text-xs">
             {specs.map((spec) => (
               <div key={spec.label}>
                 <dt className="text-[11px] font-medium text-[#8d929f]">{spec.label}</dt>
@@ -828,16 +931,25 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
               </div>
             ))}
           </dl>
-        ) : null}
+        ) : (
+          <div className="min-h-24 text-xs leading-5 text-[#a1a1aa]">Specs will appear as confirmed evidence is added.</div>
+        )}
         {missingExactFields.length ? (
           <p className="rounded-md border border-amber-300/20 bg-amber-300/10 px-2.5 py-2 text-xs leading-5 text-amber-100">
-            Needs exact card specs: {missingExactFields.slice(0, 3).join(", ")}
+            Specs needed: {missingExactFields.slice(0, 3).join(", ")}
           </p>
-        ) : null}
+        ) : (
+          <div className="min-h-12" aria-hidden />
+        )}
         <button
           type="button"
           onClick={onSelect}
-          className="mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#3a3d45] bg-[#2d2d30] text-sm font-bold text-white transition hover:border-signal hover:bg-[#36363a] focus:outline-none focus:ring-2 focus:ring-signal/70"
+          aria-pressed={selected}
+          className={cx(
+            "mt-auto inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#3a3d45] bg-[#2d2d30] text-sm font-bold text-white hover:border-signal hover:bg-[#36363a] active:bg-[#242428]",
+            interactiveButton,
+            focusRing
+          )}
         >
           <Plus size={15} aria-hidden />
           {selected ? "Selected" : "Add to build"}
@@ -898,7 +1010,11 @@ function FacetFilter({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-md border border-line bg-[#050915] px-3 text-sm font-semibold text-ink"
+        className={cx(
+          "h-10 w-full cursor-pointer rounded-md border border-line bg-[#050915] px-3 text-sm font-semibold text-ink hover:border-signal/60",
+          interactiveButton,
+          focusRing
+        )}
       >
         <option value="all">All {title.toLowerCase()}</option>
         {options.map((option) => (
@@ -1197,20 +1313,20 @@ function facetValues(products: ProductSearchResult[], field: string): string[] {
   ).sort((left, right) => left.localeCompare(right));
 }
 
-function productCatalogState(product: ProductSearchResult): { label: string; className: string } {
+function productCatalogState(product: ProductSearchResult): { label: string; tone: "neutral" | "success" | "info" | "caution" } {
   if (product.catalog_state === "saudi_priced" || bestSarPrice(product)) {
-    return { label: "Saudi priced", className: "bg-emerald-400/15 text-emerald-300" };
+    return { label: "Saudi priced", tone: "success" };
   }
   if (product.readiness_state === "compatibility_ready_exact" || product.compatibility_ready_exact) {
-    return { label: "Exact ready", className: "bg-teal-400/15 text-teal-200" };
+    return { label: "Exact ready", tone: "success" };
   }
   if (product.readiness_state === "compatibility_ready_family" || product.compatibility_ready_family) {
-    return { label: "Family ready", className: "bg-sky-400/15 text-sky-200" };
+    return { label: "Family ready", tone: "info" };
   }
   if (product.catalog_state === "needs_spec_confirmation" || product.compatibility_ready === false) {
-    return { label: "Needs specs", className: "bg-amber-300/15 text-amber-200" };
+    return { label: "Needs specs", tone: "caution" };
   }
-  return { label: "Catalog only", className: "bg-slate-400/15 text-slate-200" };
+  return { label: "Catalog only", tone: "neutral" };
 }
 
 function hasSpecGap(product: ProductSearchResult): boolean {
@@ -1224,6 +1340,6 @@ function hasSpecGap(product: ProductSearchResult): boolean {
 }
 
 function formatSar(value?: number | null) {
-  if (typeof value !== "number") return "Price unknown";
+  if (typeof value !== "number") return "Price not listed yet";
   return `${Math.round(value).toLocaleString("en-US")} SAR`;
 }

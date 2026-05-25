@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { BuildComponentRow } from "@/components/BuildComponentRow";
+import { CalmNotice, StateBadge, cx, focusRing, interactiveButton } from "@/components/ui/PublicUi";
+import { summarizeBuyerNotes } from "@/lib/uiText";
 import type { SaudiBuildComponent, SaudiBuildOption } from "@/types/builder";
 
 type BuildRecommendationCardProps = {
@@ -55,6 +57,10 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
   }
   const riskWarnings = Array.from(new Set(buildWarnings)).slice(0, 10);
   const priorityWarnings = prioritizeWarnings([...build.summary.warning_summary, ...riskWarnings]);
+  const buyerNotes = summarizeBuyerNotes(priorityWarnings, {
+    fallback: "No high-priority buying notes right now.",
+    summary: "Some details need review before buying."
+  });
   const trustedLocalCount = build.components.filter((component) => component.stock_badge === "local" || component.stock_badge === "gcc").length;
   const uncertainCount = build.summary.components_with_uncertainty.length;
 
@@ -72,24 +78,20 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="rounded border border-line bg-panel px-2 py-1 text-xs font-semibold uppercase text-muted">
+            <StateBadge className="rounded px-2 py-1 uppercase">
               {build.label.replaceAll("_", " ")}
-            </span>
-            <span className="rounded border border-teal-200 bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
+            </StateBadge>
+            <StateBadge tone="success" className="rounded px-2 py-1">
               {build.summary.confidence_level} confidence
-            </span>
+            </StateBadge>
             {build.summary.components_with_uncertainty.length ? (
-              <span className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-caution">
-                Build generated with market-data warnings
-              </span>
+              <StateBadge tone="caution" className="rounded px-2 py-1">
+                Review details
+              </StateBadge>
             ) : null}
-            <span
-              className={`rounded border px-2 py-1 text-xs font-semibold ${
-                overBudget ? "border-amber-200 bg-amber-50 text-caution" : "border-teal-200 bg-teal-50 text-teal-700"
-              }`}
-            >
+            <StateBadge tone={overBudget ? "caution" : "success"} className="rounded px-2 py-1">
               {budgetLabel}
-            </span>
+            </StateBadge>
           </div>
           <h3 className="text-lg font-semibold text-ink">{build.title}</h3>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">{build.explanation.summary}</p>
@@ -100,7 +102,11 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
                 type="button"
                 onClick={() => onSave(build)}
                 disabled={saving}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                className={cx(
+                  "inline-flex h-9 items-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950 hover:bg-signal/90 active:bg-signal/80",
+                  interactiveButton,
+                  focusRing
+                )}
               >
                 <Save size={15} aria-hidden />
                 {saving ? "Saving" : "Save Build"}
@@ -110,7 +116,11 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
               <button
                 type="button"
                 onClick={() => onShare(build)}
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink hover:bg-white"
+                className={cx(
+                  "inline-flex h-9 items-center gap-2 rounded-md border border-line bg-panel px-3 text-sm font-semibold text-ink hover:border-signal hover:bg-white active:bg-panel",
+                  interactiveButton,
+                  focusRing
+                )}
               >
                 <Share2 size={15} aria-hidden />
                 Share
@@ -149,34 +159,33 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
 
       <section className="mb-4 grid gap-3 rounded-md border border-line bg-panel p-3 lg:grid-cols-[0.95fr_1.05fr]">
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase text-muted">Launch check</div>
+          <div className="mb-2 text-xs font-semibold uppercase text-muted">Fit check</div>
           <div className="grid gap-2 text-sm leading-6 text-muted">
             <span>
-              {overBudget
-                ? `Budget needs attention: this option is ${formatSar(overageAmount)} over the user budget.`
-                : "Budget fit is acceptable for this option."}
+              {overBudget ? `This option is ${formatSar(overageAmount)} over budget.` : "Budget fit looks reasonable."}
             </span>
             <span>
               {trustedLocalCount} of {build.components.length} components are local/GCC choices; {uncertainCount} component
-              {uncertainCount === 1 ? "" : "s"} need verification before purchase.
+              {uncertainCount === 1 ? "" : "s"} need a quick store check.
             </span>
           </div>
         </div>
         <div>
-          <div className="mb-2 text-xs font-semibold uppercase text-muted">Verify before buying</div>
-          {priorityWarnings.length ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              {priorityWarnings.slice(0, 4).map((warning) => (
-                <div key={warning} className="rounded border border-caution/30 bg-amber-50 px-2 py-1.5 text-xs leading-5 text-caution">
-                  {warning}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded border border-teal-200 bg-teal-50 px-2 py-1.5 text-xs leading-5 text-signal">
-              No high-priority marketplace, warranty, VAT, or shipping warning is visible.
-            </p>
-          )}
+          <CalmNotice
+            title={buyerNotes.summary}
+            tone={buyerNotes.count ? "caution" : "success"}
+            details={
+              buyerNotes.hasDetails ? (
+                <ul className="grid gap-1">
+                  {buyerNotes.details.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : null
+            }
+          >
+            {buyerNotes.visible.length ? buyerNotes.visible.join(" ") : buyerNotes.summary}
+          </CalmNotice>
         </div>
       </section>
 
@@ -199,7 +208,7 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
           <p className="text-sm leading-6 text-muted">{build.explanation.budget_analysis}</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <InfoList title="Strengths" items={build.explanation.strengths} fallback="No major strength reported." />
-            <InfoList title="Weaknesses" items={build.explanation.weaknesses} fallback="No major weakness reported." />
+            <InfoList title="Tradeoffs" items={build.explanation.weaknesses} fallback="No major tradeoff reported." />
           </div>
         </section>
 
@@ -243,7 +252,7 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
         </section>
 
         <section className="rounded-md border border-line bg-panel p-3">
-          <InfoList title="Visible Risks" items={build.explanation.risks.length ? build.explanation.risks : riskWarnings} fallback="No visible marketplace warning." />
+          <InfoList title="Review" items={build.explanation.risks.length ? build.explanation.risks : riskWarnings} fallback="No visible marketplace note." />
         </section>
 
         <section className="rounded-md border border-line bg-panel p-3">
@@ -255,7 +264,7 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
       </div>
 
       <details className="mt-4 rounded-md border border-line bg-panel px-3 py-2">
-        <summary className="cursor-pointer text-sm font-semibold text-ink">Buying order, component reasons, and export</summary>
+        <summary className={cx("cursor-pointer text-sm font-semibold text-ink", focusRing)}>Buying order, component reasons, and export</summary>
         <div className="mt-3 grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
           <section className="rounded-md border border-line bg-white p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase text-muted">
@@ -293,16 +302,15 @@ export function BuildRecommendationCard({ build, onSave, onShare, onWatchProduct
           </div>
           <div className="grid gap-2 text-xs leading-5 text-muted md:grid-cols-[240px_1fr]">
             <span className="rounded border border-line bg-panel px-2 py-1 text-ink">{build.export.shareable_build_url}</span>
-            <pre className="max-h-32 overflow-auto rounded border border-line bg-panel p-2 font-mono text-[11px] leading-5 text-muted">
+            <pre className="max-h-32 max-w-full overflow-auto whitespace-pre-wrap break-words rounded border border-line bg-panel p-2 font-mono text-[11px] leading-5 text-muted">
               {build.export.markdown_summary}
             </pre>
           </div>
         </div>
       </details>
-      <div className="mt-3 rounded-md border border-caution/30 bg-amber-50 px-3 py-2 text-xs leading-5 text-caution">
-        Prices, stock, VAT, shipping, warranty, and seller terms may change. Verify the store page before buying; future
-        affiliate or store terms may apply.
-      </div>
+      <CalmNotice title="Before buying" tone="info" className="mt-3">
+        Store price, stock, delivery, and warranty can change. Check the store page before purchase.
+      </CalmNotice>
     </article>
   );
 }
@@ -366,8 +374,8 @@ function ConfidenceBar({ label, value }: { label: string; value: number }) {
         <span>{label}</span>
         <strong className="text-ink">{pct}%</strong>
       </div>
-      <div className="h-2 overflow-hidden rounded bg-white">
-        <div className="h-full rounded bg-signal" style={{ width: `${pct}%` }} />
+      <div className="h-2 overflow-hidden rounded bg-white" role="meter" aria-label={`${label} confidence ${pct}%`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-2 rounded bg-signal" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

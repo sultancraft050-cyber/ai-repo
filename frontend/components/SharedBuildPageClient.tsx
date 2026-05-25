@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, Clock3, Download, ShieldCheck } from "lucide-react";
+import { ArrowRight, Clock3, Download, ShieldCheck } from "lucide-react";
 import { BuildRecommendationCard } from "@/components/BuildRecommendationCard";
+import { CalmNotice, SkeletonBlock, StateBadge, cx, focusRing, interactiveButton } from "@/components/ui/PublicUi";
 import { getSharedBuild } from "@/lib/api";
 import type { SavedBuild, SaudiBuildOption } from "@/types/builder";
 
@@ -39,51 +40,56 @@ export function SharedBuildPageClient({ slug }: { slug: string }) {
           </div>
           <h1 className="text-2xl font-semibold text-ink">{build?.title ?? "Loading shared build"}</h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Public build summary with Saudi prices, warnings, confidence, and component choices. Store pages should still be verified before purchase.
+            Public build summary with Saudi prices, confidence, and component choices.
           </p>
           {build ? (
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-              <span className="rounded border border-line bg-panel px-2 py-1">Region {build.region}</span>
-              <span className="rounded border border-line bg-panel px-2 py-1">{formatSar(build.total_price_sar)}</span>
-              <span className="rounded border border-line bg-panel px-2 py-1">{build.confidence_level} confidence</span>
+              <StateBadge>Region {build.region}</StateBadge>
+              <StateBadge>{formatSar(build.total_price_sar)}</StateBadge>
+              <StateBadge tone="success">{build.confidence_level} confidence</StateBadge>
               {generatedAt ? (
-                <span className="inline-flex items-center gap-1 rounded border border-line bg-panel px-2 py-1">
+                <StateBadge className="gap-1">
                   <Clock3 size={12} aria-hidden />
                   Generated {generatedAt}
-                </span>
+                </StateBadge>
               ) : null}
             </div>
           ) : null}
         </header>
 
         {error ? (
-          <div className="flex items-start gap-2 rounded-lg border border-caution/40 bg-amber-50 p-4 text-sm text-caution">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
-            <div>
-              <div className="font-semibold">Shared build not available</div>
-              <p className="mt-1 leading-6">{error} The owner may have disabled public sharing or the link may be wrong.</p>
-              <a href="/#builder" className="mt-3 inline-flex rounded-md border border-caution/40 px-3 py-2 text-xs font-semibold">
+          <CalmNotice title="Shared build not available" tone="caution">
+            <span className="block">{error} The link may be unavailable.</span>
+            <a
+              href="/#builder"
+              className={cx(
+                "mt-3 inline-flex rounded-md border border-caution/40 px-3 py-2 text-xs font-semibold hover:bg-white",
+                interactiveButton,
+                focusRing
+              )}
+            >
                 Start a new build
-              </a>
-            </div>
-          </div>
+            </a>
+          </CalmNotice>
         ) : null}
 
         {hasRenderableBuild && payload ? (
           <>
             <section className="grid gap-3 rounded-lg border border-line bg-white p-4 shadow-tight md:grid-cols-3">
               <ShareMetric label="Budget" value={budgetStatus} tone={payload.summary.budget_status === "under_budget" ? "signal" : "caution"} />
-              <ShareMetric label="Warnings" value={warningCount ? `${warningCount} visible` : "None visible"} tone={warningCount ? "caution" : "signal"} />
+              <ShareMetric label="Review notes" value={warningCount ? `${warningCount} visible` : "None visible"} tone={warningCount ? "caution" : "signal"} />
               <ShareMetric label="Saudi price context" value="SAR only" tone="signal" />
-              <div className="md:col-span-3 grid gap-2 rounded-md border border-caution/30 bg-amber-50 px-3 py-2 text-sm leading-6 text-caution">
-                <span>
-                  Prices, VAT, shipping, warranty, and stock may change after this build was shared. Verify each linked store page before buying.
-                </span>
-              </div>
+              <CalmNotice title="Before buying" tone="info" className="md:col-span-3">
+                Store price, stock, delivery, and warranty can change. Check the store page before purchase.
+              </CalmNotice>
               <div className="flex flex-wrap gap-2 md:col-span-3">
                 <a
                   href="/#builder"
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950"
+                  className={cx(
+                    "inline-flex h-9 items-center justify-center gap-2 rounded-md border border-signal bg-signal px-3 text-sm font-semibold text-slate-950 hover:bg-signal/90 active:bg-signal/80",
+                    interactiveButton,
+                    focusRing
+                  )}
                 >
                   Start your own build
                   <ArrowRight size={15} aria-hidden />
@@ -96,15 +102,19 @@ export function SharedBuildPageClient({ slug }: { slug: string }) {
                 <Download size={15} aria-hidden />
                 Export
               </div>
-              <pre className="max-h-72 overflow-auto rounded-md border border-line bg-panel p-3 text-xs leading-5 text-muted">
+              <pre className="max-h-72 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md border border-line bg-panel p-3 text-xs leading-5 text-muted">
                 {payload.export?.markdown_summary ?? JSON.stringify(payload.export?.json_summary ?? payload, null, 2)}
               </pre>
             </section>
           </>
         ) : !error ? (
-          <div className="rounded-lg border border-line bg-white p-4 text-sm leading-6 text-muted shadow-tight">
-            {build ? "This shared build is missing public component details. The owner may need to resave it." : "Loading build details..."}
-          </div>
+          build ? (
+            <CalmNotice title="Build details are unavailable" tone="info">
+              The owner may need to resave this build.
+            </CalmNotice>
+          ) : (
+            <SkeletonBlock className="h-28" label="Loading shared build details" />
+          )
         ) : null}
       </div>
     </main>
