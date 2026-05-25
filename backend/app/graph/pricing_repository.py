@@ -130,7 +130,7 @@ APPROVED_CANONICAL_IMPORT_SOURCES = {
 }
 CONFIRMED_SPEC_REQUIRED_FIELDS = {
     "CPU": ("socket", "cores", "threads", "tdp_w"),
-    "GPU": ("vram_gb", "tdp_w", "length_mm", "pcie_generation"),
+    "GPU": ("vram_gb", "pcie_generation", "board_power_w", "length_mm", "slots", "power_connectors"),
     "Motherboard": ("chipset", "socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"),
     "RAM": ("memory_type", "capacity_gb", "speed_mhz", "kit_config"),
     "Storage": ("capacity_gb", "interface", "protocol", "form_factor"),
@@ -139,7 +139,7 @@ CONFIRMED_SPEC_REQUIRED_FIELDS = {
     "Cooler": ("socket_support", "radiator_size_mm", "height_mm"),
 }
 GPU_FAMILY_REQUIRED_FIELDS = ("chip_family", "vram_gb", "pcie_generation", "reference_tdp_w")
-GPU_EXACT_CARD_REQUIRED_FIELDS = ("vram_gb", "pcie_generation", "length_mm", "slots", "power_connectors")
+GPU_EXACT_CARD_REQUIRED_FIELDS = ("vram_gb", "pcie_generation", "board_power_w", "length_mm", "slots", "power_connectors")
 CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
 CONFIRMED_SPEC_IDENTITY_CONFIDENCE = 0.95
 SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
@@ -1274,8 +1274,6 @@ def _catalog_row_has_required_specs(category: str, specs: dict[str, Any]) -> boo
 
 def _gpu_exact_missing_fields(specs: dict[str, Any]) -> list[str]:
     missing = [field for field in GPU_EXACT_CARD_REQUIRED_FIELDS if specs.get(field) in (None, "", [])]
-    if specs.get("board_power_w") in (None, "", []) and specs.get("tdp_w") in (None, "", []):
-        missing.append("board_power_w")
     return list(dict.fromkeys(missing))
 
 

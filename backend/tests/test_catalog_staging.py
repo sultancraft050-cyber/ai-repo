@@ -86,7 +86,7 @@ class ConfirmedSpecCommitDriver(FakeDriver):
                         "model": "PowerColor RX7800XT 16G-P",
                         "specs": {
                             "vram_gb": 16,
-                            "tdp_w": 263,
+                            "board_power_w": 263,
                             "length_mm": 260,
                             "slots": 2.5,
                             "power_connectors": "2x 8-pin",

@@ -1,0 +1,91 @@
+{
+  "source_name": "founder_confirmed_phase2_gpu_exact_specs",
+  "license_note": "Source-attributed current-generation AIB GPU exact-card compatibility facts for controlled Phase 2 enrichment; prices are not included.",
+  "gpu_exact_card_records": [
+    {
+      "canonical_key": "GPU|UNKNOWN|GEFORCE_RTX_5070|MSI_GAMING_TRIO_OC",
+      "specs": {
+        "chip_family": "GeForce RTX 5070",
+        "vram_gb": 12,
+        "pcie_generation": "PCIe 5.0",
+        "board_power_w": 250,
+        "tdp_w": 250,
+        "length_mm": 338,
+        "slots": 2.5,
+        "power_connectors": "1x 16-pin",
+        "power_connector_note": "ATX 3.1 PSU recommended"
+      },
+      "evidence_note": "MSI official GeForce RTX 5070 12G GAMING TRIO OC datasheet: power consumption 250 W, 16-pin x1, card dimension 338 x 140 x 50 mm, PCIe Gen 5, 12GB GDDR7. Source: https://storage-asset.msi.com/datasheet/vga/global/GeForce-RTX-5070-12G-GAMING-TRIO-OC.pdf"
+    },
+    {
+      "canonical_key": "GPU|UNKNOWN|GEFORCE_RTX_5070_TI|MSI_GAMING_TRIO_OC",
+      "specs": {
+        "chip_family": "GeForce RTX 5070 Ti",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "board_power_w": 300,
+        "tdp_w": 300,
+        "length_mm": 338,
+        "slots": 2.5,
+        "power_connectors": "1x 16-pin",
+        "power_connector_note": "ATX 3.1 PSU recommended"
+      },
+      "evidence_note": "MSI official GeForce RTX 5070 Ti 16G GAMING TRIO OC specification: power consumption 300 W, 16-pin x1, card dimension 338 x 140 x 50 mm, PCIe Gen 5, 16GB GDDR7. Source: https://us.msi.com/Graphics-Card/GeForce-RTX-5070-Ti-16G-GAMING-TRIO-OC/Specification"
+    },
+    {
+      "canonical_key": "GPU|UNKNOWN|GEFORCE_RTX_5080|MSI_GAMING_TRIO_OC",
+      "specs": {
+        "chip_family": "GeForce RTX 5080",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "board_power_w": 360,
+        "tdp_w": 360,
+        "length_mm": 338,
+        "slots": 2.5,
+        "power_connectors": "1x 16-pin",
+        "power_connector_note": "ATX 3.1 PSU recommended"
+      },
+      "evidence_note": "MSI official GeForce RTX 5080 16G GAMING TRIO OC specification: power consumption 360 W, 16-pin x1, card dimension 338 x 140 x 50 mm, PCIe Gen 5, 16GB GDDR7. Source: https://us.msi.com/Graphics-Card/GeForce-RTX-5080-16G-GAMING-TRIO-OC/Specification"
+    },
+    {
+      "canonical_key": "GPU|UNKNOWN|GEFORCE_RTX_5090|MSI_GAMING_TRIO_OC",
+      "specs": {
+        "chip_family": "GeForce RTX 5090",
+        "vram_gb": 32,
+        "pcie_generation": "PCIe 5.0",
+        "board_power_w": 575,
+        "tdp_w": 575,
+        "length_mm": 359,
+        "slots": 3.5,
+        "power_connectors": "1x 16-pin",
+        "power_connector_note": "ATX 3.1 PSU recommended"
+      },
+      "evidence_note": "MSI official GeForce RTX 5090 32G GAMING TRIO OC specification: power consumption 575 W, 16-pin x1, card dimension 359 x 149 x 70 mm, PCIe Gen 5, 32GB GDDR7. Source: https://us.msi.com/Graphics-Card/GeForce-RTX-5090-32G-GAMING-TRIO-OC/Specification"
+    },
+    {
+      "canonical_key": "GPU|UNKNOWN|RADEON_RX_9070_XT|SAPPHIRE_NITRO",
+      "specs": {
+        "chip_family": "Radeon RX 9070 XT",
+        "vram_gb": 16,
+        "pcie_generation": "PCIe 5.0",
+        "board_power_w": 330,
+        "tdp_w": 330,
+        "length_mm": 331,
+        "slots": 3.2,
+        "power_connectors": "1x 12V-2x6",
+        "power_connector_note": "3x 8-pin adapter included"
+      },
+      "evidence_note": "SAPPHIRE official NITRO+ AMD Radeon RX 9070 XT OC specification: 330 W Typical Board Power, 3.2 slot ATX, 330.8 mm length, 12V-2x6 power connector with 3x8-pin adapter, 16GB GDDR6. Source: https://www.sapphiretech.com/en/consumer/nitro-radeon-rx-9070-xt-16g-gddr6"
+    }
+  ],
+  "deferred_exact_card_targets": [
+    {
+      "target_family": "RX 9070",
+      "reason": "No selected staged preferred AIB card has all exact-card evidence fields from a trusted AIB page yet."
+    },
+    {
+      "target_family": "RX 9070 XT",
+      "reason": "Gigabyte/PowerColor records are still deferred unless exact board power and slot evidence are present on the trusted AIB page."
+    }
+  ]
+}
