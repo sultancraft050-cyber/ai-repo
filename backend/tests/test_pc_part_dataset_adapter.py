@@ -240,6 +240,52 @@ class GPUHybridReviewDriver(FakeDriver):
         return super().execute_query(query, **parameters)
 
 
+class MotherboardHybridReviewDriver(FakeDriver):
+    def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
+        self.queries.append(query)
+        if "MATCH (record:StagedCanonicalRecord)" in query and "price_snapshot_count" in query:
+            return [
+                FakeRecord(
+                    record={
+                        "staged_id": "staged:motherboard",
+                        "raw_name": "ASUS TUF Gaming B650-PLUS WIFI",
+                        "name": "ASUS TUF Gaming B650-PLUS WIFI",
+                        "canonical_key": "MOTHERBOARD|ASUS|ASUS_TUF_GAMING_B650_PLUS_WIFI",
+                        "category": "Motherboard",
+                        "validation_status": "valid",
+                        "identity_confidence": 0.95,
+                        "compatibility_ready": True,
+                        "compatibility_ready_exact": True,
+                        "compatibility_ready_family": False,
+                        "readiness_state": "compatibility_ready_exact",
+                        "confirmed_spec_source_name": "founder_confirmed_phase2_motherboard_specs",
+                        "confirmed_compatibility_fields": [
+                            "chipset",
+                            "socket",
+                            "memory_type",
+                            "form_factor",
+                            "m2_slots",
+                            "pcie_x16_slots",
+                        ],
+                        "specs": json.dumps(
+                            {
+                                "chipset": "B650",
+                                "socket": "AM5",
+                                "memory_type": "DDR5",
+                                "form_factor": "ATX",
+                                "m2_slots": 3,
+                                "pcie_x16_slots": 2,
+                            }
+                        ),
+                    },
+                    market_product_id=None,
+                    price_snapshot_count=0,
+                    cheapest=None,
+                )
+            ], None, None
+        return super().execute_query(query, **parameters)
+
+
 class MarketLinkDriver(FakeDriver):
     def execute_query(self, query: str, **parameters: Any) -> tuple[list[FakeRecord], None, None]:
         self.queries.append(query)
@@ -537,6 +583,21 @@ def test_hybrid_review_reports_gpu_family_ready_separately_from_exact_ready() ->
     assert "length_mm" in response.items[0].missing_exact_card_fields
 
 
+def test_hybrid_review_marks_confirmed_motherboard_ready_as_commit_eligible() -> None:
+    driver = MotherboardHybridReviewDriver()
+    repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
+
+    response = repository.hybrid_import_review(source_name="pc-part-dataset", category="Motherboard", region="SA")
+
+    assert response.exact_ready_count == 1
+    assert response.metadata_only_count == 0
+    assert response.commit_eligible_count == 1
+    assert response.items[0].classification == "canonical_ready_no_saudi_price"
+    assert response.items[0].readiness_state == "compatibility_ready_exact"
+    assert response.items[0].commit_eligible is True
+    assert not any("SET snapshot" in query or "CREATE (snapshot" in query for query in driver.queries)
+
+
 def test_general_confirmed_spec_enrichment_dry_run_writes_nothing() -> None:
     driver = EnrichmentDriver()
     repository = Neo4jPricingRepository(driver)  # type: ignore[arg-type]
@@ -633,6 +694,9 @@ def test_motherboard_confirmed_enrichment_marks_exact_ready_without_price_mutati
     assert update_call["compatibility_ready_exact"] is True
     assert update_call["readiness_state"] == "compatibility_ready_exact"
     assert update_call["missing_compatibility_fields"] == []
+    assert update_call["confirmed_identity_confidence"] == 0.95
+    assert "record.validation_status = CASE WHEN $required_specs_present THEN \"valid\"" in update_call["query"]
+    assert "record.identity_confidence = CASE" in update_call["query"]
     assert not any("PriceSnapshot" in query or "RegionalPriceSnapshot" in query for query in driver.queries)
 
 

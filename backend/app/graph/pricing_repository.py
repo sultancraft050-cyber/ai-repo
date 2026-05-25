@@ -141,6 +141,7 @@ CONFIRMED_SPEC_REQUIRED_FIELDS = {
 GPU_FAMILY_REQUIRED_FIELDS = ("chip_family", "vram_gb", "pcie_generation", "reference_tdp_w")
 GPU_EXACT_CARD_REQUIRED_FIELDS = ("vram_gb", "pcie_generation", "length_mm", "slots", "power_connectors")
 CANONICAL_IDENTITY_CONFIDENCE_MIN = 0.8
+CONFIRMED_SPEC_IDENTITY_CONFIDENCE = 0.95
 SUPPORTED_CANONICAL_IMPORT_EXTENSIONS = {".json", ".csv", ".ndjson"}
 BUNDLE_REJECTION_MARKERS = (
     "bundle",
@@ -1249,7 +1250,14 @@ def _catalog_has_required_specs(category: str, props: dict[str, Any]) -> bool:
         return _gpu_exact_ready({key.removeprefix("spec_"): value for key, value in props.items()})
     required = {
         "CPU": ("spec_socket", "spec_cores", "spec_threads", "spec_tdp_w"),
-        "Motherboard": ("spec_socket", "spec_memory_type", "spec_form_factor", "spec_m2_slots", "spec_pcie_x16_slots"),
+        "Motherboard": (
+            "spec_socket",
+            "spec_chipset",
+            "spec_memory_type",
+            "spec_form_factor",
+            "spec_m2_slots",
+            "spec_pcie_x16_slots",
+        ),
         "RAM": ("spec_memory_type", "spec_capacity_gb", "spec_speed_mhz", "spec_kit_config"),
         "Storage": ("spec_capacity_gb", "spec_interface", "spec_protocol", "spec_form_factor"),
         "PSU": ("spec_wattage_w", "spec_efficiency_rating", "spec_modularity"),
@@ -5584,8 +5592,16 @@ class Neo4jPricingRepository:
                 record.readiness_state = $readiness_state,
                 record.compatibility_completeness_score = $compatibility_completeness_score,
                 record.required_specs_present = $required_specs_present,
+                record.validation_status = CASE WHEN $required_specs_present THEN "valid" ELSE record.validation_status END,
+                record.identity_confidence = CASE
+                    WHEN $required_specs_present AND coalesce(record.identity_confidence, 0.0) < $confirmed_identity_confidence
+                    THEN $confirmed_identity_confidence
+                    ELSE record.identity_confidence
+                END,
                 record.missing_compatibility_fields = $missing_compatibility_fields,
                 record.missing_exact_card_fields = $missing_exact_card_fields,
+                record.rejected_reasons = CASE WHEN $required_specs_present THEN [] ELSE record.rejected_reasons END,
+                record.warning_reasons = CASE WHEN $required_specs_present THEN [] ELSE record.warning_reasons END,
                 record.confirmed_compatibility_fields = $confirmed_fields,
                 record.confirmed_spec_source_name = $source_name,
                 record.confirmed_spec_license_note = $license_note,
@@ -5603,6 +5619,7 @@ class Neo4jPricingRepository:
             readiness_state=readiness,
             compatibility_completeness_score=1.0 if exact_ready else 0.72 if family_ready else 0.0,
             required_specs_present=required_specs_present,
+            confirmed_identity_confidence=CONFIRMED_SPEC_IDENTITY_CONFIDENCE,
             missing_compatibility_fields=missing_compatibility_fields if missing_compatibility_fields is not None else [],
             missing_exact_card_fields=missing_exact_card_fields if missing_exact_card_fields is not None else [],
             confirmed_fields=confirmed_fields,
