@@ -1,0 +1,30 @@
+{
+  "region": "SA",
+  "notes": [
+    "Founder-approved exact product URLs only.",
+    "Do not add search pages, category pages, bundles, prebuilts, used listings, or non-Saudi/non-SAR offers.",
+    "The runner previews every URL first and ingests only accepted URLs when --execute-pricing is passed."
+  ],
+  "batches": [
+    {
+      "category": "GPU",
+      "priority": 1,
+      "urls": []
+    },
+    {
+      "category": "Storage",
+      "priority": 2,
+      "urls": []
+    },
+    {
+      "category": "RAM",
+      "priority": 3,
+      "urls": []
+    },
+    {
+      "category": "PSU",
+      "priority": 4,
+      "urls": []
+    }
+  ]
+}
