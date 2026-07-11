@@ -64,6 +64,15 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Vercel deployment: healthy at the recorded Vercel URL.
 - Live release compatibility: compatible; API contract version `1`.
 
+## Automated Reliability CI
+
+- Workflow: `.github/workflows/ci.yml`.
+- Triggers: pull requests and pushes to `master`; superseded runs are cancelled per ref.
+- Python validation: Python 3.12, editable backend install with test extras, compileall, focused startup-safety tests, release/security tests, and full pytest.
+- Frontend validation: Node 22, `npm ci`, typecheck, build, UI contract checks, and `/release` route artifact check run sequentially.
+- Contract/tooling validation: release tests, Node syntax checks, shell syntax check, safe-off deployment defaults, secret filename check, and diff check.
+- CI uses no production credentials, Neo4j service, provider APIs, or production endpoints. Production smoke remains manual.
+
 ## Google Cloud Run Migration
 
 - Intended platform: Google Cloud Run.

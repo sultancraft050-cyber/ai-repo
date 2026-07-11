@@ -1,0 +1,110 @@
+name: Continuous Reliability CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PRICING_SCHEDULER_ENABLED: "false"
+  AUTONOMOUS_AGENTS_ENABLED: "false"
+  CPU_SPECS_SEED_ON_START: "false"
+  ENVIRONMENT: test
+  MARKET_DATA_MODE: free
+  API_CONTRACT_VERSION: "1"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[test]"
+      - name: Compile backend
+        run: python -m compileall app
+      - name: Startup safety tests
+        run: python -m pytest tests/test_startup_safety.py -q
+      - name: Release metadata tests
+        run: python -m pytest tests/test_ops_security.py -q
+      - name: Backend test suite
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_PUBLIC_API_BASE_URL: https://example.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Typecheck frontend
+        run: npm run typecheck
+      - name: Build frontend
+        run: npm run build
+      - name: Run UI contract checks
+        run: npm run ui:check
+      - name: Verify release route in build
+        run: test -d .next/server/app/release && test -f .next/server/app/release/route.js
+      - name: Scan production assets for local API targets
+        shell: bash
+        run: |
+          if grep -RInE 'https?://(localhost|127\.0\.0\.1)(:[0-9]+)?' .next/static --include='*.js' | grep -v 'polyfills'; then
+            echo "Production application asset contains a local API target" >&2
+            exit 1
+          fi
+
+  repository-contract:
+    name: Contract and tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies for root checks
+        run: npm ci --prefix frontend
+      - name: Run release contract tests
+        run: npm run test:release
+      - name: Syntax-check Node tooling
+        run: node --check scripts/release-contract.mjs && node --check scripts/smoke-production.mjs
+      - name: Syntax-check deployment shell script
+        run: bash -n scripts/deploy-cloud-run.sh
+      - name: Validate deployment configuration and safety defaults
+        shell: bash
+        run: |
+          grep -q 'PRICING_SCHEDULER_ENABLED=false' scripts/deploy-cloud-run.sh
+          grep -q 'AUTONOMOUS_AGENTS_ENABLED=false' scripts/deploy-cloud-run.sh
+          grep -q 'CPU_SPECS_SEED_ON_START=false' scripts/deploy-cloud-run.sh
+          if git ls-files | grep -E '(^|/)\.env($|\.)|(^|/).*\.(pem|key)$'; then
+            echo "Potential secret file is tracked" >&2
+            exit 1
+          fi
+      - name: Diff whitespace check
+        run: git diff --check

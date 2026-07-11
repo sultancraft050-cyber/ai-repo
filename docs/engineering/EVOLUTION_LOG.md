@@ -312,3 +312,18 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Current Google Cloud preflight: authenticated account and project confirmed; billing and required APIs enabled; required secrets present; runtime service account and per-secret access bindings created; Artifact Registry repository created in `me-central1` after `me-central2` was rejected.
 - Cloud Build: succeeded as `dfd3d99f-4624-4867-9a92-269764064053`; image was built in Artifact Registry.
 - Cloud Run deployment: intentionally not started because the verified Vercel production URL is not available for safe CORS configuration.
+## 2026-07-11 — Iteration 8: Automated Reliability CI
+
+- Objective: Add deterministic GitHub Actions validation for backend, frontend, release contracts, and deployment tooling.
+- Why selected: backend validation was the main remaining gap, and local Python availability was unreliable.
+- Baseline: no workflow existed; frontend checks passed locally; backend tests required a Python-enabled environment; unrelated frontend edits were present.
+- Files changed: `.github/workflows/ci.yml`, this state record, `CURRENT_STATE.md`, and `NEXT_TASK.md`.
+- Workflow: pull requests and pushes to `master`, least-privilege `contents: read`, concurrency cancellation.
+- Backend checks: Python 3.12, pip cache, editable test install, compileall, startup-safety tests, release/security tests, full pytest; safe-off worker and seeding flags are explicit.
+- Frontend checks: Node 22, deterministic npm install, sequential typecheck/build/UI checks, `/release` artifact verification.
+- Contract/tooling checks: release tests, Node syntax checks, `bash -n` for Cloud Run deployment, safe-default and secret-file checks, `git diff --check`.
+- Data impact: none; no Neo4j, catalog, evidence, vendor, URL, or price access.
+- Deployment impact: none; workflow does not deploy or call production services.
+- Tests: local equivalent frontend/release checks remain the available validation; GitHub Actions is authoritative for Python tests.
+- Rollback: revert the CI commit or remove `.github/workflows/ci.yml`; no Cloud Run, Vercel, or database rollback is required.
+- Remaining risks: GitHub-hosted dependency availability and any backend tests that unexpectedly require external infrastructure will be visible as CI failures.

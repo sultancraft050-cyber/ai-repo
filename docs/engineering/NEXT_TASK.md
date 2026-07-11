@@ -1,14 +1,14 @@
 # Next Task
 
-## Run Backend Validation In A Supported Python Environment
+## Inspect And Resolve The First Automated CI Run
 
-Production Cloud Run/Vercel smoke verification now passes. The highest remaining validation gap is backend pytest/compile, which cannot run in the current shell because Python is unavailable.
+The reliability workflow is now defined, but its first GitHub-hosted run must confirm that backend tests and repository checks work in the supported environment.
 
 ### Scope
 
-- Run `python -m pytest` from `backend` in CI or a supported Python environment.
-- Run `python -m compileall app` from `backend`.
-- Record the backend test result and any environment-specific failures.
+- Inspect the first workflow run for backend, frontend, and contract/tooling jobs.
+- Fix only workflow-caused failures or clearly isolated CI configuration issues.
+- Record test counts and any genuinely integration-only failures.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
@@ -27,9 +27,18 @@ Production Cloud Run/Vercel smoke verification now passes. The highest remaining
 - No localhost/127.0.0.1 production target is detected.
 - Admin-only routes reject unauthenticated requests.
 - The workflow remains GET-only and returns useful exit codes.
-- Backend tests/compile run in a Python-enabled environment.
+- Backend tests and compile run in GitHub Actions' Python 3.12 environment.
 - State files and the following iteration prompt are updated.
+
+### Likely files
+
+- `.github/workflows/ci.yml`
+- backend test configuration only if a CI-specific issue is proven
 
 ### Risk
 
-Low; read-only verification only.
+Low; CI-only validation and configuration correction.
+
+### Following iteration prompt
+
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Inspect the first GitHub Actions run for `.github/workflows/ci.yml`, then fix only workflow-caused failures. Do not change Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, or readiness rules. Run the affected checks, `git diff --check`, review the complete diff, update `CURRENT_STATE.md`, append `EVOLUTION_LOG.md`, replace `NEXT_TASK.md`, and generate the next standalone prompt.
