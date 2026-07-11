@@ -62,6 +62,19 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Vercel deployment: pending; production URL unavailable locally.
 - Live release compatibility: unverified until the correct Railway service URL and Vercel URL are confirmed.
 
+## Google Cloud Run Migration
+
+- Intended platform: Google Cloud Run.
+- Service: `hardware-intelligence-api`.
+- Region: `me-central2`.
+- Deployment scripts: `scripts/deploy-cloud-run.ps1` and `scripts/deploy-cloud-run.sh`.
+- Deployment method: Cloud Build from the `backend` source context into Artifact Registry, then Cloud Run.
+- Resource target: request-based, 1 CPU, 512MiB, min 0, max 1, port 8080.
+- Required secret names: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`, `ANALYST_API_KEY`, `ADMIN_API_KEY`, `SUPER_ADMIN_API_KEY`.
+- Vercel API variable: `NEXT_PUBLIC_API_BASE_URL`; migration remains pending until the Cloud Run URL is verified.
+- Cloud Run preparation validation: PowerShell deployment script parsed; frontend/release checks passed.
+- Cloud Run deployment status: not attempted because `gcloud`, Docker, Python, and WSL are unavailable.
+
 ## Safe Startup Defaults
 
 - `PRICING_SCHEDULER_ENABLED=false`

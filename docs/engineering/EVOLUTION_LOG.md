@@ -199,3 +199,60 @@ Use `git revert <focused-commit-sha>` and redeploy the previous Railway/Vercel r
 ### Remaining Risks
 
 Backend tests remain unverified until a Python-enabled environment is available. Production release compatibility remains unverified because the known Railway hostname is not serving the application and the Vercel URL is unknown.
+
+## 2026-07-11 — Iteration 5: Cloud Run Migration Preparation
+
+### Objective
+
+Prepare the existing FastAPI backend for Cloud Run as the replacement for the expired Railway deployment while retaining Vercel and Neo4j Aura.
+
+### Precondition Verdict
+
+PARTIAL GO. Runtime requirements were fully discoverable from the repository, but `gcloud`, Docker, Python, and WSL are unavailable in this environment. No Google Cloud authentication, billing, project ID, Vercel access, or secret values were available.
+
+### Runtime Audit
+
+- FastAPI entry point: `app.main:app`.
+- Python runtime: `python:3.12-slim`.
+- Existing container binds `0.0.0.0` and honors `${PORT:-8080}`.
+- Backend requires the existing Neo4j and API-key variable names.
+- Startup seeding, pricing scheduling, and autonomous agents remain safe-off.
+- Docker context excludes tests, local environments, the raw pc-part-dataset tree, and build artifacts.
+
+### Implementation
+
+- Added non-root `appuser` execution to the backend image.
+- Added Cloud Run deployment scripts for PowerShell and Bash.
+- Added Cloud Run deployment documentation, Secret Manager names, non-secret variables, service sizing, rollback, and verification commands.
+- Kept Vercel, Neo4j Aura, Railway resources, catalog data, pricing data, and authorization behavior unchanged.
+
+### Validation
+
+- Repository state and deployment configuration inspected.
+- Cloud Run deployment not executed because Google Cloud tooling and credentials are unavailable.
+- Backend tests/compile pending a Python-enabled environment.
+- Frontend validation remains available from prior iteration; rerun before deployment.
+
+### Data And Deployment Impact
+
+No production data, Neo4j nodes, prices, products, URLs, vendors, approvals, or secrets changed. Cloud Run deployment is prepared but not executed. Railway was not deleted or modified.
+
+### Rollback
+
+Keep prior Cloud Run revisions. Route traffic to the previous revision with `gcloud run services update-traffic`, restore Vercel’s prior `NEXT_PUBLIC_API_BASE_URL`, redeploy Vercel, and rerun the smoke test. No Neo4j rollback is expected.
+
+### Remaining Risks
+
+Cloud Run deployment, health, Neo4j connectivity, Vercel routing, and production smoke verification remain pending. The known Railway hostname remains an expired/mismatched fallback.
+
+### Validation Update
+
+- `npm run test:release`: 3 passed.
+- `node --check scripts/release-contract.mjs`: passed.
+- `node --check scripts/smoke-production.mjs`: passed.
+- `npm run build`: passed.
+- `npm run typecheck`: passed.
+- `npm run ui:check`: passed.
+- PowerShell deployment script parse: passed.
+- `git diff --check`: passed.
+- Cloud Run deployment: not attempted; `gcloud`, Docker, Python, and WSL are unavailable.

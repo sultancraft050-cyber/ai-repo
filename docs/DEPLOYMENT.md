@@ -98,7 +98,79 @@ Fly.io:
 - Set the same backend env vars as Railway.
 - Verify the app binds to `${PORT:-8000}`.
 
-## 4. Frontend, Vercel
+## 4. Backend, Google Cloud Run
+
+Cloud Run is the preferred replacement for the expired Railway service. The repository provides `scripts/deploy-cloud-run.ps1` and `scripts/deploy-cloud-run.sh`.
+
+Defaults:
+
+- Service: `hardware-intelligence-api`
+- Region: `me-central2`
+- CPU: `1`
+- Memory: `512Mi`
+- Minimum instances: `0`
+- Maximum instances: `1`
+- Container port: `8080`
+- Ingress: public; application API-key authorization remains enabled
+
+Required Secret Manager secret names:
+
+- `NEO4J_URI`
+- `NEO4J_USER`
+- `NEO4J_PASSWORD`
+- `NEO4J_DATABASE`
+- `ANALYST_API_KEY`
+- `ADMIN_API_KEY`
+- `SUPER_ADMIN_API_KEY`
+
+Create or update secret versions interactively without putting values in source control:
+
+```powershell
+gcloud secrets create SECRET_NAME --replication-policy=automatic
+gcloud secrets versions add SECRET_NAME --data-file=PATH_TO_LOCAL_SECRET_FILE
+```
+
+Grant the Cloud Run runtime identity access only to these secrets:
+
+```powershell
+gcloud projects add-iam-policy-binding YOUR_GOOGLE_PROJECT_ID `
+  --member="serviceAccount:pc-builder-runtime@YOUR_GOOGLE_PROJECT_ID.iam.gserviceaccount.com" `
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Required non-secret Cloud Run variables:
+
+- `ENVIRONMENT=production`
+- `MARKET_DATA_MODE=free`
+- `FRONTEND_URL`
+- `CORS_ORIGINS`
+- `BACKEND_VERSION`
+- `API_CONTRACT_VERSION=1`
+- `PRICING_SCHEDULER_ENABLED=false`
+- `AUTONOMOUS_AGENTS_ENABLED=false`
+- `CPU_SPECS_SEED_ON_START=false`
+
+Create the Artifact Registry repository and runtime service account through Google Cloud Console or `gcloud`, grant the runtime service account only `roles/secretmanager.secretAccessor`, then run:
+
+```powershell
+.\scripts\deploy-cloud-run.ps1 `
+  -ProjectId "YOUR_GOOGLE_PROJECT_ID" `
+  -FrontendUrl "https://YOUR_VERCEL_DOMAIN"
+```
+
+The script builds only `backend/` with Cloud Build, deploys the existing Dockerfile, references Secret Manager by name, discovers the Cloud Run URL, and updates `BACKEND_URL` to that URL. It never prints secret values and does not modify Neo4j or Vercel.
+
+Verify the returned service URL before changing Vercel:
+
+```powershell
+curl.exe -i "https://YOUR_CLOUD_RUN_URL/health"
+curl.exe -i "https://YOUR_CLOUD_RUN_URL/health/neo4j"
+curl.exe -i "https://YOUR_CLOUD_RUN_URL/openapi.json"
+```
+
+Then set Vercel’s existing `NEXT_PUBLIC_API_BASE_URL` to the Cloud Run URL and run `npm run smoke:production`.
+
+## 5. Frontend, Vercel
 
 Recommended Vercel settings:
 
@@ -118,7 +190,7 @@ Required frontend env:
 
 Do not add backend secrets to Vercel. Only `NEXT_PUBLIC_*` values are allowed on the frontend.
 
-## 5. Production Verification
+## 6. Production Verification
 
 Repeatable non-destructive smoke test from the repository root:
 
@@ -162,7 +234,7 @@ Deployment checklist should report:
 - `launch_ready`
 - frontend/backend version info
 
-## 6. Launch Safety Checklist
+## 7. Launch Safety Checklist
 
 - Confirm `/build/share/{slug}` does not expose user email, internal audit IDs, API traces, raw graph IDs, or secrets.
 - Confirm public actions are rate limited: build generation, save build, deal submission, feedback, and analytics.
@@ -174,7 +246,7 @@ Deployment checklist should report:
 - Confirm no ingestion, discovery, or URL refresh jobs are enabled unless intentionally configured.
 - Confirm warnings for VAT, shipping, warranty, marketplace risk, and stale pricing remain visible.
 
-## 7. Founder Operating Loop
+## 8. Founder Operating Loop
 
 Review these daily after public launch:
 
@@ -186,7 +258,7 @@ Review these daily after public launch:
 
 Use them to decide the next safe catalog improvement target. Prefer manual product URLs or controlled dry-runs over broad ingestion.
 
-## 8. Rollback Guide
+## 9. Rollback Guide
 
 Frontend, Vercel:
 
@@ -207,7 +279,7 @@ Neo4j Aura:
 2. Use Aura restore only for confirmed destructive graph corruption.
 3. After restore, run deployment checklist and a Saudi build generation smoke test.
 
-## 9. Incident Checklist
+## 10. Incident Checklist
 
 - Disable public write-heavy actions at the platform edge if abuse is active.
 - Keep broad ingestion and refresh jobs off until the incident is understood.

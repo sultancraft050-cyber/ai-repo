@@ -8,3 +8,6 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 tests/
+build/
+pc-part-dataset/
+__pypackages__/

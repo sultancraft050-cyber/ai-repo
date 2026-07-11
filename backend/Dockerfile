@@ -14,6 +14,12 @@ RUN test -f /app/data/imports/samples/cpu_sample.json \
     && pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir ".[image]"
 
+RUN addgroup --system appgroup \
+    && adduser --system --ingroup appgroup appuser \
+    && chown -R appuser:appgroup /app
+
+USER appuser
+
 EXPOSE 8080
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
