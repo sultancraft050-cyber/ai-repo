@@ -1635,6 +1635,90 @@ def test_stale_seed_product_ranks_below_live_priced_product() -> None:
     assert sorted([seed, live], key=_search_sort_key)[0].id == "product-live"
 
 
+class _SearchRecord(dict):
+    def data(self) -> dict[str, object]:
+        return dict(self)
+
+
+class _ProductSearchDriver:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def execute_query(self, query: str, **params: object):
+        self.calls.append((query, params))
+        if "p.id IN $product_ids" in query:
+            return [
+                _SearchRecord(
+                    product_id="cpu-1",
+                    id="price-1",
+                    vendor_id="vendor-1",
+                    vendor_name="PCZone Saudi",
+                    price=1499,
+                    currency="SAR",
+                    region="SA",
+                    availability="in_stock",
+                    timestamp=datetime(2026, 7, 1, tzinfo=UTC),
+                    source="PCZone Saudi",
+                    source_type=SourceType.RETAILER_API.value,
+                    source_tier=int(SourceTier.RETAILER_API),
+                    trust_score=0.9,
+                    freshness_score=0.95,
+                    accepted=True,
+                    stale=False,
+                    listing_condition="new",
+                    seller_type="retailer",
+                    marketplace_risk_score=0.1,
+                    recommended_saudi_price_candidate=True,
+                    is_local_stock=True,
+                    vat_status="vat_included",
+                    shipping_status="free_shipping",
+                    warranty_status="local_warranty",
+                    local_stock_status="local_stock",
+                    vendor_region_type="local_saudi_vendor",
+                )
+            ], None, None
+        return [
+            _SearchRecord(
+                id="cpu-1",
+                canonical_key="CPU|AMD|RYZEN_5_7600",
+                name="AMD Ryzen 5 7600",
+                brand="AMD",
+                category="CPU",
+                model="Ryzen 5 7600",
+                summary_specs={"socket": "AM5", "cores": 6, "threads": 12, "tdp_w": 65},
+                image_url=None,
+                processed_image_url=None,
+                compatibility_ready=True,
+                compatibility_ready_exact=True,
+                compatibility_ready_family=False,
+                readiness_state="compatibility_ready_exact",
+                missing_compatibility_fields=[],
+                missing_exact_card_fields=[],
+                inferred_fields=[],
+                market_linked_count=1,
+                data_origin="live",
+                stale=False,
+                best_value=False,
+                previous_price=None,
+            )
+        ], None, None
+
+
+def test_product_search_batches_vendor_prices_without_changing_saudi_rollups() -> None:
+    driver = _ProductSearchDriver()
+
+    products = Neo4jPricingRepository(driver).search_products(category="CPU", region="SA", limit=24)
+
+    assert len(driver.calls) == 2
+    assert sum("p.id IN $product_ids" in query for query, _ in driver.calls) == 1
+    assert driver.calls[1][1]["product_ids"] == ["cpu-1"]
+    assert len(products) == 1
+    assert products[0].canonical_key == "CPU|AMD|RYZEN_5_7600"
+    assert products[0].readiness_state == "compatibility_ready_exact"
+    assert products[0].cheapest_price_sar == 1499
+    assert products[0].cheapest_vendor == "PCZone Saudi"
+
+
 def test_cpu_product_first_results_keep_stable_product_and_cheapest_seller_price() -> None:
     image_rich = _search_result(
         {

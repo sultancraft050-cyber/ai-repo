@@ -1,14 +1,15 @@
 # Next Task
 
-## Profile And Optimize The CPU Product Search Endpoint
+## Verify And Continue Product Search Performance Work
 
-Fixture-path verification is green in run `29166175755` with 285 backend tests passing. The highest measured product issue is now the CPU search endpoint at approximately 20.7 seconds, which dominates manual-picker completion time.
+The first CPU optimization removes the confirmed N+1 price-query pattern. The next iteration should use post-deployment measurements to decide whether the remaining bottleneck is the candidate Cypher query, payload size, or another shared category cost.
 
 ### Scope
 
-- Measure CPU `/products/search` execution time, Neo4j query time, and response construction separately.
-- Inspect the exact query and returned fields before changing code.
-- Apply only evidence-supported, read-only query or payload optimization.
+- Confirm CI and production deployment of the batch-price-read optimization.
+- Record cold and at least three warm CPU samples using the same request.
+- Compare result identity, readiness, cheapest price, vendor, count, and payload size.
+- Profile the remaining slowest stage before selecting another optimization.
 - Preserve readiness, identity, Saudi price, and pagination semantics.
 - Keep production data and deployment configuration unchanged.
 
@@ -42,4 +43,4 @@ Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Confirm the backend CI run after the fixture-path fix is green. Then profile the CPU `/products/search` path without mutating production data. Separate HTTP, repository, Neo4j, and response-serialization time; inspect only the relevant query and payload fields; and implement one evidence-supported read-only optimization. Do not change readiness, compatibility, pricing, solver, ingestion, or identity behavior. Run focused tests, full backend pytest, compile, release checks, frontend checks when applicable, and `git diff --check`; update engineering state and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Verify CI and the deployed Cloud Run revision containing the batch product-search price query. Measure the same CPU request cold and at least three times warm, compare identity/readiness/price/vendor correctness, and profile the remaining slow stage. Implement at most one additional evidence-supported read-only optimization only if needed. Do not change readiness, compatibility, pricing semantics, solver, ingestion, or identity behavior. Run focused tests, full backend pytest, compile, release checks, production smoke, and `git diff --check`; update engineering state and generate the next standalone prompt.

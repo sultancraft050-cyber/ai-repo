@@ -6129,10 +6129,14 @@ class Neo4jPricingRepository:
             candidate_limit=candidate_limit,
             database_=settings.neo4j_database,
         )
+        prices_by_product = self._vendor_prices_by_product_ids(
+            [str(record["id"]) for record in records],
+            region=region,
+        )
         products: list[ProductSearchResult] = []
         for record in records:
             data = record.data()
-            prices = self.vendor_prices(str(data["id"]), region=region)
+            prices = prices_by_product.get(str(data["id"]), [])
             rollups = _price_rollups(prices, region=region)
             products.append(_search_result(_finalize_search_data(data, rollups)))
         if category == "CPU":
@@ -6148,6 +6152,94 @@ class Neo4jPricingRepository:
             )
         ]
         return sorted(products, key=lambda product: _search_product_sort_key(product, sort))[offset : offset + limit]
+
+    def _vendor_prices_by_product_ids(
+        self,
+        product_ids: list[str],
+        *,
+        region: str,
+    ) -> dict[str, list[PriceSnapshotView]]:
+        if not product_ids:
+            return {}
+        records, _, _ = self.driver.execute_query(
+            """
+            MATCH (p)-[:HAS_PRICE]->(snapshot:PriceSnapshot)-[:FROM_VENDOR]->(vendor:Vendor)
+            WHERE p.id IN $product_ids
+              AND (snapshot.region = $region OR ($region = "US" AND snapshot.region IS NULL))
+            WITH p.id AS product_id, vendor, snapshot
+            ORDER BY snapshot.timestamp DESC
+            WITH product_id, vendor, collect(snapshot)[0] AS latest
+            RETURN product_id,
+                   latest.id AS id,
+                   vendor.id AS vendor_id,
+                   vendor.name AS vendor_name,
+                   latest.price AS price,
+                   latest.currency AS currency,
+                   coalesce(latest.region, "US") AS region,
+                   latest.country_code AS country_code,
+                   latest.city AS city,
+                   latest.raw_price AS raw_price,
+                   latest.item_price AS item_price,
+                   latest.item_price_sar AS item_price_sar,
+                   latest.shipping_cost_sar AS shipping_cost_sar,
+                   latest.final_landed_price AS final_landed_price,
+                   latest.final_landed_currency AS final_landed_currency,
+                   latest.final_landed_price_sar AS final_landed_price_sar,
+                   latest.vat_included AS vat_included,
+                   latest.vat_status AS vat_status,
+                   latest.shipping_status AS shipping_status,
+                   latest.warranty_status AS warranty_status,
+                   latest.local_stock_status AS local_stock_status,
+                   latest.vendor_region_type AS vendor_region_type,
+                   latest.estimated_vat AS estimated_vat,
+                   latest.import_fee AS import_fee,
+                   latest.estimated_delivery_days AS estimated_delivery_days,
+                   latest.seller_country AS seller_country,
+                   latest.is_local_stock AS is_local_stock,
+                   latest.is_imported AS is_imported,
+                   latest.serves_saudi AS serves_saudi,
+                   latest.warranty_type AS warranty_type,
+                   latest.local_warranty AS local_warranty,
+                   latest.region_rank_score AS region_rank_score,
+                   latest.recommended_saudi_price_candidate AS recommended_saudi_price_candidate,
+                   latest.final_landed_price_confidence AS final_landed_price_confidence,
+                   latest.price_completeness_score AS price_completeness_score,
+                   latest.trust_tier AS trust_tier,
+                   latest.delivery_status AS delivery_status,
+                   latest.local_stock_confidence AS local_stock_confidence,
+                   latest.warranty_confidence AS warranty_confidence,
+                   latest.delivery_confidence AS delivery_confidence,
+                   latest.availability AS availability,
+                   latest.timestamp AS timestamp,
+                   coalesce(latest.shipping_cost, 0) AS shipping_cost,
+                   latest.product_url AS product_url,
+                   latest.seller AS seller,
+                   latest.condition AS condition,
+                   latest.listing_condition AS listing_condition,
+                   latest.seller_type AS seller_type,
+                   latest.marketplace_risk_score AS marketplace_risk_score,
+                   latest.source AS source,
+                   latest.source_type AS source_type,
+                   latest.source_tier AS source_tier,
+                   latest.trust_score AS trust_score,
+                   latest.freshness_score AS freshness_score,
+                   coalesce(latest.stale, false) AS stale,
+                   coalesce(latest.accepted, true) AS accepted,
+                   coalesce(latest.flags, []) AS flags
+            ORDER BY product_id,
+              CASE latest.availability WHEN "in_stock" THEN 0 ELSE 1 END,
+              coalesce(latest.final_landed_price, latest.price + coalesce(latest.shipping_cost, 0))
+            """,
+            product_ids=product_ids,
+            region=region,
+            database_=settings.neo4j_database,
+        )
+        grouped: dict[str, list[PriceSnapshotView]] = {}
+        for record in records:
+            data = record.data()
+            product_id = str(data.pop("product_id"))
+            grouped.setdefault(product_id, []).append(_snapshot_view(data))
+        return grouped
 
     def product_categories(self) -> list[str]:
         records, _, _ = self.driver.execute_query(

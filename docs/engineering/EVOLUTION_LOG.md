@@ -378,3 +378,17 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Data/deployment impact: none.
 - Rollback: revert the focused fixture-path commit; no data or deployment rollback is required.
 - GitHub verification: run `29166175755` completed successfully; backend, frontend, and contract/tooling jobs passed; full pytest reported 285 passed; artifact `backend-pytest-results` uploaded successfully.
+
+## 2026-07-11 — Iteration 13: Batch Product Search Price Reads
+
+- Objective: reduce CPU `/products/search` latency with one evidence-supported read-only optimization.
+- Baseline request: `/products/search?q=&limit=24&offset=0&category=CPU&region=SA`; prior sample approximately 20.7s, 24 results, approximately 47.5KB.
+- Primary bottleneck: N+1 Neo4j reads. The search candidate query requests at least 100 candidates, then calls `vendor_prices()` once for every candidate.
+- Optimization: replace per-product reads with one parameterized batch query returning the same latest-per-vendor snapshot fields, then reuse unchanged `_snapshot_view`, `_price_rollups`, filtering, CPU grouping, sorting, and pagination logic.
+- Query count: approximately 101 before, 2 after for the default candidate pool.
+- Files changed: pricing repository, focused pricing test, and engineering state files.
+- Test coverage: verifies two total driver calls, one batch price query, unchanged CPU identity/readiness, and unchanged cheapest Saudi vendor/price rollup.
+- Schema/index changes: none.
+- Data impact: none; all profiling and repository operations are read-only.
+- Deployment impact: backend code change; CI and Cloud Run verification required before production measurements.
+- Rollback: revert the focused commit and redeploy the previous Cloud Run revision; no schema or data rollback is required.
