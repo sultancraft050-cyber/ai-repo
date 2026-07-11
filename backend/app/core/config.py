@@ -82,7 +82,7 @@ class Settings:
             public_analytics_enabled=os.getenv("PUBLIC_ANALYTICS_ENABLED", "true").lower() in {"1", "true", "yes"},
             public_rate_limit_window_seconds=int(os.getenv("PUBLIC_RATE_LIMIT_WINDOW_SECONDS", "60")),
             public_rate_limit_max_requests=int(os.getenv("PUBLIC_RATE_LIMIT_MAX_REQUESTS", "120")),
-            pricing_scheduler_enabled=os.getenv("PRICING_SCHEDULER_ENABLED", "true").lower()
+            pricing_scheduler_enabled=os.getenv("PRICING_SCHEDULER_ENABLED", "false").lower()
             in {"1", "true", "yes"},
             pricing_top_refresh_seconds=int(os.getenv("PRICING_TOP_REFRESH_SECONDS", "3600")),
             pricing_standard_refresh_seconds=int(os.getenv("PRICING_STANDARD_REFRESH_SECONDS", "21600")),
@@ -107,7 +107,7 @@ class Settings:
             amazon_paapi_access_key=os.getenv("AMAZON_PAAPI_ACCESS_KEY"),
             amazon_paapi_secret_key=os.getenv("AMAZON_PAAPI_SECRET_KEY"),
             amazon_paapi_partner_tag=os.getenv("AMAZON_PAAPI_PARTNER_TAG"),
-            autonomous_agents_enabled=os.getenv("AUTONOMOUS_AGENTS_ENABLED", "true").lower()
+            autonomous_agents_enabled=os.getenv("AUTONOMOUS_AGENTS_ENABLED", "false").lower()
             in {"1", "true", "yes"},
             autonomous_agent_interval_seconds=int(os.getenv("AUTONOMOUS_AGENT_INTERVAL_SECONDS", "900")),
             autonomous_agent_max_products=int(os.getenv("AUTONOMOUS_AGENT_MAX_PRODUCTS", "6")),

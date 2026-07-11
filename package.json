@@ -4,6 +4,8 @@
   "scripts": {
     "build": "npm --prefix frontend run build",
     "typecheck": "npm --prefix frontend run typecheck",
-    "ui:check": "npm --prefix frontend run ui:check"
+    "ui:check": "npm --prefix frontend run ui:check",
+    "smoke:production": "node scripts/smoke-production.mjs",
+    "test:release": "node --test scripts/release-contract.test.mjs"
   }
 }

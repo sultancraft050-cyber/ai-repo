@@ -43,6 +43,7 @@ Required backend env:
 - `MARKET_DATA_MODE=free`
 - `BACKEND_VERSION=0.1.0`
 - `FRONTEND_VERSION=0.1.0`
+- `API_CONTRACT_VERSION=1`
 - `NEO4J_URI`
 - `NEO4J_USER`
 - `NEO4J_PASSWORD`
@@ -68,11 +69,16 @@ For first launch with `MARKET_DATA_MODE=free`, leave optional source keys empty.
 
 Safe-off launch env:
 
+- Startup graph mutation is opt-in. Keep these values explicitly disabled unless the founder is running a controlled operation:
+
+- `CPU_SPECS_SEED_ON_START=false`
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `PUBLIC_ANALYTICS_ENABLED=true`
 - `PUBLIC_RATE_LIMIT_WINDOW_SECONDS=60`
 - `PUBLIC_RATE_LIMIT_MAX_REQUESTS=120`
+
+If a worker or seed is intentionally enabled, record the operation, verify affected graph counts, and return the flag to `false` before the next normal deployment.
 
 ## 3. Backend, Render or Fly.io
 
@@ -106,10 +112,26 @@ Required frontend env:
 - `NEXT_PUBLIC_API_BASE_URL=https://api.your-domain.example`
 - `NEXT_PUBLIC_SITE_URL=https://your-domain.example`
 - `NEXT_PUBLIC_APP_VERSION=0.1.0`
+- `NEXT_PUBLIC_API_CONTRACT_VERSION=1`
+- `NEXT_PUBLIC_GIT_SHA=` (optional public deployment SHA)
+- `NEXT_PUBLIC_BUILD_TIME=` (optional public ISO-8601 build time)
 
 Do not add backend secrets to Vercel. Only `NEXT_PUBLIC_*` values are allowed on the frontend.
 
 ## 5. Production Verification
+
+Repeatable non-destructive smoke test from the repository root:
+
+```powershell
+$env:SMOKE_BACKEND_URL = "https://your-railway-domain.example"
+$env:SMOKE_FRONTEND_URL = "https://your-vercel-domain.example"
+$env:SMOKE_FRONTEND_API_URL = $env:SMOKE_BACKEND_URL
+npm run smoke:production
+```
+
+Optional shared-build verification can be added with `SMOKE_SHARED_BUILD_URL`. The workflow uses GET requests only and returns a non-zero exit code for required failures.
+
+Release compatibility is based on `api_contract_version`, not identical frontend/backend Git commits. Matching API contract versions are compatible; different versions are incompatible and fail the smoke command; unavailable or incomplete metadata is reported as unverifiable.
 
 Run these after deployment.
 

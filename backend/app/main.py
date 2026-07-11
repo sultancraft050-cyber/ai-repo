@@ -33,7 +33,12 @@ from app.api import (
 )
 from app.core.config import settings
 from app.core.security import RateLimiter, authenticate_api_key, endpoint_rule, has_role, payload_hash, trace_id
-from app.core.version import BACKEND_VERSION, CURRENT_GEN_ENRICHMENT_VERSION, deployment_version_info
+from app.core.version import (
+    BACKEND_VERSION,
+    CURRENT_GEN_ENRICHMENT_VERSION,
+    deployment_version_info,
+    public_release_metadata,
+)
 from app.graph.driver import Neo4jSessionManager
 from app.graph.alignment_repository import Neo4jAlignmentRepository
 from app.graph.autonomy_repository import Neo4jAutonomyRepository
@@ -111,7 +116,7 @@ async def lifespan(app: FastAPI):
 
 
 def _seed_cpu_specs_safely(pricing_repository: Neo4jPricingRepository) -> None:
-    if os.getenv("CPU_SPECS_SEED_ON_START", "true").lower() not in {"1", "true", "yes"}:
+    if os.getenv("CPU_SPECS_SEED_ON_START", "false").lower() not in {"1", "true", "yes"}:
         return
     try:
         from scripts.import_pasted_cpu_specs import parse_rows
@@ -351,6 +356,11 @@ def health() -> dict[str, str | bool | None]:
         backend_url=settings.backend_url,
         frontend_url=settings.frontend_url,
     )
+    public_release = public_release_metadata(
+        service="backend",
+        environment=settings.environment,
+        release_info=version_info,
+    )
     return {
         "ok": manager.unavailable_reason is None,
         "neo4j": "connected" if manager.unavailable_reason is None else "unavailable",
@@ -358,7 +368,7 @@ def health() -> dict[str, str | bool | None]:
         "environment": settings.environment,
         "market_data_mode": settings.market_data_mode,
         "backend_version": version_info.get("backend_version") or BACKEND_VERSION,
-        "git_sha": version_info.get("git_sha"),
+        **public_release,
         "current_gen_enrichment_version": version_info.get("current_gen_enrichment_version")
         or CURRENT_GEN_ENRICHMENT_VERSION,
     }

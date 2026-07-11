@@ -7,6 +7,8 @@ This platform is designed for one technical founder. The default operating model
 - Level 2 actions create approval items.
 - Level 3 actions are manual only and are never executed by autonomous workers.
 
+Startup mutation is also opt-in. CPU seeding, pricing scheduling, and autonomous agents default to disabled when their environment flags are absent. Enable them only for a documented controlled operation, then restore the flags to `false` and redeploy.
+
 ## Security
 
 Set API keys in backend environment variables:
