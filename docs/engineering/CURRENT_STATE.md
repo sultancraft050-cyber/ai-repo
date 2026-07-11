@@ -83,6 +83,7 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Diagnostic run `29165405260` completed: artifact `backend-pytest-results` was created; backend remained correctly failed; frontend and contract/tooling jobs passed. Artifact download requires authentication in this environment, so exact pytest names remain pending authorized access.
 - Diagnostic evidence identified three fixture-path failures in `test_pc_part_dataset_adapter.py`: 285 collected, 282 passed, 3 failed. The tests incorrectly prefixed `backend/` while pytest ran from the backend directory.
 - Fixture tests now resolve `data/canonical_specs` from the test file’s backend root, independent of process cwd; fixture contents and production code are unchanged.
+- Verification run `29166175755` passed all jobs: backend compile, startup safety, release/security, full pytest (285 passed), frontend, and contract/tooling. The diagnostic artifact also uploaded successfully.
 
 ## Google Cloud Run Migration
 

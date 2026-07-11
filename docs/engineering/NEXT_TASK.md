@@ -2,7 +2,7 @@
 
 ## Profile And Optimize The CPU Product Search Endpoint
 
-After the fixture-path correction is verified green in CI, the highest measured product issue is the CPU search endpoint at approximately 20.7 seconds, which dominates manual-picker completion time.
+Fixture-path verification is green in run `29166175755` with 285 backend tests passing. The highest measured product issue is now the CPU search endpoint at approximately 20.7 seconds, which dominates manual-picker completion time.
 
 ### Scope
 

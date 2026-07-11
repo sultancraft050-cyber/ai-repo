@@ -377,3 +377,4 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Local validation: all three paths resolved from repository-root and backend working directories; release tests and `git diff --check` passed. Python tests remain authoritative in CI.
 - Data/deployment impact: none.
 - Rollback: revert the focused fixture-path commit; no data or deployment rollback is required.
+- GitHub verification: run `29166175755` completed successfully; backend, frontend, and contract/tooling jobs passed; full pytest reported 285 passed; artifact `backend-pytest-results` uploaded successfully.
