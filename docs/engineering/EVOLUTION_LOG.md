@@ -364,3 +364,4 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Data/deployment impact: none; no backend behavior, Neo4j, catalog, pricing, URL, or deployment configuration changed.
 - Rollback: revert the focused CI commit; no data rollback is required.
 - Remaining risks: the underlying backend test failure is intentionally unresolved until the new artifact and summary provide evidence.
+- Diagnostic run `29165405260`: artifact creation succeeded with size approximately 8.25KB; backend stayed red as intended, while frontend and contract/tooling passed. Public artifact download returned HTTP 401, so no test names or traceback were inferred.

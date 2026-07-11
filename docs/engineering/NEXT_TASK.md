@@ -8,6 +8,7 @@ The CI workflow now publishes a JUnit artifact and bounded job summary. The next
 
 - Inspect run `29164807695`, especially the backend full-suite failure.
 - Inspect the new `backend-pytest-results` artifact and job summary.
+- Use repository-authorized GitHub access because public artifact download returned HTTP 401.
 - Record exact failed test names, exception, traceback summary, totals, and exit code.
 - Reproduce the failing test under Python 3.12 when possible.
 - Fix only a confirmed repository or CI issue; do not weaken assertions.

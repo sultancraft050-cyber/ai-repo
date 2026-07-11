@@ -80,6 +80,7 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Manual picker improvement is local and pending deployment validation; no API or data changes were made.
 - Backend CI diagnosis: run `29164807695`, job `86575990875`, fails only at `Backend test suite`; the public GitHub API permits job/step metadata but denies log download with HTTP 403, so the failing test name and traceback are not available in this environment.
 - CI diagnostics update: the backend full-suite step now writes `backend/pytest-output.log` and `backend/pytest-results.xml`, uploads artifact `backend-pytest-results` with `if: always()`, and publishes a bounded `$GITHUB_STEP_SUMMARY` while preserving the real pytest exit code.
+- Diagnostic run `29165405260` completed: artifact `backend-pytest-results` was created; backend remained correctly failed; frontend and contract/tooling jobs passed. Artifact download requires authentication in this environment, so exact pytest names remain pending authorized access.
 
 ## Google Cloud Run Migration
 
