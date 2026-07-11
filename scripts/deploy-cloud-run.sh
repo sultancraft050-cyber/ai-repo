@@ -3,6 +3,7 @@ set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-}"
 REGION="${REGION:-me-central2}"
+REGISTRY_REGION="${REGISTRY_REGION:-me-central1}"
 SERVICE="${SERVICE:-hardware-intelligence-api}"
 FRONTEND_URL="${FRONTEND_URL:-}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
@@ -14,9 +15,9 @@ if [[ -z "$PROJECT_ID" || -z "$FRONTEND_URL" ]]; then
 fi
 command -v gcloud >/dev/null || { echo "gcloud CLI is required" >&2; exit 2; }
 gcloud config set project "$PROJECT_ID" >/dev/null
-gcloud artifacts repositories describe "$REPOSITORY" --location="$REGION" --project="$PROJECT_ID" >/dev/null
+gcloud artifacts repositories describe "$REPOSITORY" --location="$REGISTRY_REGION" --project="$PROJECT_ID" >/dev/null
 
-IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$IMAGE_TAG"
+IMAGE="$REGISTRY_REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$SERVICE:$IMAGE_TAG"
 gcloud builds submit backend --project="$PROJECT_ID" --tag="$IMAGE"
 RUNTIME_SERVICE_ACCOUNT="pc-builder-runtime@$PROJECT_ID.iam.gserviceaccount.com"
 gcloud run deploy "$SERVICE" \

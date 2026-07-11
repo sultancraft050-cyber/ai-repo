@@ -6,7 +6,7 @@ The repository is prepared for Cloud Run, while the known Railway hostname retur
 
 ### Scope
 
-- Confirm Google Cloud project, billing, Artifact Registry, Secret Manager, and runtime service-account access.
+- Obtain/confirm the actual Vercel production URL, then confirm Google Cloud project, billing, Artifact Registry, Secret Manager, and runtime service-account access.
 - Run `scripts/deploy-cloud-run.ps1` or `scripts/deploy-cloud-run.sh`.
 - Verify Cloud Run `/health`, `/health/neo4j`, and `/openapi.json`.
 - Update Vercel `NEXT_PUBLIC_API_BASE_URL` only after Cloud Run passes verification.

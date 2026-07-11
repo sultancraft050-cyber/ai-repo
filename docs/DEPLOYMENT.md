@@ -106,6 +106,7 @@ Defaults:
 
 - Service: `hardware-intelligence-api`
 - Region: `me-central2`
+- Artifact Registry region: `me-central1` for this project; `me-central2` is rejected by the project’s registry location policy.
 - CPU: `1`
 - Memory: `512Mi`
 - Minimum instances: `0`
@@ -155,7 +156,8 @@ Create the Artifact Registry repository and runtime service account through Goog
 ```powershell
 .\scripts\deploy-cloud-run.ps1 `
   -ProjectId "YOUR_GOOGLE_PROJECT_ID" `
-  -FrontendUrl "https://YOUR_VERCEL_DOMAIN"
+  -FrontendUrl "https://YOUR_VERCEL_DOMAIN" `
+  -RegistryRegion "me-central1"
 ```
 
 The script builds only `backend/` with Cloud Build, deploys the existing Dockerfile, references Secret Manager by name, discovers the Cloud Run URL, and updates `BACKEND_URL` to that URL. It never prints secret values and does not modify Neo4j or Vercel.

@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)] [string]$ProjectId,
     [string]$Region = "me-central2",
+    [string]$RegistryRegion = "me-central1",
     [string]$Service = "hardware-intelligence-api",
     [Parameter(Mandatory = $true)] [string]$FrontendUrl,
     [string]$ImageTag = ""
@@ -14,11 +15,11 @@ if ([string]::IsNullOrWhiteSpace($ImageTag)) { $ImageTag = (git rev-parse --shor
 if ([string]::IsNullOrWhiteSpace($ImageTag)) { throw "Could not determine a Git commit tag." }
 
 $Repository = "pc-builder"
-$Image = "$Region-docker.pkg.dev/$ProjectId/$Repository/$Service`:$ImageTag"
+$Image = "$RegistryRegion-docker.pkg.dev/$ProjectId/$Repository/$Service`:$ImageTag"
 $RuntimeServiceAccount = "pc-builder-runtime@$ProjectId.iam.gserviceaccount.com"
 
 gcloud config set project $ProjectId | Out-Host
-gcloud artifacts repositories describe $Repository --location=$Region --project=$ProjectId | Out-Null
+gcloud artifacts repositories describe $Repository --location=$RegistryRegion --project=$ProjectId | Out-Null
 gcloud builds submit backend --project=$ProjectId --tag=$Image
 
 gcloud run deploy $Service `

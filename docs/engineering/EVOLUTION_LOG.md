@@ -256,3 +256,6 @@ Cloud Run deployment, health, Neo4j connectivity, Vercel routing, and production
 - PowerShell deployment script parse: passed.
 - `git diff --check`: passed.
 - Cloud Run deployment: not attempted; `gcloud`, Docker, Python, and WSL are unavailable.
+- Current Google Cloud preflight: authenticated account and project confirmed; billing and required APIs enabled; required secrets present; runtime service account and per-secret access bindings created; Artifact Registry repository created in `me-central1` after `me-central2` was rejected.
+- Cloud Build: succeeded as `dfd3d99f-4624-4867-9a92-269764064053`; image was built in Artifact Registry.
+- Cloud Run deployment: intentionally not started because the verified Vercel production URL is not available for safe CORS configuration.

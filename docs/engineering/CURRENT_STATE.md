@@ -67,13 +67,16 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Intended platform: Google Cloud Run.
 - Service: `hardware-intelligence-api`.
 - Region: `me-central2`.
+- Artifact Registry region: `me-central1`; repository creation in `me-central2` was rejected by Google Cloud, so the deployment script supports separate Cloud Run and registry regions.
 - Deployment scripts: `scripts/deploy-cloud-run.ps1` and `scripts/deploy-cloud-run.sh`.
 - Deployment method: Cloud Build from the `backend` source context into Artifact Registry, then Cloud Run.
 - Resource target: request-based, 1 CPU, 512MiB, min 0, max 1, port 8080.
 - Required secret names: `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`, `ANALYST_API_KEY`, `ADMIN_API_KEY`, `SUPER_ADMIN_API_KEY`.
 - Vercel API variable: `NEXT_PUBLIC_API_BASE_URL`; migration remains pending until the Cloud Run URL is verified.
 - Cloud Run preparation validation: PowerShell deployment script parsed; frontend/release checks passed.
-- Cloud Run deployment status: not attempted because `gcloud`, Docker, Python, and WSL are unavailable.
+- Cloud Run deployment status: not deployed; Cloud Build succeeded with build `dfd3d99f-4624-4867-9a92-269764064053` and image tag `me-central1-docker.pkg.dev/pc-recomendation-project/pc-builder/hardware-intelligence-api:ac6f32b`.
+- Cloud Run deployment blocker: the actual Vercel production URL is required by the deployment script for `FRONTEND_URL` and `CORS_ORIGINS`.
+- Google Cloud preflight: authenticated project `pc-recomendation-project`, billing enabled, required APIs enabled, seven secrets present, runtime service account created, per-secret accessor bindings created, Artifact Registry `pc-builder` created in `me-central1`.
 
 ## Safe Startup Defaults
 
