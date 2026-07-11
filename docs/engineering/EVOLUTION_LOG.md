@@ -245,6 +245,59 @@ Keep prior Cloud Run revisions. Route traffic to the previous revision with `gcl
 
 Cloud Run deployment, health, Neo4j connectivity, Vercel routing, and production smoke verification remain pending. The known Railway hostname remains an expired/mismatched fallback.
 
+## 2026-07-11 — Iteration 7: Remove Production Local API Fallback
+
+### Objective
+
+Remove localhost and loopback API fallbacks from production frontend JavaScript while preserving development convenience and improve smoke diagnostics.
+
+### Baseline
+
+- Cloud Run backend: healthy at `https://hardware-intelligence-api-lywizc5z5q-ww.a.run.app`.
+- Vercel frontend: healthy at `https://frontend-lac-nine-09j4x45cj5.vercel.app`.
+- Smoke workflow had one required failure because a local API target was detected in generated assets.
+- The source fallback was `frontend/lib/api.ts`; `frontend/app/sitemap.ts` also used a development fallback.
+- The remaining local string was traced to Next.js’s generated third-party polyfill, not application API configuration.
+
+### Implementation
+
+- API base uses the configured public API URL.
+- Development may still use the loopback fallback.
+- Production uses a relative safe fallback when the public API variable is missing.
+- Sitemap uses the same development-only fallback policy.
+- Smoke asset scanning skips third-party `polyfills-*` assets and reports the exact offending asset URL for actual local HTTP API targets.
+
+### Validation
+
+- `npm install`: passed.
+- `npm run build`: passed.
+- `npm run typecheck`: passed.
+- `npm run ui:check`: passed.
+- Generated application static JavaScript: zero local HTTP API targets.
+- Production smoke: 14 passed, 1 optional shared-build check skipped, 0 required failures.
+- Cloud Run `/health`: HTTP 200; Neo4j connected.
+- Cloud Run `/openapi.json`: HTTP 200; critical paths present.
+- Admin protection: HTTP 403 without credentials.
+- Vercel `/`, `/build/manual`, `/build/generate`, and `/release`: HTTP 200.
+- Release compatibility: `COMPATIBLE`, API contract version `1`.
+- `git diff --check`: passed.
+
+### Data Impact
+
+None. The smoke workflow uses GET requests only. No catalog, pricing, Neo4j, URL, vendor, approval, or audit data was changed.
+
+### Deployment Impact
+
+The focused frontend/smoke change requires a Vercel deployment. The supplied production smoke target is already healthy and compatible after deployment verification.
+
+### Rollback
+
+Revert the focused commit, redeploy Vercel, and rerun `npm run smoke:production`. No backend or database rollback is required.
+
+### Remaining Risks
+
+No shared-build URL was supplied, so that optional route remains unverified. Backend Python tests remain a separate environment limitation.
+
 ### Validation Update
 
 - `npm run test:release`: 3 passed.

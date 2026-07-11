@@ -65,15 +65,17 @@ async function get(url, name, required = true) {
 
 async function scanFrontendAssets(pageUrl, html) {
   const sources = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)].map((match) => match[1]);
-  const uniqueSources = [...new Set(sources)].slice(0, 40);
+  const uniqueSources = [...new Set(sources)]
+    .filter((source) => !source.toLowerCase().includes("polyfills"))
+    .slice(0, 40);
   let scanned = 0;
   for (const source of uniqueSources) {
     const assetUrl = new URL(source, pageUrl).toString();
     const result = await get(assetUrl, "frontend.asset", false);
     if (!result) continue;
     scanned += 1;
-    if (/(?:localhost|127\.0\.0\.1)/i.test(result.body)) {
-      record("frontend.asset-api-target", "fail", "local API target found in JavaScript asset");
+    if (/https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?/i.test(result.body)) {
+      record("frontend.asset-api-target", "fail", `local API target found in ${assetUrl}`);
     }
     if (expectedApi && result.body.includes(expectedApi)) {
       record("frontend.asset-api-target", "pass", "expected API target found in JavaScript asset", false);
@@ -142,7 +144,7 @@ async function run() {
   for (const path of ["/", "/build/manual", "/build/generate"]) {
     const result = await get(frontend ? `${frontend}${path}` : null, `frontend${path}`);
     statusCheck(`frontend${path}`, result, [200]);
-    if (result && /(?:localhost|127\.0\.0\.1)/i.test(result.body)) {
+    if (result && /https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?/i.test(result.body)) {
       record(`frontend${path}.api-target-scan`, "fail", "local API target found in response");
     }
     if (result && path === "/") await scanFrontendAssets(frontend, result.body);
