@@ -392,3 +392,5 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Data impact: none; all profiling and repository operations are read-only.
 - Deployment impact: backend code change; CI and Cloud Run verification required before production measurements.
 - Rollback: revert the focused commit and redeploy the previous Cloud Run revision; no schema or data rollback is required.
+- CI verification: run `29166403191` passed backend, frontend, and contract/tooling jobs.
+- Deployment attempt: safely stopped before deployment because `gcloud` is unavailable in this shell. No Cloud Run revision or production data changed; post-change production measurements remain pending.

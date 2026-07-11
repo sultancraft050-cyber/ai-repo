@@ -2,7 +2,7 @@
 
 ## Verify And Continue Product Search Performance Work
 
-The first CPU optimization removes the confirmed N+1 price-query pattern. The next iteration should use post-deployment measurements to decide whether the remaining bottleneck is the candidate Cypher query, payload size, or another shared category cost.
+The first CPU optimization removes the confirmed N+1 price-query pattern and CI is green. Deployment is pending because this shell lacks `gcloud`; the next iteration should deploy from a gcloud-enabled environment and collect post-change measurements before selecting more work.
 
 ### Scope
 

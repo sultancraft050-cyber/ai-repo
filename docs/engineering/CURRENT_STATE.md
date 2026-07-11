@@ -86,6 +86,8 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Verification run `29166175755` passed all jobs: backend compile, startup safety, release/security, full pytest (285 passed), frontend, and contract/tooling. The diagnostic artifact also uploaded successfully.
 - CPU product-search profiling identified a deterministic N+1 pattern: one candidate query followed by `vendor_prices()` for every candidate (minimum candidate pool 100), producing about 101 Neo4j reads for the default CPU request.
 - The focused optimization batches latest-per-vendor price snapshots for all candidate product IDs in one parameterized read query, reducing search query count from about 101 to 2 while preserving existing Python price rollups and response models.
+- CI run `29166403191` passed backend, frontend, and contract/tooling jobs with the batch-price-read optimization.
+- Cloud Run deployment is pending: the current shell has no `gcloud` executable, and the deployment script stopped before making changes. Production measurements still describe the previous revision.
 
 ## Google Cloud Run Migration
 
