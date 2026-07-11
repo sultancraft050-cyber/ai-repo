@@ -1,13 +1,14 @@
 # Next Task
 
-## Obtain Backend CI Failure Evidence And Resolve It
+## Inspect Self-Diagnosing Backend CI Evidence And Resolve The Test Failure
 
-The backend full pytest step remains red, but the public GitHub API does not expose its logs without repository admin rights. The next iteration must obtain the exact failure from an authenticated GitHub Actions view or reproduce it under Python 3.12 before changing code.
+The CI workflow now publishes a JUnit artifact and bounded job summary. The next iteration must inspect the new run and use that evidence to identify and fix the backend test failure.
 
 ### Scope
 
 - Inspect run `29164807695`, especially the backend full-suite failure.
-- Obtain the failed step log for job `86575990875` through an authorized GitHub Actions interface, or run the suite in Python 3.12.
+- Inspect the new `backend-pytest-results` artifact and job summary.
+- Record exact failed test names, exception, traceback summary, totals, and exit code.
 - Reproduce the failing test under Python 3.12 when possible.
 - Fix only a confirmed repository or CI issue; do not weaken assertions.
 - Record test counts and any genuinely integration-only failures.
@@ -45,4 +46,4 @@ Low; CI-only validation and configuration correction.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Obtain the backend failure log for GitHub Actions run `29164807695`, job `86575990875`, through an authorized interface or reproduce the suite under Python 3.12. Identify the exact test and root cause before editing. Fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, readiness rules, or manual-picker behavior. Run the affected tests, compile, full pytest, frontend checks if needed, release checks, and `git diff --check`; review the complete diff; update the engineering state files; and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Inspect the new GitHub Actions run, artifact `backend-pytest-results`, and backend summary. Identify exact failing tests and root cause before editing. Fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, readiness rules, or manual-picker behavior. Run affected tests, compile, full pytest, frontend checks if needed, release checks, and `git diff --check`; review the complete diff; update the engineering state files with the evidence and generate the next standalone prompt.

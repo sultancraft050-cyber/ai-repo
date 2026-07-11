@@ -79,6 +79,7 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Read-only Cloud Run timing sample before deployment: parallel total about 20.7s, with CPU about 20.7s, GPU about 11.8s, RAM about 6.7s, and other categories about 2.4-3.7s; responses were approximately 16-58KB each.
 - Manual picker improvement is local and pending deployment validation; no API or data changes were made.
 - Backend CI diagnosis: run `29164807695`, job `86575990875`, fails only at `Backend test suite`; the public GitHub API permits job/step metadata but denies log download with HTTP 403, so the failing test name and traceback are not available in this environment.
+- CI diagnostics update: the backend full-suite step now writes `backend/pytest-output.log` and `backend/pytest-results.xml`, uploads artifact `backend-pytest-results` with `if: always()`, and publishes a bounded `$GITHUB_STEP_SUMMARY` while preserving the real pytest exit code.
 
 ## Google Cloud Run Migration
 

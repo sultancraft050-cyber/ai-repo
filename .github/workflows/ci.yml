@@ -43,7 +43,47 @@ jobs:
       - name: Release metadata tests
         run: python -m pytest tests/test_ops_security.py -q
       - name: Backend test suite
-        run: python -m pytest -q
+        id: backend-tests
+        shell: bash
+        run: |
+          set +e
+          python -m pytest --tb=short -ra --junitxml=pytest-results.xml 2>&1 | tee pytest-output.log
+          test_exit=${PIPESTATUS[0]}
+          echo "exit_code=${test_exit}" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Publish backend pytest diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-pytest-results
+          if-no-files-found: warn
+          path: |
+            backend/pytest-output.log
+            backend/pytest-results.xml
+      - name: Add backend pytest summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Backend pytest diagnostics"
+            echo "- pytest exit code: ${{ steps.backend-tests.outputs.exit_code }}"
+            echo "- artifact: backend-pytest-results"
+            echo
+            echo '```text'
+            if [ -f backend/pytest-output.log ]; then
+              grep -E '(^FAILED|^ERROR|passed|failed|skipped|error)' backend/pytest-output.log | tail -n 40 || true
+              echo
+              echo '--- final output ---'
+              tail -n 180 backend/pytest-output.log
+            else
+              echo 'pytest output was not created'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail backend job when pytest fails
+        if: always() && steps.backend-tests.outputs.exit_code != '0'
+        shell: bash
+        run: exit "${{ steps.backend-tests.outputs.exit_code }}"
 
   frontend:
     name: Frontend

@@ -353,3 +353,14 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Data/deployment impact: none.
 - Rollback: none required.
 - Remaining risk: the backend full suite remains red; guessing or weakening tests would violate the iteration rules.
+
+## 2026-07-11 — Iteration 11: Self-Diagnosing Backend CI
+
+- Objective: retain enough structured pytest evidence to diagnose backend CI failures without repository-admin log access.
+- Baseline: full backend pytest failed in run `29164807695`; compile and focused tests passed; public workflow-log download returned HTTP 403.
+- Implementation: `.github/workflows/ci.yml` now runs pytest with `--tb=short -ra --junitxml=pytest-results.xml`, captures combined output in `pytest-output.log`, preserves `PIPESTATUS[0]`, uploads both files with artifact `backend-pytest-results`, writes a bounded summary, and explicitly fails when the captured exit code is non-zero.
+- Validation: release tests and `git diff --check` passed locally. A new GitHub Actions run is required to collect the exact failing tests.
+- Security: summaries and artifacts contain test output only; no environment dumps, tokens, credentials, production payloads, or production endpoints are used.
+- Data/deployment impact: none; no backend behavior, Neo4j, catalog, pricing, URL, or deployment configuration changed.
+- Rollback: revert the focused CI commit; no data rollback is required.
+- Remaining risks: the underlying backend test failure is intentionally unresolved until the new artifact and summary provide evidence.
