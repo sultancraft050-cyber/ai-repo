@@ -343,3 +343,13 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Post-change production measurement: pending Vercel deployment; pre-deployment measurements are recorded above.
 - Rollback: revert the focused frontend commit; no data rollback is required.
 - Remaining risks: the slow CPU endpoint and payload sizes remain backend-side bottlenecks; this iteration improves time-to-first-category, not total API completion time.
+
+## 2026-07-11 — Iteration 10: Backend CI Diagnosis Blocked
+
+- Objective: Resolve the full backend pytest failure from run `29164807695`.
+- Diagnosis performed: confirmed job `86575990875` and failed step `Backend test suite`; compile, startup safety, release/security, frontend, and contract/tooling steps passed.
+- Blocker: GitHub’s public workflow-log endpoint returned HTTP 403 requiring repository admin rights, and the public check-log page could not be retrieved. The exact failing test, exception, and traceback therefore cannot be established without repository access or a Python-enabled reproduction.
+- Fix applied: none; no evidence-supported code change was possible.
+- Data/deployment impact: none.
+- Rollback: none required.
+- Remaining risk: the backend full suite remains red; guessing or weakening tests would violate the iteration rules.

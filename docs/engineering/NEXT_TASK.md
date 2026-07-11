@@ -1,16 +1,18 @@
 # Next Task
 
-## Diagnose The Backend Full-Suite CI Failure
+## Obtain Backend CI Failure Evidence And Resolve It
 
-The picker now renders categories progressively, but the first GitHub-hosted workflow run still has a backend full-suite failure. The next iteration should identify that exact failing test before deeper backend query optimization.
+The backend full pytest step remains red, but the public GitHub API does not expose its logs without repository admin rights. The next iteration must obtain the exact failure from an authenticated GitHub Actions view or reproduce it under Python 3.12 before changing code.
 
 ### Scope
 
 - Inspect run `29164807695`, especially the backend full-suite failure.
+- Obtain the failed step log for job `86575990875` through an authorized GitHub Actions interface, or run the suite in Python 3.12.
 - Reproduce the failing test under Python 3.12 when possible.
 - Fix only a confirmed repository or CI issue; do not weaken assertions.
 - Record test counts and any genuinely integration-only failures.
 - Do not optimize category queries until the CI failure is understood.
+- Do not guess at the failing test from job metadata alone.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
@@ -43,4 +45,4 @@ Low; CI-only validation and configuration correction.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Diagnose the backend full pytest failure in GitHub Actions run `29164807695` under Python 3.12. Reproduce and fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, readiness rules, or manual-picker behavior. Run the affected tests plus compile, frontend checks, release checks, and `git diff --check`; review the complete diff; update the engineering state files; and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Obtain the backend failure log for GitHub Actions run `29164807695`, job `86575990875`, through an authorized interface or reproduce the suite under Python 3.12. Identify the exact test and root cause before editing. Fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, readiness rules, or manual-picker behavior. Run the affected tests, compile, full pytest, frontend checks if needed, release checks, and `git diff --check`; review the complete diff; update the engineering state files; and generate the next standalone prompt.
