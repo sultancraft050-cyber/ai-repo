@@ -365,3 +365,15 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Rollback: revert the focused CI commit; no data rollback is required.
 - Remaining risks: the underlying backend test failure is intentionally unresolved until the new artifact and summary provide evidence.
 - Diagnostic run `29165405260`: artifact creation succeeded with size approximately 8.25KB; backend stayed red as intended, while frontend and contract/tooling passed. Public artifact download returned HTTP 401, so no test names or traceback were inferred.
+
+## 2026-07-11 — Iteration 12: Fix Backend Test Fixture Paths
+
+- Objective: Fix three confirmed pytest failures caused by cwd-dependent canonical-spec fixture paths.
+- Original run: `29165405260`; Python 3.12.13; 285 collected, 282 passed, 3 failed.
+- Failed tests: the current-gen GPU variant fixture check, GPU exact-card fixture check, and narrow AM5 motherboard fixture check in `test_pc_part_dataset_adapter.py`.
+- Root cause: `Path("backend/data/...")` resolved to `backend/backend/data/...` because CI runs pytest from `backend`.
+- Fix: define `BACKEND_ROOT` from `Path(__file__).resolve()` and resolve all three fixtures through `BACKEND_ROOT / "data" / "canonical_specs"`.
+- Files changed: backend test module and engineering-state files only. Fixture contents, production code, assertions, and test selection are unchanged.
+- Local validation: all three paths resolved from repository-root and backend working directories; release tests and `git diff --check` passed. Python tests remain authoritative in CI.
+- Data/deployment impact: none.
+- Rollback: revert the focused fixture-path commit; no data or deployment rollback is required.

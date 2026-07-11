@@ -17,6 +17,9 @@ from app.services.import_adapters.pc_part_dataset_adapter import adapt_pc_part_d
 from app.services.catalog_expansion import annotate_expansion_target
 from scripts.prepare_datasets import prepare_pc_part_dataset
 
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+CANONICAL_SPECS_DIR = BACKEND_ROOT / "data" / "canonical_specs"
+
 
 class FakeRecord(dict):
     def data(self) -> dict[str, Any]:
@@ -922,7 +925,7 @@ def test_current_gen_gpu_exact_card_enrichment_marks_exact_ready_without_price_m
 
 
 def test_phase2_current_gen_fixture_keeps_ambiguous_gpu_variants_out_of_family_enrichment() -> None:
-    fixture = json.loads(Path("backend/data/canonical_specs/phase2_current_gen_specs.json").read_text())
+    fixture = json.loads((CANONICAL_SPECS_DIR / "phase2_current_gen_specs.json").read_text())
     gpu_keys = {record["canonical_key"] for record in fixture["gpu_family_records"]}
     ambiguous_targets = {record["target_family"] for record in fixture["gpu_family_records_requiring_variant_split"]}
     cpu_keys = {record["canonical_key"] for record in fixture["cpu_records"]}
@@ -936,7 +939,7 @@ def test_phase2_current_gen_fixture_keeps_ambiguous_gpu_variants_out_of_family_e
 
 
 def test_phase2_gpu_exact_fixture_has_required_exact_card_fields_for_narrow_targets() -> None:
-    fixture = json.loads(Path("backend/data/canonical_specs/phase2_gpu_exact_card_specs.json").read_text())
+    fixture = json.loads((CANONICAL_SPECS_DIR / "phase2_gpu_exact_card_specs.json").read_text())
     required = {"vram_gb", "pcie_generation", "board_power_w", "length_mm", "slots", "power_connectors"}
     records = fixture["gpu_exact_card_records"]
     keys = {record["canonical_key"] for record in records}
@@ -950,7 +953,7 @@ def test_phase2_gpu_exact_fixture_has_required_exact_card_fields_for_narrow_targ
 
 
 def test_phase2_motherboard_fixture_has_required_confirmed_fields_only_for_narrow_am5_targets() -> None:
-    fixture = json.loads(Path("backend/data/canonical_specs/phase2_motherboard_confirmed_specs.json").read_text())
+    fixture = json.loads((CANONICAL_SPECS_DIR / "phase2_motherboard_confirmed_specs.json").read_text())
     required = {"chipset", "socket", "memory_type", "form_factor", "m2_slots", "pcie_x16_slots"}
     records = fixture["motherboard_records"]
 

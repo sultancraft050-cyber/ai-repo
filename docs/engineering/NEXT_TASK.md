@@ -1,20 +1,15 @@
 # Next Task
 
-## Inspect Self-Diagnosing Backend CI Evidence And Resolve The Test Failure
+## Profile And Optimize The CPU Product Search Endpoint
 
-The CI workflow now publishes a JUnit artifact and bounded job summary. The next iteration must inspect the new run and use that evidence to identify and fix the backend test failure.
+After the fixture-path correction is verified green in CI, the highest measured product issue is the CPU search endpoint at approximately 20.7 seconds, which dominates manual-picker completion time.
 
 ### Scope
 
-- Inspect run `29164807695`, especially the backend full-suite failure.
-- Inspect the new `backend-pytest-results` artifact and job summary.
-- Use repository-authorized GitHub access because public artifact download returned HTTP 401.
-- Record exact failed test names, exception, traceback summary, totals, and exit code.
-- Reproduce the failing test under Python 3.12 when possible.
-- Fix only a confirmed repository or CI issue; do not weaken assertions.
-- Record test counts and any genuinely integration-only failures.
-- Do not optimize category queries until the CI failure is understood.
-- Do not guess at the failing test from job metadata alone.
+- Measure CPU `/products/search` execution time, Neo4j query time, and response construction separately.
+- Inspect the exact query and returned fields before changing code.
+- Apply only evidence-supported, read-only query or payload optimization.
+- Preserve readiness, identity, Saudi price, and pagination semantics.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
@@ -27,7 +22,7 @@ The CI workflow now publishes a JUnit artifact and bounded job summary. The next
 
 ### Acceptance Criteria
 
-- All required checks pass or have a documented external blocker.
+- Backend CI must be green before query optimization is committed.
 - Release compatibility reports `compatible`.
 - Existing production smoke remains compatible after backend validation.
 - No localhost/127.0.0.1 production target is detected.
@@ -38,13 +33,13 @@ The CI workflow now publishes a JUnit artifact and bounded job summary. The next
 
 ### Likely files
 
-- `.github/workflows/ci.yml`
-- backend test configuration only if a CI-specific issue is proven
+- product-search API and repository files identified by profiling
+- focused product-search tests
 
 ### Risk
 
-Low; CI-only validation and configuration correction.
+Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Inspect the new GitHub Actions run, artifact `backend-pytest-results`, and backend summary. Identify exact failing tests and root cause before editing. Fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, readiness rules, or manual-picker behavior. Run affected tests, compile, full pytest, frontend checks if needed, release checks, and `git diff --check`; review the complete diff; update the engineering state files with the evidence and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Confirm the backend CI run after the fixture-path fix is green. Then profile the CPU `/products/search` path without mutating production data. Separate HTTP, repository, Neo4j, and response-serialization time; inspect only the relevant query and payload fields; and implement one evidence-supported read-only optimization. Do not change readiness, compatibility, pricing, solver, ingestion, or identity behavior. Run focused tests, full backend pytest, compile, release checks, frontend checks when applicable, and `git diff --check`; update engineering state and generate the next standalone prompt.
