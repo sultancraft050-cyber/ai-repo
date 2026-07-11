@@ -102,7 +102,7 @@ jobs:
           grep -q 'PRICING_SCHEDULER_ENABLED=false' scripts/deploy-cloud-run.sh
           grep -q 'AUTONOMOUS_AGENTS_ENABLED=false' scripts/deploy-cloud-run.sh
           grep -q 'CPU_SPECS_SEED_ON_START=false' scripts/deploy-cloud-run.sh
-          if git ls-files | grep -E '(^|/)\.env($|\.)|(^|/).*\.(pem|key)$'; then
+          if git ls-files | grep -Ev '\.example$' | grep -E '(^|/)\.env($|\.)|(^|/).*\.(pem|key)$'; then
             echo "Potential secret file is tracked" >&2
             exit 1
           fi
