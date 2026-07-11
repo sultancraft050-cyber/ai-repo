@@ -1,13 +1,14 @@
 # Next Task
 
-## Inspect And Resolve The First Automated CI Run
+## Diagnose The Backend Full-Suite CI Failure
 
-The reliability workflow is now defined, but its first GitHub-hosted run must confirm that backend tests and repository checks work in the supported environment.
+The first GitHub-hosted workflow run proved the environment and focused backend checks work, but the full backend pytest suite fails. The next iteration should identify the exact failing test from the CI log and correct only a real repository or CI issue.
 
 ### Scope
 
-- Inspect the first workflow run for backend, frontend, and contract/tooling jobs.
-- Fix only workflow-caused failures or clearly isolated CI configuration issues.
+- Inspect run `29164807695`, especially the backend full-suite failure.
+- Reproduce the failing test under Python 3.12 when possible.
+- Fix only a confirmed repository or CI issue; do not weaken assertions.
 - Record test counts and any genuinely integration-only failures.
 - Keep production data and deployment configuration unchanged.
 
@@ -41,4 +42,4 @@ Low; CI-only validation and configuration correction.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Inspect the first GitHub Actions run for `.github/workflows/ci.yml`, then fix only workflow-caused failures. Do not change Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, or readiness rules. Run the affected checks, `git diff --check`, review the complete diff, update `CURRENT_STATE.md`, append `EVOLUTION_LOG.md`, replace `NEXT_TASK.md`, and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Diagnose the backend full pytest failure in GitHub Actions run `29164807695` under Python 3.12. Reproduce and fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, or readiness rules. Run the affected tests plus compile, frontend checks, release checks, and `git diff --check`; review the complete diff; update the engineering state files; and generate the next standalone prompt.

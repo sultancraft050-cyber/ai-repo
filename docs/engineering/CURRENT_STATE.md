@@ -72,6 +72,9 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Frontend validation: Node 22, `npm ci`, typecheck, build, UI contract checks, and `/release` route artifact check run sequentially.
 - Contract/tooling validation: release tests, Node syntax checks, shell syntax check, safe-off deployment defaults, secret filename check, and diff check.
 - CI uses no production credentials, Neo4j service, provider APIs, or production endpoints. Production smoke remains manual.
+- First workflow run for commit `19bcd6d` completed with frontend and contract/tooling jobs passing; backend compile, startup-safety, and release/security steps passed, while the full backend pytest step failed and needs log-level investigation.
+- Corrected workflow commit `2c1c823` removed the `.env.example` false positive; its frontend and contract/tooling jobs pass, while the same backend full-suite failure remains.
+- GitHub Actions run: [2c1c823 CI run](https://github.com/sultancraft050-cyber/ai-repo/actions/runs/29164807695).
 
 ## Google Cloud Run Migration
 

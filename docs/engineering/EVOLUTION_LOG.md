@@ -327,3 +327,5 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Tests: local equivalent frontend/release checks remain the available validation; GitHub Actions is authoritative for Python tests.
 - Rollback: revert the CI commit or remove `.github/workflows/ci.yml`; no Cloud Run, Vercel, or database rollback is required.
 - Remaining risks: GitHub-hosted dependency availability and any backend tests that unexpectedly require external infrastructure will be visible as CI failures.
+- First run result: frontend passed; contract/tooling initially failed because `.env.example` templates matched the secret-file pattern; backend compile, focused safety, and release/security checks passed, but the full pytest step failed.
+- Follow-up `2c1c823`: excluded `.example` templates from the secret-file check. Contract/tooling and frontend then passed; backend full pytest still failed. No test was weakened and no production access was added.
