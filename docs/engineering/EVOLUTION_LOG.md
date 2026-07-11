@@ -329,3 +329,17 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Remaining risks: GitHub-hosted dependency availability and any backend tests that unexpectedly require external infrastructure will be visible as CI failures.
 - First run result: frontend passed; contract/tooling initially failed because `.env.example` templates matched the secret-file pattern; backend compile, focused safety, and release/security checks passed, but the full pytest step failed.
 - Follow-up `2c1c823`: excluded `.example` templates from the secret-file check. Contract/tooling and frontend then passed; backend full pytest still failed. No test was weakened and no production access was added.
+
+## 2026-07-11 — Iteration 9: Manual Picker Progressive Loading
+
+- Objective: Reduce the time before `/build/manual` shows usable categories.
+- Why selected: the picker already issued eight independent requests concurrently, but React state was published only after `Promise.allSettled` completed, so the UI behaved as all-or-nothing.
+- Baseline: eight concurrent category requests; a read-only Cloud Run sample took about 20.7s overall, dominated by CPU at about 20.7s. GPU was about 11.8s and RAM about 6.7s. Payloads were about 16-58KB per category.
+- Implementation: `ManualPartPicker` now publishes each category as its request settles, tracks loading per category, and preserves independent failures without blocking other rows.
+- Files changed: `frontend/components/ManualPartPicker.tsx`, this state record, `CURRENT_STATE.md`, and `NEXT_TASK.md`.
+- Tests: frontend typecheck, production build, UI contract checks, release tests, and diff check passed.
+- Data impact: none; only read-only frontend request/render behavior changed.
+- Deployment impact: frontend deployment only; no backend, Cloud Run, Neo4j, catalog, pricing, or schema changes.
+- Post-change production measurement: pending Vercel deployment; pre-deployment measurements are recorded above.
+- Rollback: revert the focused frontend commit; no data rollback is required.
+- Remaining risks: the slow CPU endpoint and payload sizes remain backend-side bottlenecks; this iteration improves time-to-first-category, not total API completion time.

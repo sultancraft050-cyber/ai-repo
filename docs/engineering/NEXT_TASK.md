@@ -2,7 +2,7 @@
 
 ## Diagnose The Backend Full-Suite CI Failure
 
-The first GitHub-hosted workflow run proved the environment and focused backend checks work, but the full backend pytest suite fails. The next iteration should identify the exact failing test from the CI log and correct only a real repository or CI issue.
+The picker now renders categories progressively, but the first GitHub-hosted workflow run still has a backend full-suite failure. The next iteration should identify that exact failing test before deeper backend query optimization.
 
 ### Scope
 
@@ -10,6 +10,7 @@ The first GitHub-hosted workflow run proved the environment and focused backend 
 - Reproduce the failing test under Python 3.12 when possible.
 - Fix only a confirmed repository or CI issue; do not weaken assertions.
 - Record test counts and any genuinely integration-only failures.
+- Do not optimize category queries until the CI failure is understood.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
@@ -42,4 +43,4 @@ Low; CI-only validation and configuration correction.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Diagnose the backend full pytest failure in GitHub Actions run `29164807695` under Python 3.12. Reproduce and fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, or readiness rules. Run the affected tests plus compile, frontend checks, release checks, and `git diff --check`; review the complete diff; update the engineering state files; and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Diagnose the backend full pytest failure in GitHub Actions run `29164807695` under Python 3.12. Reproduce and fix only the confirmed issue, without changing Cloud Run, Vercel, Neo4j, catalog, pricing, URLs, secrets, readiness rules, or manual-picker behavior. Run the affected tests plus compile, frontend checks, release checks, and `git diff --check`; review the complete diff; update the engineering state files; and generate the next standalone prompt.

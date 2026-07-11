@@ -75,6 +75,9 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - First workflow run for commit `19bcd6d` completed with frontend and contract/tooling jobs passing; backend compile, startup-safety, and release/security steps passed, while the full backend pytest step failed and needs log-level investigation.
 - Corrected workflow commit `2c1c823` removed the `.env.example` false positive; its frontend and contract/tooling jobs pass, while the same backend full-suite failure remains.
 - GitHub Actions run: [2c1c823 CI run](https://github.com/sultancraft050-cyber/ai-repo/actions/runs/29164807695).
+- Manual picker measurement: eight independent `/products/search` requests are issued concurrently; the current UI previously withheld all category results until all settled.
+- Read-only Cloud Run timing sample before deployment: parallel total about 20.7s, with CPU about 20.7s, GPU about 11.8s, RAM about 6.7s, and other categories about 2.4-3.7s; responses were approximately 16-58KB each.
+- Manual picker improvement is local and pending deployment validation; no API or data changes were made.
 
 ## Google Cloud Run Migration
 

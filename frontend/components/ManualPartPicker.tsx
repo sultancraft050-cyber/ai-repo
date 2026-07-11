@@ -64,6 +64,9 @@ function emptyProducts(): ProductMap {
 export function ManualPartPicker() {
   const [products, setProducts] = useState<ProductMap>(emptyProducts);
   const [failures, setFailures] = useState<CategoryFailures>({});
+  const [categoryLoading, setCategoryLoading] = useState<CategoryLoading>(() =>
+    componentOrder.reduce((state, kind) => ({ ...state, [kind]: true }), {} as CategoryLoading)
+  );
   const [loadingMore, setLoadingMore] = useState<CategoryLoading>({});
   const [hasMore, setHasMore] = useState<CategoryHasMore>({});
   const [loading, setLoading] = useState(true);
@@ -123,31 +126,37 @@ export function ManualPartPicker() {
     async function loadProducts() {
       setLoading(true);
       setFailures({});
-      const results = await Promise.allSettled(
-        componentOrder.map(async (kind) => ({
-          kind,
-          products: await searchProducts({ category: kind, region: "SA", limit: PRODUCT_PAGE_SIZE, offset: 0 })
-        }))
+      setCategoryLoading(
+        componentOrder.reduce((state, kind) => ({ ...state, [kind]: true }), {} as CategoryLoading)
       );
-      if (cancelled) return;
-      const next = emptyProducts();
-      const nextFailures: CategoryFailures = {};
-      const nextHasMore: CategoryHasMore = {};
-      results.forEach((result, index) => {
-        const kind = componentOrder[index];
-        if (result.status === "fulfilled") {
-          next[result.value.kind] = result.value.products;
-          nextHasMore[result.value.kind] = result.value.products.length === PRODUCT_PAGE_SIZE;
-        } else {
-          const message = result.reason instanceof Error ? result.reason.message : "Unable to load this category.";
-          nextFailures[kind] = message;
-          nextHasMore[kind] = false;
-        }
-      });
-      setProducts(next);
-      setFailures(nextFailures);
-      setHasMore(nextHasMore);
-      setLoading(false);
+
+      await Promise.all(
+        componentOrder.map(async (kind) => {
+          try {
+            const nextProducts = await searchProducts({
+              category: kind,
+              region: "SA",
+              limit: PRODUCT_PAGE_SIZE,
+              offset: 0
+            });
+            if (cancelled) return;
+            setProducts((current) => ({ ...current, [kind]: nextProducts }));
+            setHasMore((current) => ({ ...current, [kind]: nextProducts.length === PRODUCT_PAGE_SIZE }));
+          } catch (error) {
+            if (cancelled) return;
+            setFailures((current) => ({
+              ...current,
+              [kind]: error instanceof Error ? error.message : "Unable to load this category."
+            }));
+            setHasMore((current) => ({ ...current, [kind]: false }));
+          } finally {
+            if (!cancelled) {
+              setCategoryLoading((current) => ({ ...current, [kind]: false }));
+            }
+          }
+        })
+      );
+      if (!cancelled) setLoading(false);
     }
     loadProducts();
     return () => {
@@ -318,7 +327,7 @@ export function ManualPartPicker() {
               kind={kind}
               count={products[kind].length}
               selected={selected[kind]}
-              loading={loading}
+              loading={Boolean(categoryLoading[kind])}
               failure={failures[kind]}
               onAdd={(opener) => openPicker(kind, opener)}
               onRemove={() => removeProduct(kind)}
@@ -419,7 +428,7 @@ export function ManualPartPicker() {
           selected={selected[activeKind]}
           buildPrice={knownPriceTotal}
           buildWattage={compatibility?.total_power_draw_w ?? 0}
-          loading={loading}
+          loading={Boolean(categoryLoading[activeKind])}
           failure={failures[activeKind]}
           onClose={closePicker}
           onSelect={(product) => chooseProduct(activeKind, product)}
