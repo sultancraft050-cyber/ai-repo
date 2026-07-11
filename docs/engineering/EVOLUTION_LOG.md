@@ -185,7 +185,12 @@ No secrets or local environment files are included. Public release metadata is a
 
 ### Commit And Deployment
 
-The focused commit SHA and push/deployment results are reported from Git and provider verification after creation. This entry refers to the commit that contains it because a commit cannot embed its own immutable SHA.
+- Focused commit: `10d38581b2a991ad372064609838cb8ac8bff267`.
+- Subject: `chore: add safe startup and release verification`.
+- Pushed successfully to `origin/master`.
+- Remote `refs/heads/master` matches the focused commit.
+- Known Railway hostname returned `404 Application not found` for all four read-only checks; deployment is not verified.
+- Vercel deployment remains unverified because its public URL is unavailable locally.
 
 ### Rollback
 
@@ -193,4 +198,4 @@ Use `git revert <focused-commit-sha>` and redeploy the previous Railway/Vercel r
 
 ### Remaining Risks
 
-Backend tests and live release compatibility remain unverified until a Python-enabled and network-enabled deployment environment is available.
+Backend tests remain unverified until a Python-enabled environment is available. Production release compatibility remains unverified because the known Railway hostname is not serving the application and the Vercel URL is unknown.

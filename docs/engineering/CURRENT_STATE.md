@@ -55,12 +55,12 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 
 - Branch: `master`, tracking `origin/master`.
 - Release baseline: `811c63129053c08247c91a1805a75a703d1d446e`.
-- Focused commit: the commit containing Iterations 1–4; use Git history for its immutable SHA.
-- Push status: pending at state-file creation.
+- Focused commit: `10d38581b2a991ad372064609838cb8ac8bff267` (`chore: add safe startup and release verification`).
+- Push status: pushed to `origin/master`; remote verification returned the same SHA.
 - CI status: no repository CI workflow was found; backend validation remains pending.
-- Railway deployment: pending.
+- Railway deployment: unverified/mismatched. The known hostname returns `404 Application not found` for `/health`, `/health/neo4j`, `/openapi.json`, and the admin checklist.
 - Vercel deployment: pending; production URL unavailable locally.
-- Live release compatibility: unverified until both deployments are reachable.
+- Live release compatibility: unverified until the correct Railway service URL and Vercel URL are confirmed.
 
 ## Safe Startup Defaults
 
