@@ -1,5 +1,21 @@
 # Next Task
 
+## Complete Browser-Level Frontend Verification
+
+Add a small browser smoke/accessibility harness for every public route at desktop and mobile widths. Cover theme persistence and system preference, mobile menu keyboard behavior, route navigation, mocked API success/error/loading states, unknown-route handling, and a no-localhost production-target assertion. Keep all production writes, Neo4j operations, secret changes, and deployments out of scope.
+
+### Acceptance criteria
+
+- Browser tests pass for `/`, `/build/manual`, `/build/generate`, `/build/share/[slug]`, and `/release`.
+- Theme toggle persists across reload and has correct accessible state.
+- Mobile navigation is keyboard usable and closes predictably.
+- API-backed flows use mocks or local fixtures only.
+- No production data, secrets, Cloud Run, Vercel, or backend behavior changes.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, the engineering state files, and `docs/operations/WEBSITE_FEATURE_AUDIT.md`. Install or use the repository-approved browser test runtime if available, then run a GET-only/local mocked browser audit at desktop and mobile widths. Do not call production write endpoints, change backend or data, or deploy.
+
 ## Supply Approvals and Verified Clone Inputs
 
 The approval package and clone runbook are complete, but execution is not authorized. All owner approvals, Aura snapshot facts, billing eligibility, target sizing, and isolated clone identity remain pending.

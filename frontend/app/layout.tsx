@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { RegionProvider } from "@/components/RegionProvider";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { REGION_COOKIE, normalizeRegion } from "@/lib/region";
 import "./globals.css";
 
@@ -20,13 +21,18 @@ export const metadata: Metadata = {
   }
 };
 
+const themeBootstrap = `(() => { try { const stored = localStorage.getItem("saudi-build-theme"); const theme = stored === "light" || stored === "dark" ? stored : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"); document.documentElement.dataset.theme = theme; document.documentElement.style.colorScheme = theme; } catch {} })()`;
+
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   const cookieStore = await cookies();
   const initialRegion = normalizeRegion(cookieStore.get(REGION_COOKIE)?.value);
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head>
       <body>
-        <RegionProvider initialRegion={initialRegion}>{children}</RegionProvider>
+        <ThemeProvider>
+          <RegionProvider initialRegion={initialRegion}>{children}</RegionProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

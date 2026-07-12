@@ -453,3 +453,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Rehearsal controls: first batch at most 100, later batches at most 500 after checkpoint approval, recount after each batch, zero-difference parity, >1% candidate drift stop, and no first-run consolidation.
 - Billing/snapshot status: all console and credit questions are `MANUAL_VERIFICATION_REQUIRED` or `MANUAL_BILLING_VERIFICATION_REQUIRED`.
 - Safety: documentation only; no snapshot/export, clone, data/schema mutation, deletion query, retention execution, secret change, deployment, or application-code change occurred.
+
+## 2026-07-12 — Iteration 19: Website-Wide Feature Audit and Frontend Reliability Pass
+
+- Objective: audit public routes and browser-facing controls and repair the highest-impact frontend interaction defects.
+- Findings: the theme button had no handler or persistence, mobile navigation had no drawer, and two logo anchors were dead `#` links.
+- Fixes: added a ThemeProvider with system preference/local-storage support and pre-paint bootstrap, accessible theme state labels, a responsive mobile navigation drawer, and root logo links.
+- Validation: theme contract test, frontend typecheck, production build, UI contract check, release tests, and `git diff --check`; browser automation was unavailable and is explicitly deferred.
+- Safety: no production API writes, Neo4j operations, secrets, Cloud Run/Vercel deployments, or application backend changes occurred.

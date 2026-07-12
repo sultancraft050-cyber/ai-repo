@@ -14,7 +14,7 @@ const navItems = [
 export function LandingSidebar() {
   return (
     <aside className="hidden min-h-screen w-64 shrink-0 border-r border-line bg-[#070b13]/92 px-4 py-5 lg:block">
-      <a href="#" className="mb-6 flex items-center gap-3">
+      <a href="/" className="mb-6 flex items-center gap-3">
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-signal text-slate-950">
           <Boxes size={19} aria-hidden />
         </span>

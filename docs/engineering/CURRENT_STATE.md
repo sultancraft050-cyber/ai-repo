@@ -143,6 +143,14 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 
 ## Safe Startup Defaults
 
+## Website Feature Audit
+
+- Frontend audit date: 2026-07-12.
+- Fixed the no-op theme control, added persisted/system-aware light/dark state with pre-paint application, restored mobile navigation, and corrected logo links to `/`.
+- Route and control inventory is documented in `docs/operations/WEBSITE_FEATURE_AUDIT.md`.
+- Static contract tests, typecheck, production build, UI contract checks, and release tests are the current validation evidence. Browser automation is not present in the checked-in frontend dependencies; API-backed runtime flows remain the next task.
+- No backend, Neo4j, secret, deployment, or production-data changes occurred.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

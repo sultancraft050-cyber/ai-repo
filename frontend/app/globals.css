@@ -7,6 +7,11 @@
   background: #080f1f;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+  background: #f5f7fb;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -39,6 +44,47 @@ input,
 select,
 textarea {
   color-scheme: dark;
+}
+
+html[data-theme="light"] body {
+  color: #172033;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef3f8 55%, #e8eef5 100%);
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea {
+  color-scheme: light;
+}
+
+html[data-theme="light"] [class*="bg-[#"],
+html[data-theme="light"] [class*="bg-slate-950"],
+html[data-theme="light"] [class*="bg-slate-900"] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme="light"] [class*="bg-panel"] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme="light"] [class*="text-ink"],
+html[data-theme="light"] [class*="text-slate-100"],
+html[data-theme="light"] [class*="text-slate-200"],
+html[data-theme="light"] [class*="text-slate-300"] {
+  color: #172033 !important;
+}
+
+html[data-theme="light"] [class*="text-muted"],
+html[data-theme="light"] [class*="text-slate-400"],
+html[data-theme="light"] [class*="text-slate-500"],
+html[data-theme="light"] [class*="text-slate-600"] {
+  color: #526176 !important;
+}
+
+html[data-theme="light"] [class*="border-line"],
+html[data-theme="light"] [class*="border-slate-700"],
+html[data-theme="light"] [class*="border-slate-800"] {
+  border-color: #cbd5e1 !important;
 }
 
 .bg-white {
