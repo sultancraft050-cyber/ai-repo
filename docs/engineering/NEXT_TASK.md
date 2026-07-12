@@ -1,5 +1,21 @@
 # Next Task
 
+## Confirm Vercel Deployment Metadata and Production Environment
+
+Use the existing Vercel Dashboard or authenticated CLI to confirm the project name, production alias, latest READY deployment, source SHA `4222233`, build root/framework, and presence of `NEXT_PUBLIC_API_BASE_URL` without printing its value. Do not relink, create a project, change variables, redeploy, or touch backend/database resources unless a separate approved task authorizes it.
+
+### Acceptance criteria
+
+- Existing project and alias are confirmed.
+- READY deployment source commit is confirmed as `4222233` or newer.
+- Public API variable exists and points to the expected Cloud Run backend.
+- No secrets or full environment values are recorded.
+- Live GET-only smoke remains green.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, the engineering state files, `docs/operations/WEBSITE_PRODUCTION_VERIFICATION.md`, and `docs/DEPLOYMENT.md`. Using authenticated access to the existing Vercel project only, verify deployment metadata and public-variable presence. Do not create/relink projects, change variables, deploy Cloud Run, mutate Neo4j, submit production forms, or expose tokens.
+
 ## Add Fixture-Backed Workflow and Accessibility Coverage
 
 Extend the local Playwright harness with deterministic fixtures for manual category loading/partial failure/retry, generated-builder validation/result/error states, and the dynamic shared-build route. Add 1280×800 and 768×1024 coverage and a lightweight axe check when compatible. Keep all production writes, databases, secrets, and deployments out of scope.

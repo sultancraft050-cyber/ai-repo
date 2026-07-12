@@ -469,3 +469,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Findings/fixes: Escape and outside-click did not close the mobile drawer; unknown routes lacked a home recovery link. Added deterministic drawer dismissal and a branded `not-found.tsx`.
 - Validation: 7 Playwright tests passed, frontend typecheck/build/UI checks passed, release tests passed, and diff whitespace remained clean. Successful home light/dark desktop/mobile screenshots are generated only in ignored local test artifacts.
 - Safety: API traffic was mocked locally; no production writes, Neo4j operations, secrets, Cloud Run/Vercel deployment, or data changes occurred.
+
+## 2026-07-12 — Iteration 21: Frontend Production Verification
+
+- Objective: validate the existing Vercel production alias after the frontend interaction work using local preflight and GET-only live checks.
+- Local validation: `npm ci`, expected-target production build, typecheck, UI checks, seven Playwright tests, release tests, and diff checks passed.
+- Live evidence: the known Vercel alias returned 200 for `/`, `/build/manual`, `/build/generate`, and `/release`, 404 for an unknown route, and passed live theme persistence and mobile drawer checks at 390×844. No production form was submitted.
+- Deployment status: Vercel CLI/authentication was unavailable, so no deployment or project relinking occurred. Exact deployment ID/source SHA/environment-variable presence remains a manual Dashboard verification gate.
+- Safety: no Cloud Run deployment, backend/configuration change, Neo4j operation, secret change, or production data mutation occurred.

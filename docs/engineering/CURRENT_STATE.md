@@ -159,6 +159,14 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Browser-confirmed fixes: Escape/outside-click mobile drawer closure and a usable branded 404 home link.
 - Remaining browser work is fixture-backed manual/generated workflow states, shared-build runtime coverage, 1280×800/768×1024 viewports, and automated axe scoring.
 
+## Website Production Verification
+
+- Production verification date: 2026-07-12.
+- Existing Vercel alias `frontend-lac-nine-09j4x45cj5.vercel.app` returned expected GET-only route statuses and live theme/mobile interaction behavior.
+- Local production build, typecheck, UI checks, release tests, and seven Playwright tests passed with the expected Cloud Run API target.
+- Vercel CLI authentication/project/deployment metadata was unavailable, so no deployment was run and exact source-SHA confirmation remains a manual Dashboard gate.
+- No production forms, writes, backend deployment, Neo4j operations, or secret changes occurred.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`
