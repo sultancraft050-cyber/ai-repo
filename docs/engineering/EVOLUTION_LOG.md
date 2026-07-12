@@ -477,3 +477,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Live evidence: the known Vercel alias returned 200 for `/`, `/build/manual`, `/build/generate`, and `/release`, 404 for an unknown route, and passed live theme persistence and mobile drawer checks at 390×844. No production form was submitted.
 - Deployment status: Vercel CLI/authentication was unavailable, so no deployment or project relinking occurred. Exact deployment ID/source SHA/environment-variable presence remains a manual Dashboard verification gate.
 - Safety: no Cloud Run deployment, backend/configuration change, Neo4j operation, secret change, or production data mutation occurred.
+
+## 2026-07-12 — Iteration 22: Verified Vercel Production Metadata
+
+- Objective: record only the Vercel production metadata manually verified and supplied by the user.
+- Provenance: team `sultancraft050-7155s-projects`, project `frontend`, deployment status `READY`, production alias `frontend-lac-nine-09j4x45cj5.vercel.app`, repository `sultancraft050-cyber/ai-repo`, branch `master`, source `33db991`, Next.js, and root `frontend`.
+- Configuration: build command `npm run build`, install command `npm install`; the Production `NEXT_PUBLIC_API_BASE_URL` is present and its target was verified as the expected Cloud Run service.
+- Conclusion: production provenance is `VERIFIED`; source `33db991` is newer than frontend feature commit `4222233`.
+- Safety: documentation only; no Vercel connection/deployment, environment change, backend change, Neo4j operation, secret access, or data mutation occurred.

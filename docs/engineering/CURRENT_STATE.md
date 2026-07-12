@@ -164,7 +164,8 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Production verification date: 2026-07-12.
 - Existing Vercel alias `frontend-lac-nine-09j4x45cj5.vercel.app` returned expected GET-only route statuses and live theme/mobile interaction behavior.
 - Local production build, typecheck, UI checks, release tests, and seven Playwright tests passed with the expected Cloud Run API target.
-- Vercel CLI authentication/project/deployment metadata was unavailable, so no deployment was run and exact source-SHA confirmation remains a manual Dashboard gate.
+- User-verified Vercel provenance: team `sultancraft050-7155s-projects`, project `frontend`, status `READY`, repository `sultancraft050-cyber/ai-repo`, branch `master`, source `33db991`, Next.js framework, and `frontend` root.
+- Production alias and deployment URL were verified; `NEXT_PUBLIC_API_BASE_URL` is present for Production and targets the expected Cloud Run service. Production provenance is `VERIFIED`.
 - No production forms, writes, backend deployment, Neo4j operations, or secret changes occurred.
 
 - `PRICING_SCHEDULER_ENABLED=false`

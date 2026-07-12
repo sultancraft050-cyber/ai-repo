@@ -1,17 +1,28 @@
 # Website Production Verification
 
 **Date:** 2026-07-12
-**Source commit intended:** `4222233994ba82c933aa9d582b4298fe59c86f59`
+**Verified source commit:** `33db991`
 **GitHub Actions prerequisite:** `29186288782` passed
 
 ## Deployment status
 
-The existing production alias is `https://frontend-lac-nine-09j4x45cj5.vercel.app`. The Vercel CLI is not installed or authenticated in this environment, so no deployment command was run and the Vercel project name, deployment ID, deployment source SHA, build root, and environment-variable presence could not be independently verified. The live alias nevertheless served the expected updated interaction behavior. Manual Dashboard verification is required to confirm that production corresponds to commit `4222233` and that `NEXT_PUBLIC_API_BASE_URL` is configured without exposing its value.
+Production provenance is **VERIFIED** from the user-supplied manual Vercel inspection. No Vercel connection or deployment was performed while recording these facts.
 
-Deployment method: automatic status not verifiable; no manual deployment performed
-Deployment ID: unavailable without authenticated Vercel CLI/Dashboard
-Deployment URL/alias: `https://frontend-lac-nine-09j4x45cj5.vercel.app`
-Status: live alias reachable; source deployment metadata pending manual verification
+- Team: `sultancraft050-7155s-projects`
+- Project: `frontend`
+- Deployment identifier: `https://frontend-kg8dgdjt8-sultancraft050-7155s-projects.vercel.app` (deployment ID was not separately recorded)
+- Deployment status: `READY`
+- Production alias: `https://frontend-lac-nine-09j4x45cj5.vercel.app`
+- Repository: `sultancraft050-cyber/ai-repo`
+- Production branch: `master`
+- Source commit: `33db991`
+- Framework: Next.js
+- Root directory: `frontend`
+- Build command: `npm run build`
+- Install command: `npm install`
+- `NEXT_PUBLIC_API_BASE_URL` present for Production: yes
+- API target correct: yes, `https://hardware-intelligence-api-lywizc5z5q-ww.a.run.app`
+- Manual verification date: 2026-07-12
 
 ## Local preflight
 
@@ -58,4 +69,4 @@ AUTONOMOUS_AGENTS_ENABLED=false
 CPU_SPECS_SEED_ON_START=false
 ```
 
-Known limitation: authenticated Vercel Dashboard/CLI access is required to confirm the exact project, deployment ID, source commit, deployment timestamp, and public environment-variable configuration. No token was requested or exposed.
+The Vercel project ID, tokens, credentials, billing identifiers, and secret values are intentionally not recorded.

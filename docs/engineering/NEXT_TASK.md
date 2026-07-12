@@ -1,20 +1,19 @@
 # Next Task
 
-## Confirm Vercel Deployment Metadata and Production Environment
+## Add Deterministic Fixture-Backed Browser Coverage
 
-Use the existing Vercel Dashboard or authenticated CLI to confirm the project name, production alias, latest READY deployment, source SHA `4222233`, build root/framework, and presence of `NEXT_PUBLIC_API_BASE_URL` without printing its value. Do not relink, create a project, change variables, redeploy, or touch backend/database resources unless a separate approved task authorizes it.
+Add mocked, deterministic coverage for manual product selection/removal and partial failures, generated-build result/error states, shared-build rendering, intermediate viewports, and automated axe accessibility checks. Do not use production writes or credentials.
 
 ### Acceptance criteria
 
-- Existing project and alias are confirmed.
-- READY deployment source commit is confirmed as `4222233` or newer.
-- Public API variable exists and points to the expected Cloud Run backend.
-- No secrets or full environment values are recorded.
-- Live GET-only smoke remains green.
+- Manual picker selection, removal, retry, missing-price, and duplicate suppression pass with fixtures.
+- Generated success, no-result, server-error, compatibility, SAR price, and vendor states pass.
+- Shared-build rendering passes at desktop, tablet, and mobile sizes.
+- Axe findings are explicit and no accessibility failures are silently suppressed.
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, the engineering state files, `docs/operations/WEBSITE_PRODUCTION_VERIFICATION.md`, and `docs/DEPLOYMENT.md`. Using authenticated access to the existing Vercel project only, verify deployment metadata and public-variable presence. Do not create/relink projects, change variables, deploy Cloud Run, mutate Neo4j, submit production forms, or expose tokens.
+Read `AGENTS.md`, the engineering state files, `docs/operations/WEBSITE_BROWSER_VERIFICATION.md`, and `docs/operations/WEBSITE_PRODUCTION_VERIFICATION.md`. Extend only local Playwright fixtures and tests for manual/generated/shared-build states, 1280×800 and 768×1024 viewports, and axe checks. Do not call production write endpoints, mutate Neo4j, change secrets, or deploy.
 
 ## Add Fixture-Backed Workflow and Accessibility Coverage
 
