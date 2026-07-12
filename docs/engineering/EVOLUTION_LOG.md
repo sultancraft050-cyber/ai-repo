@@ -517,3 +517,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Production: a fresh context with service workers blocked and routing installed before page creation observed zero blocked non-GET requests during initial load; no non-GET/HEAD request reached production.
 - Closeout: the interaction sequence stopped returning output, so no unguarded retry was made and theme/drawer/manual/generated/404 interaction results remain unclaimed.
 - Safety: no production write, Neo4j operation, secret change, deployment, or request body/header/cookie capture occurred.
+
+## 2026-07-12 — Recovery: Guarded Initial-Load Verification
+
+- Status: `PARTIAL_SAFE_VERIFICATION`.
+- Preserved completed evidence only: synthetic GET/HEAD continued, synthetic POST aborted before transmission, synthetic server received zero POSTs, service workers were blocked, and routing preceded page creation/navigation.
+- One guarded production initial load completed with zero blocked POST/PUT/PATCH/DELETE and zero non-GET/HEAD requests reaching production.
+- Historical four-POST attribution remains unresolved; homepage `/analytics/events` remains a plausible static source only. No harmlessness or Neo4j effect was inferred.
+- Theme, drawer, manual, generated, shared-build, reduced-motion, and full route interactions were not verified in recovery. No additional production request occurred.

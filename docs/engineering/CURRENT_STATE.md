@@ -198,6 +198,13 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Fresh guarded production initial load observed zero blocked non-GET requests and allowed zero non-GET/HEAD requests to reach production. No unguarded retry was made after the interaction capture stopped returning output.
 - Full theme/drawer/manual/generated/404 interaction closeout remains pending a separately approved guarded run with reliable output capture.
 
+## Guarded Verification Recovery
+
+- Recovery date: 2026-07-12; status `PARTIAL_SAFE_VERIFICATION`.
+- Completed evidence is limited to the local guard self-test and one guarded production initial load: service workers blocked, routing installed before page creation/navigation, GET/HEAD only, zero production non-GET/HEAD requests.
+- Historical four-POST attribution remains unresolved; static code confirms only that homepage analytics can call `/analytics/events`.
+- Theme, drawer, manual search, generated validation, shared build, reduced-motion, and full route interactions are explicitly not verified in this recovery.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

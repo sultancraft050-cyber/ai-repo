@@ -1,8 +1,8 @@
 # Next Task
 
-## Complete Guarded Interaction Closeout
+## Run a Small Guarded Homepage and Theme Capture
 
-After explicit approval, rerun the guarded context with reliable output capture and verify theme, drawer focus, manual search, generated empty validation, and 404. Keep service workers blocked, install routing before page creation, continue only GET/HEAD, abort all other methods, and stop on Cloud Run, mutation-path, or unknown non-telemetry destinations.
+After explicit approval, create one fresh guarded context with service workers blocked and routing installed before page creation. Capture only homepage/theme behavior, continue only GET/HEAD, abort all other methods, redact all request details, and stop immediately on Cloud Run, mutation-path, or unknown non-telemetry destinations. Do not expand to multi-route interactions.
 
 ### Acceptance criteria
 
