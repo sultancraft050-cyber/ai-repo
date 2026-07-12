@@ -183,6 +183,14 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Confirmed fixes: manual search now filters visible products, menu-trigger focus is correctly referenced and restored after Escape, and reduced-motion CSS is scoped to the user preference.
 - No production requests, database operations, secrets, environment changes, or deployments occurred.
 
+## Unexpected Frontend POST Static Audit
+
+- Repository-only audit date: 2026-07-12; no production network or browser request was sent.
+- Confirmed automatic producer: `PublicLandingPage` posts `landing_page_visit` to `/analytics/events` on mount. The backend stores it in memory and attempts an `AnalyticsEvent` Neo4j write when connected.
+- The four previously observed POST URLs were not captured, so attribution remains unproven. Vercel Analytics, Speed Insights, third-party analytics/error reporting, beacon APIs, and service workers are absent.
+- Theme result is `LIKELY_TEST_SELECTOR_PROBLEM`; static implementation and local Playwright coverage support the handler/provider/persistence path.
+- `WEBSITE_INTERACTION_EDGE_VERIFICATION.md` never appeared in reachable Git history; the reference was incorrect.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

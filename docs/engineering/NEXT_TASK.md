@@ -1,8 +1,8 @@
 # Next Task
 
-## Extend Fixture Coverage for Full Pagination and Focus Details
+## Run a Blocked-Request Production Source Capture
 
-Add explicit page-number controls only if the product contract introduces them; otherwise keep the current load-more contract. Extend fixture assertions for 24-item request metadata, incomplete category detail text, drawer outside-click focus return, and reduced-motion loading indicators. Do not use production writes or credentials.
+After explicit approval, run the documented fresh-context Playwright design that installs routing before page creation, blocks every non-GET/HEAD request before transmission, stores no body, redacts URLs, and stops on Cloud Run or mutation-path targets. Use it only to identify method/origin/path/resource/frame/initiator evidence; do not submit forms or infer database effects.
 
 ### Acceptance criteria
 

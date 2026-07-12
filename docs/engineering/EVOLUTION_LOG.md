@@ -500,3 +500,12 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Coverage: 30 synthetic CPU products across the implemented load-more boundary, dedicated incomplete generated-build state, mobile drawer focus containment/return, and reduced-motion emulation.
 - Fixes: corrected manual search filtering, attached the focus ref to the actual mobile menu trigger, added deterministic focus return, and added scoped reduced-motion rules.
 - Safety: all requests remained fixture-backed; no production writes, Neo4j operations, secrets, environment changes, Cloud Run/Vercel deployments, or production payloads occurred.
+
+## 2026-07-12 — Iteration 25: Static Audit of Unexpected Production POST Sources
+
+- Objective: identify repository mechanisms capable of browser POST requests without sending any network request.
+- Confirmed automatic source: homepage mount records `landing_page_visit` through `/analytics/events`; backend code attempts a Neo4j analytics-event write when connected.
+- No Vercel Analytics, Speed Insights, third-party telemetry/error SDK, beacon, or service-worker producer is active. All other frontend POST callers require selection, submission, generation, workspace, or privileged control interaction.
+- Attribution remains unknown because the four observed POST URLs were not captured. Theme static result is `LIKELY_TEST_SELECTOR_PROBLEM`.
+- Missing document result: `WEBSITE_INTERACTION_EDGE_VERIFICATION.md` was never tracked; Iteration 24 updated the existing workflow-verification document.
+- Safety: documentation-only static inspection; no production/backend request, browser navigation, Neo4j operation, secret access, or deployment occurred.
