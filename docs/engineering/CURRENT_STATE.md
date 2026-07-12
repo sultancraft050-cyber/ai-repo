@@ -176,6 +176,13 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Confirmed fixes: category-scoped manual retry, removal of undefined warnings, corrected light-theme override order/contrast, and explicit no-compatible-build recovery messaging.
 - No production requests, data changes, secrets, Neo4j operations, or deployments occurred.
 
+## Frontend Interaction Edge Cases
+
+- Added 30-product deterministic pagination coverage for the current “Load more products” contract at desktop, tablet, and mobile sizes.
+- Added dedicated incomplete-build and reduced-motion fixtures, plus drawer focus containment and focus-return assertions.
+- Confirmed fixes: manual search now filters visible products, menu-trigger focus is correctly referenced and restored after Escape, and reduced-motion CSS is scoped to the user preference.
+- No production requests, database operations, secrets, environment changes, or deployments occurred.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

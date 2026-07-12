@@ -1,7 +1,7 @@
 "use client";
 
 import { Menu, Search, ShieldCheck, Sun, SunDim, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -16,21 +16,53 @@ const mobileLinks = [
 export function LandingTopBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigationRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const wasOpenRef = useRef(false);
+  const closeMenu = () => {
+    setMobileOpen(false);
+    setTimeout(() => menuButtonRef.current?.focus(), 0);
+  };
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
+  useLayoutEffect(() => {
+    if (mobileOpen) {
+      wasOpenRef.current = true;
+      navigationRef.current?.querySelector<HTMLElement>("a,button")?.focus();
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      menuButtonRef.current?.focus();
+    }
+  }, [mobileOpen]);
+
   useEffect(() => {
     if (!mobileOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileOpen(false);
+      if (event.key === "Escape") closeMenu();
+    };
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !navigationRef.current) return;
+      const focusable = Array.from(navigationRef.current.querySelectorAll<HTMLElement>("a,button")).filter((item) => !item.hasAttribute("disabled"));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     const closeOnOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node;
-      if (!navigationRef.current?.contains(target)) setMobileOpen(false);
+      if (!navigationRef.current?.contains(target)) closeMenu();
     };
     document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", containFocus);
     document.addEventListener("mousedown", closeOnOutsideClick);
     return () => {
       document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", containFocus);
       document.removeEventListener("mousedown", closeOnOutsideClick);
     };
   }, [mobileOpen]);
@@ -63,6 +95,7 @@ export function LandingTopBar() {
             {dark ? <SunDim size={16} aria-hidden /> : <Sun size={16} aria-hidden />}
           </button>
           <button
+            ref={menuButtonRef}
             type="button"
             onClick={() => setMobileOpen((open) => !open)}
             className="grid h-9 w-9 place-items-center rounded-md border border-line bg-panel text-muted lg:hidden"
@@ -75,7 +108,18 @@ export function LandingTopBar() {
         </div>
       </div>
       {mobileOpen ? (
-        <nav ref={navigationRef} id="mobile-navigation" aria-label="Mobile navigation" className="mx-auto mt-3 grid max-w-7xl gap-1 border-t border-line pt-3 lg:hidden">
+        <nav
+          ref={navigationRef}
+          id="mobile-navigation"
+          aria-label="Mobile navigation"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeMenu();
+            }
+          }}
+          className="mx-auto mt-3 grid max-w-7xl gap-1 border-t border-line pt-3 lg:hidden"
+        >
           {mobileLinks.map(([label, href]) => (
             <Link key={label} href={href} onClick={() => setMobileOpen(false)} className="rounded-md px-3 py-2 text-sm font-semibold text-muted hover:bg-panel hover:text-ink">
               {label}

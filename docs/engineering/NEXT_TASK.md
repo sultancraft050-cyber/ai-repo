@@ -1,8 +1,8 @@
 # Next Task
 
-## Complete Remaining Browser Interaction Edges
+## Extend Fixture Coverage for Full Pagination and Focus Details
 
-Add focused deterministic checks for manual pagination with 24+ fixtures, generated incomplete-data details, drawer focus containment/return, Space activation, and reduced-motion behavior. Do not use production writes or credentials.
+Add explicit page-number controls only if the product contract introduces them; otherwise keep the current load-more contract. Extend fixture assertions for 24-item request metadata, incomplete category detail text, drawer outside-click focus return, and reduced-motion loading indicators. Do not use production writes or credentials.
 
 ### Acceptance criteria
 

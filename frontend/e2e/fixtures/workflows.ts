@@ -1,5 +1,7 @@
 export const categories = ["CPU", "GPU", "RAM", "Motherboard", "Storage", "PSU", "Case", "Cooler"] as const;
 
+export const paginatedCpuProducts = Array.from({ length: 30 }, (_, index) => product("CPU", String(index + 1).padStart(3, "0")));
+
 export function product(category: string, suffix = "001", overrides: Record<string, unknown> = {}) {
   return {
     id: `fixture-${category.toLowerCase()}-${suffix}`,

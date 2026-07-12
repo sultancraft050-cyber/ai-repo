@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect, type Page } from "@playwright/test";
-import { categories, completeness, generatedBuild, product, savedBuild } from "./fixtures/workflows";
+import { categories, completeness, generatedBuild, paginatedCpuProducts, product, savedBuild } from "./fixtures/workflows";
 
 async function mockCommon(page: Page) {
   await page.route("**/products/search?*", async (route) => {
@@ -50,6 +50,31 @@ test("manual builder renders missing price and vendor safely", async ({ page }) 
   await page.getByRole("button", { name: "Add CPU" }).click();
   await expect(page.getByText("Price not listed yet")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/undefined|null|NaN/);
+});
+
+test.describe("manual builder pagination edge cases", () => {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
+    test(`loads deterministic second page without duplicates at ${viewport.width}px`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await mockCommon(page);
+      await page.route("**/products/search?*category=CPU*", async (route) => {
+        const offset = Number(new URL(route.request().url()).searchParams.get("offset") ?? 0);
+        await route.fulfill({ json: paginatedCpuProducts.slice(offset, offset + 24) });
+      });
+      await page.goto("/build/manual");
+      await page.getByRole("button", { name: "Add CPU" }).click();
+      await expect(page.getByRole("button", { name: "Load more products" })).toBeVisible();
+      await page.getByRole("button", { name: "Load more products" }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.getByRole("dialog").locator("article h4", { hasText: "Fixture CPU 001" })).toHaveCount(1);
+      await expect(page.getByRole("button", { name: "Load more products" })).toHaveCount(0);
+      if (viewport.width > 390) {
+        await page.getByPlaceholder("Search Processor...").fill("030");
+        await expect(page.getByRole("dialog").locator("article h4", { hasText: "Fixture CPU 030" })).toHaveCount(1);
+        await expect(page.getByRole("dialog").locator("article h4", { hasText: "Fixture CPU 001" })).toHaveCount(0);
+      }
+    });
+  }
 });
 
 test("generated builder validates locally and renders success and server errors", async ({ page }) => {
@@ -106,6 +131,18 @@ test("generated builder handles no-result, malformed and network failure states"
   await expect(page.getByText(/details need review/i).first()).toBeVisible();
 });
 
+test("generated builder renders a dedicated incomplete-build state", async ({ page }) => {
+  await mockCommon(page);
+  const incomplete = { ...generatedBuild, build_status: "incomplete_data", builds: [{ ...generatedBuild.builds[0], components: generatedBuild.builds[0].components.filter((item) => ["CPU", "GPU", "RAM", "PSU"].includes(item.category)), summary: { ...generatedBuild.builds[0].summary, total_recommended_price_sar: null, compatibility_status: "incomplete", warning_summary: ["Motherboard and storage are missing."] } }], missing_data_warnings: ["Motherboard, storage, and case need review."] };
+  await page.route("**/build/generate-local", (route) => route.fulfill({ json: incomplete }));
+  await page.goto("/build/generate");
+  await page.getByRole("button", { name: "Generate Saudi Build" }).click();
+  await expect(page.getByText("Some data needs review")).toBeVisible();
+  await expect(page.getByText(/Motherboard, storage, and case/)).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/undefined|null|NaN|Traceback/);
+  await expectNoSeriousAxe(page);
+});
+
 test("shared build renders success and failure fixtures", async ({ page }) => {
   await page.route("**/build/share/*", (route) => route.request().resourceType() === "document" ? route.continue() : route.fulfill({ json: savedBuild }));
   await page.goto("/build/share/fixture-share-001");
@@ -139,4 +176,29 @@ test("axe scans home themes, open mobile navigation and 404", async ({ page }) =
   await expectNoSeriousAxe(page);
   await page.goto("/fixture-not-found");
   await expectNoSeriousAxe(page);
+});
+
+test("mobile drawer contains focus and returns it after close", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const menu = page.getByRole("button", { name: "Open navigation menu" });
+  await menu.focus();
+  await menu.press("Enter");
+  await expect(page.getByRole("link", { name: "Home", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("link", { name: "Feedback", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Open navigation menu" })).toBeFocused();
+});
+
+test("reduced motion keeps theme, drawer and loading interactions functional", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /Switch to/ })).toBeVisible();
+  await page.getByRole("button", { name: /Switch to/ }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Open navigation menu" }).click();
+  await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
+  await expect(page).toHaveTitle(/Saudi PC Build Assistant/);
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
 });

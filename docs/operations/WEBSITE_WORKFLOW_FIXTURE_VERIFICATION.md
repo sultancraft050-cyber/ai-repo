@@ -26,7 +26,14 @@ Reusable fixtures live in `frontend/e2e/fixtures/workflows.ts`. IDs use the `fix
 
 ## Deferred coverage
 
-Pagination is exercised only when a fixture returns a full 24-item page; the current focused fixtures use two products. Generated incomplete-data coverage shares the same response notice component but can receive a dedicated test. Drawer focus containment and focus-return assertions remain a follow-up.
+Explicit numbered next/previous controls are not implemented; the verified contract is progressive “Load more products.” Outside-click focus return and reduced-motion loading-indicator assertions remain follow-ups.
+
+## Interaction edge verification
+
+- A 30-product CPU fixture now verifies the implemented “Load more products” contract across desktop, tablet, and mobile, including deterministic offset behavior, sorting/search state, and duplicate prevention.
+- Dedicated incomplete generated-build coverage names missing categories, preserves available components, avoids claiming complete compatibility/readiness, and uses safe fallback text.
+- Mobile drawer focus moves into the drawer, wraps at both tab edges, closes on Escape, and returns to the menu trigger.
+- `prefers-reduced-motion: reduce` is emulated for theme and drawer interactions; the scoped stylesheet removes meaningful motion without disabling normal-motion transitions.
 
 Playwright reports, traces, screenshots, videos, browser binaries, and axe raw output remain ignored. No production payloads, credentials, database operations, or deployments were used.
 

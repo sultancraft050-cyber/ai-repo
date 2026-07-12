@@ -493,3 +493,10 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Fixes: added category-only manual retry, filtered cleared failure warnings, corrected light-theme contrast override precedence, and added a no-compatible-build recovery notice.
 - Dependency: added `@axe-core/playwright` only; no broad dependency upgrade or audit fix.
 - Safety: all workflow requests were mocked locally; no production writes, Neo4j operations, secrets, environment changes, Cloud Run/Vercel deployments, or production payloads.
+
+## 2026-07-12 — Iteration 24: Frontend Interaction Edge Cases
+
+- Objective: close the remaining local interaction-test gaps without changing product semantics or contacting production.
+- Coverage: 30 synthetic CPU products across the implemented load-more boundary, dedicated incomplete generated-build state, mobile drawer focus containment/return, and reduced-motion emulation.
+- Fixes: corrected manual search filtering, attached the focus ref to the actual mobile menu trigger, added deterministic focus return, and added scoped reduced-motion rules.
+- Safety: all requests remained fixture-backed; no production writes, Neo4j operations, secrets, environment changes, Cloud Run/Vercel deployments, or production payloads occurred.

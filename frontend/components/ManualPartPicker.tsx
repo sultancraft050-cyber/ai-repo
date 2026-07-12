@@ -723,10 +723,11 @@ function ProductPickerModal({
   const visible = useMemo(() => {
     return groupedProducts
       .filter((product) => {
-        return true;
+        const normalizedQuery = query.trim().toLowerCase();
+        return !normalizedQuery || `${product.name} ${product.brand ?? ""} ${product.model ?? ""}`.toLowerCase().includes(normalizedQuery);
       })
       .sort((left, right) => productSort(left, right, sort));
-  }, [groupedProducts, sort]);
+  }, [groupedProducts, query, sort]);
 
   return (
     <div
