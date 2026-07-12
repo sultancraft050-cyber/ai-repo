@@ -1,8 +1,8 @@
 # Next Task
 
-## Run a Blocked-Request Production Source Capture
+## Complete Guarded Interaction Closeout
 
-After explicit approval, run the documented fresh-context Playwright design that installs routing before page creation, blocks every non-GET/HEAD request before transmission, stores no body, redacts URLs, and stops on Cloud Run or mutation-path targets. Use it only to identify method/origin/path/resource/frame/initiator evidence; do not submit forms or infer database effects.
+After explicit approval, rerun the guarded context with reliable output capture and verify theme, drawer focus, manual search, generated empty validation, and 404. Keep service workers blocked, install routing before page creation, continue only GET/HEAD, abort all other methods, and stop on Cloud Run, mutation-path, or unknown non-telemetry destinations.
 
 ### Acceptance criteria
 

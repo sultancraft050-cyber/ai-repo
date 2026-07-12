@@ -191,6 +191,13 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Theme result is `LIKELY_TEST_SELECTOR_PROBLEM`; static implementation and local Playwright coverage support the handler/provider/persistence path.
 - `WEBSITE_INTERACTION_EDGE_VERIFICATION.md` never appeared in reachable Git history; the reference was incorrect.
 
+## Blocked-Request Production Verification
+
+- Guarded verification date: 2026-07-12.
+- Local guard self-test passed: synthetic GET/HEAD continued, synthetic POST was aborted, and the local server received zero POSTs.
+- Fresh guarded production initial load observed zero blocked non-GET requests and allowed zero non-GET/HEAD requests to reach production. No unguarded retry was made after the interaction capture stopped returning output.
+- Full theme/drawer/manual/generated/404 interaction closeout remains pending a separately approved guarded run with reliable output capture.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

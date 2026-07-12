@@ -509,3 +509,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Attribution remains unknown because the four observed POST URLs were not captured. Theme static result is `LIKELY_TEST_SELECTOR_PROBLEM`.
 - Missing document result: `WEBSITE_INTERACTION_EDGE_VERIFICATION.md` was never tracked; Iteration 24 updated the existing workflow-verification document.
 - Safety: documentation-only static inspection; no production/backend request, browser navigation, Neo4j operation, secret access, or deployment occurred.
+
+## 2026-07-12 — Iteration 26: Blocked-Request Production Verification
+
+- Objective: prove a browser guard aborts every non-GET/HEAD request before transmission and run a guarded initial production load.
+- Guard self-test: synthetic GET/HEAD continued, synthetic POST was aborted, and the local server received zero POSTs.
+- Production: a fresh context with service workers blocked and routing installed before page creation observed zero blocked non-GET requests during initial load; no non-GET/HEAD request reached production.
+- Closeout: the interaction sequence stopped returning output, so no unguarded retry was made and theme/drawer/manual/generated/404 interaction results remain unclaimed.
+- Safety: no production write, Neo4j operation, secret change, deployment, or request body/header/cookie capture occurred.
