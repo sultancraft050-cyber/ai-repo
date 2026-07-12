@@ -105,7 +105,7 @@ export function ManualPartPicker() {
   const knownPriceTotal = priceRows.reduce((total, row) => total + (row.price?.amount ?? 0), 0);
   const missingPrices = priceRows.filter((row) => !row.price).map((row) => row.product.category);
   const visibleWarnings = [
-    ...Object.entries(failures).map(([kind, message]) => `${kind}: ${message}`),
+    ...Object.entries(failures).filter((entry): entry is [string, string] => Boolean(entry[1])).map(([kind, message]) => `${kind}: ${message}`),
     ...missingPrices.map((category) => `${category}: price not listed yet.`),
     ...(compatibility?.checks.filter((check) => check.status !== "pass").map((check) => check.details) ?? [])
   ];
@@ -187,6 +187,20 @@ export function ManualPartPicker() {
       }));
     } finally {
       setLoadingMore((current) => ({ ...current, [kind]: false }));
+    }
+  }
+
+  async function retryProducts(kind: ComponentKind) {
+    setCategoryLoading((current) => ({ ...current, [kind]: true }));
+    setFailures((current) => ({ ...current, [kind]: undefined }));
+    try {
+      const nextProducts = await searchProducts({ category: kind, region: "SA", limit: PRODUCT_PAGE_SIZE, offset: 0 });
+      setProducts((current) => ({ ...current, [kind]: nextProducts }));
+      setHasMore((current) => ({ ...current, [kind]: nextProducts.length === PRODUCT_PAGE_SIZE }));
+    } catch (error) {
+      setFailures((current) => ({ ...current, [kind]: error instanceof Error ? error.message : "Unable to load this category." }));
+    } finally {
+      setCategoryLoading((current) => ({ ...current, [kind]: false }));
     }
   }
 
@@ -331,6 +345,7 @@ export function ManualPartPicker() {
               failure={failures[kind]}
               onAdd={(opener) => openPicker(kind, opener)}
               onRemove={() => removeProduct(kind)}
+              onRetry={() => void retryProducts(kind)}
             />
           ))}
         </div>
@@ -448,7 +463,8 @@ function PartRow({
   loading,
   failure,
   onAdd,
-  onRemove
+  onRemove,
+  onRetry
 }: {
   kind: ComponentKind;
   count: number;
@@ -457,6 +473,7 @@ function PartRow({
   failure?: string;
   onAdd: (opener: HTMLButtonElement) => void;
   onRemove: () => void;
+  onRetry: () => void;
 }) {
   const price = selected ? bestSarPrice(selected) : null;
   const state = selected ? productCatalogState(selected) : null;
@@ -494,6 +511,11 @@ function PartRow({
       </div>
 
       <div className="flex items-center gap-2 sm:justify-end">
+        {failure ? (
+          <button type="button" onClick={onRetry} className={cx("inline-flex h-8 items-center rounded-md border border-caution/50 px-3 text-sm font-semibold text-caution", interactiveButton, focusRing)}>
+            Retry {kind}
+          </button>
+        ) : null}
         {selected ? (
           <button
             type="button"

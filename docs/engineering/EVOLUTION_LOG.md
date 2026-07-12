@@ -485,3 +485,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Configuration: build command `npm run build`, install command `npm install`; the Production `NEXT_PUBLIC_API_BASE_URL` is present and its target was verified as the expected Cloud Run service.
 - Conclusion: production provenance is `VERIFIED`; source `33db991` is newer than frontend feature commit `4222233`.
 - Safety: documentation only; no Vercel connection/deployment, environment change, backend change, Neo4j operation, secret access, or data mutation occurred.
+
+## 2026-07-12 — Iteration 23: Deterministic Workflow Fixtures and Accessibility Coverage
+
+- Objective: exercise critical frontend workflows locally with deterministic synthetic fixtures and automated axe checks.
+- Coverage: manual category loading/failure/retry and selection states; generated success/no-result/400/429/500/network/malformed states; shared-build success/failure; laptop/tablet layouts; light/dark/mobile/404 axe scans.
+- Fixes: added category-only manual retry, filtered cleared failure warnings, corrected light-theme contrast override precedence, and added a no-compatible-build recovery notice.
+- Dependency: added `@axe-core/playwright` only; no broad dependency upgrade or audit fix.
+- Safety: all workflow requests were mocked locally; no production writes, Neo4j operations, secrets, environment changes, Cloud Run/Vercel deployments, or production payloads.

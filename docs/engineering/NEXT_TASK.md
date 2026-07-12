@@ -1,8 +1,8 @@
 # Next Task
 
-## Add Deterministic Fixture-Backed Browser Coverage
+## Complete Remaining Browser Interaction Edges
 
-Add mocked, deterministic coverage for manual product selection/removal and partial failures, generated-build result/error states, shared-build rendering, intermediate viewports, and automated axe accessibility checks. Do not use production writes or credentials.
+Add focused deterministic checks for manual pagination with 24+ fixtures, generated incomplete-data details, drawer focus containment/return, Space activation, and reduced-motion behavior. Do not use production writes or credentials.
 
 ### Acceptance criteria
 

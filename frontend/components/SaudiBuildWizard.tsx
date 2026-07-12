@@ -357,6 +357,14 @@ export function SaudiBuildWizard() {
         />
       ) : null}
 
+      {response?.build_status === "no_valid_build" ? (
+        <ResponseNotice
+          title="No compatible build found"
+          notes={response.missing_data_warnings}
+          summary="Adjust the budget, resolution, or preferred brands and try again."
+        />
+      ) : null}
+
       {response?.build_status === "no_budget_fit" ? (
         <ResponseNotice
           title="Try a higher budget or fewer extras"

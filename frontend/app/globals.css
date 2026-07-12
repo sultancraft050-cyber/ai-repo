@@ -110,3 +110,36 @@ html[data-theme="light"] [class*="border-slate-800"] {
 .border-amber-200 {
   border-color: rgba(245, 158, 11, 0.36) !important;
 }
+
+/* Theme-specific overrides follow the legacy dark aliases so light mode wins. */
+html[data-theme="light"] .bg-white,
+html[data-theme="light"] [class*="bg-[#"],
+html[data-theme="light"] [class*="bg-slate-950"],
+html[data-theme="light"] [class*="bg-slate-900"],
+html[data-theme="light"] [class*="bg-panel"] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme="light"] [class*="text-ink"],
+html[data-theme="light"] [class*="text-slate-100"],
+html[data-theme="light"] [class*="text-slate-200"],
+html[data-theme="light"] [class*="text-slate-300"] {
+  color: #172033 !important;
+}
+
+html[data-theme="light"] [class*="text-muted"],
+html[data-theme="light"] [class*="text-slate-400"],
+html[data-theme="light"] [class*="text-slate-500"],
+html[data-theme="light"] [class*="text-slate-600"] {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] [class*="text-signal"],
+html[data-theme="light"] [class*="text-teal-100"] {
+  color: #0b615b !important;
+}
+
+html[data-theme="light"] [class*="text-caution"],
+html[data-theme="light"] [class*="text-amber-100"] {
+  color: #92400e !important;
+}

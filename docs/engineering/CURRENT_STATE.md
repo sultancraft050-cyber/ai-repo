@@ -168,6 +168,14 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Production alias and deployment URL were verified; `NEXT_PUBLIC_API_BASE_URL` is present for Production and targets the expected Cloud Run service. Production provenance is `VERIFIED`.
 - No production forms, writes, backend deployment, Neo4j operations, or secret changes occurred.
 
+## Deterministic Workflow Fixtures and Accessibility
+
+- Verification date: 2026-07-12.
+- Added synthetic fixture coverage for manual selection/replacement/removal/retry/missing market data, generated success/no-result/400/429/500/network/malformed states, and shared-build success/failure.
+- Added laptop and tablet overflow checks plus axe scans for light/dark home, mobile navigation, builders, shared build, and 404; serious/critical violations must be zero.
+- Confirmed fixes: category-scoped manual retry, removal of undefined warnings, corrected light-theme override order/contrast, and explicit no-compatible-build recovery messaging.
+- No production requests, data changes, secrets, Neo4j operations, or deployments occurred.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

@@ -692,6 +692,12 @@ export async function generateSaudiLocalBuild(request: SaudiBuildRequest): Promi
     method: "POST",
     body: JSON.stringify(request)
   });
+  if (!payload || !Array.isArray(payload.builds) || !Array.isArray(payload.missing_data_warnings) || typeof payload.build_status !== "string") {
+    throw new Error("Build service returned incomplete data. Please try again.");
+  }
+  if (payload.builds.some((build) => !build?.summary || !Array.isArray(build.components))) {
+    throw new Error("Build service returned incomplete data. Please try again.");
+  }
   return {
     ...payload,
     builds: asArray(payload.builds).map((build) => ({
