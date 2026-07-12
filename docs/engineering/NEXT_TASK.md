@@ -1,20 +1,21 @@
 # Next Task
 
-## Approve and Execute a Staged Neo4j Capacity Migration
+## Review Neo4j Operational-Node Retention Before Migration
 
-The read-only capacity assessment found exactly 200,000 nodes, 208,319 relationships, 149 online indexes, 101 constraints, and capacity/write-rejection evidence in recent Cloud Run logs. A larger AuraDB Professional target is recommended, subject to tier, quota, region, and billing-credit verification.
+The node-volume inventory explains 99.23% of capacity through the top-25 label populations and finds 1,382 relationship orphans concentrated in operational/audit groups. No deletion decision has been made. Review active-code producers and retention requirements before finalizing migration sizing.
 
 ### Scope
 
-- Verify Aura tier, storage/RAM utilization, node/relationship quota, backup exportability, target region, and billing/Marketplace credit treatment.
-- Obtain explicit approval for the target, maintenance window, writer freeze, export/import, Secret Manager versions, and Cloud Run deployment.
-- Execute the staged migration runbook in `docs/operations/NEO4J_CAPACITY_ASSESSMENT.md` without changing readiness, identity, Saudi price, or pagination semantics.
+- Trace high-volume labels and orphan groups to their active code producers.
+- Determine governance, audit, debugging, and user-facing retention requirements.
+- Reconfirm Aura tier, utilization, quota, and target sizing after the retention review.
+- Obtain separate approval before any retention action or migration execution.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
 
-- No migration execution without approval.
-- No catalog staging, URL ingestion, price mutation, cleanup, pruning, seeding, or schema changes.
+- No deletion, pruning, archival, migration execution, cleanup, seeding, or schema changes without approval.
+- No catalog staging, URL ingestion, or price mutation.
 - No secret value exposure or rotation.
 - No Cloud Run/Vercel deployment until parity checks pass.
 
@@ -40,4 +41,4 @@ Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all files under `docs/engineering/`, and `docs/operations/NEO4J_CAPACITY_ASSESSMENT.md`. Inspect Git status and recent history. Verify Aura tier, quota, storage/RAM utilization, backup/export options, region, and billing-credit treatment with authorized console access. Obtain explicit approval before any target creation, export/import, Secret Manager version, or deployment. If approved, freeze all writers, preserve the three safe-off flags, create a larger AuraDB Professional target, migrate using a compatible Neo4j 5.27 toolchain, compare aggregate counts and schema, verify representative product searches/readiness/Saudi prices, then deploy and smoke test only after parity passes. Keep the old database and previous secrets/revision for rollback. Do not select Spanner Graph without a separate rewrite project.
+Read `AGENTS.md`, all engineering state files, `docs/operations/NEO4J_CAPACITY_ASSESSMENT.md`, and `docs/operations/NEO4J_NODE_INVENTORY.md`. Inspect Git status and recent history. Trace the high-volume operational/audit labels and orphan groups to active code producers and documented retention needs without reading complete production records. Do not delete, prune, archive, migrate, or modify schema. Produce an evidence-backed retention proposal with owner approval gates, then reassess Aura target sizing. Preserve all three safe-off flags and keep production deployment unchanged.

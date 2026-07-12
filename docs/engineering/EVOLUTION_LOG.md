@@ -422,3 +422,12 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Runbook recorded: freeze writers; confirm safe-off flags; create target; snapshot/export; import; compare counts/schema; verify searches/readiness/Saudi prices; approve secret versions; approve Cloud Run revision; smoke test; observe; rollback via previous secrets/revision.
 - Safety: no database mutation, import/export, index/constraint change, secret change, Cloud Run/Vercel deployment, Neo4j mutation, or production data change occurred.
 - Rollback: this documentation-only iteration is reverted with `git revert`; the future migration rollback is previous Secret Manager versions plus the prior Cloud Run revision while retaining the old database.
+
+## 2026-07-12 — Iteration 16: Neo4j Node-Volume Inventory
+
+- Objective: document the completed read-only aggregate inventory explaining the 200,000-node capacity use.
+- Findings: 74 labels, 58 relationship types, 1,382 relationship-orphan nodes, 0 unlabeled nodes, and 1,545 nodes outside the top-25 groups. Top-25 label populations total 198,455 memberships (99.23%); multi-label overlap is explicit.
+- Dominant groups: PolicyEnforcement, EvolutionAuditEvent, PromotionDecision, SandboxEvaluation, StabilizationAction, AlignmentAuditEvent, ObjectiveTradeoff, and related governance/audit groups.
+- High-volume orphans: AuditEvent 504, PricingJob 353, and ConfidenceState 246. These are code-review signals, not deletion candidates.
+- Safety: results came from read-only aggregate queries; no production data, schema, secrets, deployments, or application code changed.
+- Decision: no deletion recommendation or approval. The next task is active-code producer and retention-policy review.

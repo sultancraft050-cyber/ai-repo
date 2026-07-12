@@ -117,6 +117,13 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Migration recommendation: larger AuraDB Professional, direct purchase by default unless billing confirms Marketplace advantages. GCE is an operational fallback; Spanner Graph is a rewrite, not a drop-in migration.
 - Migration plan: freeze writers, confirm safe-off flags, snapshot/export, restore to a larger target, compare aggregates/schema, verify product searches/readiness/Saudi prices, approve secrets and deployment, smoke test, observe, and retain rollback versions.
 
+## Neo4j Node-Volume Inventory
+
+- Read-only inventory date: 2026-07-12.
+- Top 25 labels account for 198,455 label memberships (99.23% of the 200,000-node baseline); 1,545 nodes are outside those groups. Memberships may overlap for multi-label nodes.
+- Orphans: 1,382 nodes have no relationships and 0 nodes are unlabeled. High-volume orphan groups are AuditEvent (504), PricingJob (353), and ConfidenceState (246).
+- Dominant volume is operational/governance/audit data. No deletion decision was made; active-code and retention-policy review is required.
+
 ## Safe Startup Defaults
 
 - `PRICING_SCHEDULER_ENABLED=false`
