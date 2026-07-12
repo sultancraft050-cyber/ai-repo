@@ -1,6 +1,6 @@
 # Current Engineering State
 
-Updated: 2026-07-11
+Updated: 2026-07-12
 
 ## Objective
 
@@ -107,6 +107,15 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Deployment scripts default both service and registry locations to `me-central1`, reject empty regions, and require an explicit non-production override for a service-region mismatch before invoking `gcloud`.
 - Verified CPU production performance: first request 1.795s; warm requests 1.200s, 1.000s, and 0.879s; median warm response improved from approximately 20.8s to 1.000s. Result count remained 24 and payload remained 47,514 bytes.
 - Production smoke after the CPU optimization: 14 passed, 1 optional skipped, 0 required failures.
+
+## Neo4j Capacity Assessment
+
+- Read-only assessment date: 2026-07-12.
+- Database reports Neo4j Kernel `5.27-aura`, Enterprise edition, Cypher `5`/`25`; Aura commercial tier and quota meter require console verification.
+- Inventory: 200,000 nodes, 208,319 relationships, 202 Products, 38 PriceSnapshots, 22 Vendors, 3 ProductURLs, 137 CanonicalEvidence nodes, 1,368 FieldEvidence nodes, 149 online indexes, and 101 constraints.
+- Capacity evidence: exactly 200,000 nodes; seven-day Cloud Run log scan found 40 capacity/limit matches and 2 write-rejection-pattern matches. No capacity percentage was exposed; treat the database as at/near limit until verified in Aura Console.
+- Migration recommendation: larger AuraDB Professional, direct purchase by default unless billing confirms Marketplace advantages. GCE is an operational fallback; Spanner Graph is a rewrite, not a drop-in migration.
+- Migration plan: freeze writers, confirm safe-off flags, snapshot/export, restore to a larger target, compare aggregates/schema, verify product searches/readiness/Saudi prices, approve secrets and deployment, smoke test, observe, and retain rollback versions.
 
 ## Safe Startup Defaults
 

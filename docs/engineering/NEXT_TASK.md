@@ -1,24 +1,22 @@
 # Next Task
 
-## Profile The Remaining Product Search Stage
+## Approve and Execute a Staged Neo4j Capacity Migration
 
-The batch price-read optimization is deployed and verified. CPU warm median improved from approximately 20.8 seconds to 1.000 second while count and payload remained stable. The next iteration should profile the remaining read-only CPU search stages before selecting at most one additional optimization.
+The read-only capacity assessment found exactly 200,000 nodes, 208,319 relationships, 149 online indexes, 101 constraints, and capacity/write-rejection evidence in recent Cloud Run logs. A larger AuraDB Professional target is recommended, subject to tier, quota, region, and billing-credit verification.
 
 ### Scope
 
-- Preserve the verified deployment baseline and repeat measurements only as needed for comparison.
-- Compare result identity, readiness, cheapest price, vendor, count, and payload size.
-- Profile the remaining slowest stage before selecting another optimization.
-- Preserve readiness, identity, Saudi price, and pagination semantics.
+- Verify Aura tier, storage/RAM utilization, node/relationship quota, backup exportability, target region, and billing/Marketplace credit treatment.
+- Obtain explicit approval for the target, maintenance window, writer freeze, export/import, Secret Manager versions, and Cloud Run deployment.
+- Execute the staged migration runbook in `docs/operations/NEO4J_CAPACITY_ASSESSMENT.md` without changing readiness, identity, Saudi price, or pagination semantics.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
 
-- No catalog staging or commit.
-- No URL ingestion or price mutation.
-- No Neo4j cleanup or count-changing operation.
-- No secret value changes; optional public release variables may be configured only through the deployment provider.
-- No worker, scheduler, or startup seeding enablement.
+- No migration execution without approval.
+- No catalog staging, URL ingestion, price mutation, cleanup, pruning, seeding, or schema changes.
+- No secret value exposure or rotation.
+- No Cloud Run/Vercel deployment until parity checks pass.
 
 ### Acceptance Criteria
 
@@ -42,4 +40,4 @@ Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status, recent history, and the complete diff. Use the verified CPU baseline (first 1.795s; warm 1.200s, 1.000s, 0.879s; 24 results; 47,514 bytes; smoke 14 passed, 1 optional skipped, 0 required failures) and profile the remaining read-only product-search stages. Implement at most one evidence-supported optimization only if a specific bottleneck is confirmed. Preserve identity, readiness, Saudi price, vendor, sorting, and pagination semantics. Do not deploy, mutate Neo4j, change secrets, or enable workers. Run focused tests, full backend pytest where available, compile, release checks, production smoke only if explicitly authorized, and `git diff --check`; update engineering state and generate the next standalone prompt.
+Read `AGENTS.md`, all files under `docs/engineering/`, and `docs/operations/NEO4J_CAPACITY_ASSESSMENT.md`. Inspect Git status and recent history. Verify Aura tier, quota, storage/RAM utilization, backup/export options, region, and billing-credit treatment with authorized console access. Obtain explicit approval before any target creation, export/import, Secret Manager version, or deployment. If approved, freeze all writers, preserve the three safe-off flags, create a larger AuraDB Professional target, migrate using a compatible Neo4j 5.27 toolchain, compare aggregate counts and schema, verify representative product searches/readiness/Saudi prices, then deploy and smoke test only after parity passes. Keep the old database and previous secrets/revision for rollback. Do not select Spanner Graph without a separate rewrite project.

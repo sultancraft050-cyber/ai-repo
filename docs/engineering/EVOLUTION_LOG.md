@@ -410,3 +410,15 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Rollback: `git revert` the focused commit. No runtime or data rollback is needed because this iteration does not deploy.
 - Performance record: first CPU request 1.795s; warm requests 1.200s, 1.000s, and 0.879s; median warm improved from approximately 20.8s to 1.000s; result count 24; payload 47,514 bytes.
 - Production smoke record: 14 passed, 1 optional skipped, 0 required failures.
+
+## 2026-07-12 — Iteration 15: Neo4j Capacity Assessment and Migration Plan
+
+- Objective: assess production Neo4j capacity with read-only queries and prepare a reversible migration plan.
+- CI prerequisite: GitHub Actions run `29183468092` for deployment-region commit `20d5dcde327d5d4751437d693794ca766b26228b` passed.
+- Evidence: Neo4j reported Kernel `5.27-aura`, Enterprise edition, Cypher `5`/`25`; aggregate inventory returned 200,000 nodes, 208,319 relationships, 149 ONLINE indexes, and 101 constraints.
+- Domain counts: 202 Products, 38 PriceSnapshots, 32 RegionalPriceSnapshots, 22 Vendors, 3 ProductURLs, 137 CanonicalEvidence, 5 CanonicalSources, and 1,368 FieldEvidence nodes.
+- Capacity evidence: a seven-day read-only Cloud Run log scan found 40 capacity/limit matches and 2 write-rejection-pattern matches. Exact Aura tier, capacity percentage, storage, and RAM utilization were not exposed by Cypher and require Aura Console/billing verification.
+- Options compared: AuraDB Professional through Google Cloud Marketplace, direct AuraDB Professional, self-hosted Neo4j Enterprise on Compute Engine, and Spanner Graph. Recommendation is larger AuraDB Professional; direct purchase is the default pending billing verification because provider promotional-credit treatment is not assumed.
+- Runbook recorded: freeze writers; confirm safe-off flags; create target; snapshot/export; import; compare counts/schema; verify searches/readiness/Saudi prices; approve secret versions; approve Cloud Run revision; smoke test; observe; rollback via previous secrets/revision.
+- Safety: no database mutation, import/export, index/constraint change, secret change, Cloud Run/Vercel deployment, Neo4j mutation, or production data change occurred.
+- Rollback: this documentation-only iteration is reverted with `git revert`; the future migration rollback is previous Secret Manager versions plus the prior Cloud Run revision while retaining the old database.
