@@ -15,6 +15,9 @@ async function collectUnexpectedErrors(page: Page) {
 }
 
 async function mockApi(page: Page) {
+  await page.route("**/*example.invalid/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = request.url();
