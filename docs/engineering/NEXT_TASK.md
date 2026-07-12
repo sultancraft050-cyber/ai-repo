@@ -1,15 +1,15 @@
 # Next Task
 
-## Rehearse Neo4j Retention on a Larger Isolated Clone
+## Supply Approvals and Verified Clone Inputs
 
-The retention audit found up to 93,006 timestamped operational archive candidates and estimated 53.50% utilization after a 30-day clone rehearsal. Cleanup buys time, but the prior active-window rate could refill capacity in about five days; migration remains required.
+The approval package and clone runbook are complete, but execution is not authorized. All owner approvals, Aura snapshot facts, billing eligibility, target sizing, and isolated clone identity remain pending.
 
 ### Scope
 
-- Obtain owner decisions for governance history, security audit retention, pricing-job retention, and cognition state.
-- Create or restore a larger isolated managed clone only after billing and database-owner approval.
-- Implement read-only selector previews for the 93,006 timestamped candidates and non-timestamped consolidation groups.
-- Rehearse archive/removal on the clone only, then run full count, relationship, product, readiness, Saudi-price, governance, and smoke parity checks.
+- Supply dated written approvals for all nine owner roles.
+- Manually verify Aura tier/region/snapshot/export/version/permissions and both billing paths.
+- Supply the approved larger clone ID, organization, URI fingerprint, capacity, region, isolation evidence, lifetime, and rollback snapshot reference.
+- Do not start rehearsal until every prerequisite and stop-condition owner is assigned.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
@@ -41,4 +41,4 @@ Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all engineering state files, and all Neo4j operations documents. Inspect Git status and recent history. Obtain explicit governance, security/legal, operations, cognition, billing, and database-owner approvals. Provision or restore a larger isolated clone only after approval. Build exact read-only retention previews, then rehearse the proposed 30-day archive and any consolidation on the clone only. Compare all counts, relationships, schema, product search, readiness, Saudi prices, governance reports, approvals, and smoke results. Do not mutate the full production source, change secrets, or deploy until clone parity and rollback are approved. Preserve all safe-off flags.
+Read `AGENTS.md`, all engineering-state files, `docs/operations/NEO4J_RETENTION_APPROVAL_PACKAGE.md`, and `docs/operations/NEO4J_CLONE_REHEARSAL_RUNBOOK.md`. Do not execute rehearsal until the user supplies dated approvals for every owner, completed Aura snapshot/readiness checks, `MANUAL_BILLING_VERIFICATION_REQUIRED` outcomes, and an isolated clone identity/capacity/URI fingerprint with proof it is not production. Once supplied, validate prerequisites and report any blockers before running even read-only clone previews. Never mutate the production source, change secrets, or deploy. Preserve all safe-off flags.

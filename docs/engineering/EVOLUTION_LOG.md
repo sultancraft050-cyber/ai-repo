@@ -442,3 +442,14 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Capacity proposal: clone rehearsal could reduce estimated online nodes to 106,994 (53.50%), but the measured active rate could refill headroom in about five days.
 - Decision: `CLEANUP_BUYS_TIME_BUT_MIGRATION_REQUIRED`.
 - Safety: no data/schema mutation, retention execution, secret change, deployment, or application-code change occurred.
+
+## 2026-07-12 — Iteration 18: Neo4j Retention Approval and Clone-Rehearsal Preparation
+
+- Objective: prepare owner approvals, exact read-only candidate previews, clone requirements, snapshot checks, parity controls, stop conditions, and rollback requirements.
+- CI prerequisite: run `29185252408` passed for commit `3f1ea06`.
+- Approval state: all nine owner roles remain `PENDING_OWNER_APPROVAL`; no names or approvals were inferred.
+- Candidate package: four timestamped groups total up to 93,006 nodes; non-timestamped consolidation is deferred to a separate rehearsal. Core product, pricing, evidence, identity, user, and ConfidenceState labels are protected.
+- Clone requirement: Neo4j 5.27-compatible managed target with capacity strictly above the 200,000-node source, isolated credentials/URI/network, and no production workers or Cloud Run connection.
+- Rehearsal controls: first batch at most 100, later batches at most 500 after checkpoint approval, recount after each batch, zero-difference parity, >1% candidate drift stop, and no first-run consolidation.
+- Billing/snapshot status: all console and credit questions are `MANUAL_VERIFICATION_REQUIRED` or `MANUAL_BILLING_VERIFICATION_REQUIRED`.
+- Safety: documentation only; no snapshot/export, clone, data/schema mutation, deletion query, retention execution, secret change, deployment, or application-code change occurred.

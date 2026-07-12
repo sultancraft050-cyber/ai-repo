@@ -133,6 +133,14 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Current 7-day and 30-day growth is zero for timestamped audited labels. The May 22–27 active cohort grew at approximately 17,600 timestamped nodes/day, so cleanup buys time but migration remains required.
 - Decision: `CLEANUP_BUYS_TIME_BUT_MIGRATION_REQUIRED`. No deletion candidate or retention execution was approved.
 
+## Neo4j Approval and Clone-Rehearsal Preparation
+
+- Preparation date: 2026-07-12; CI prerequisite run `29185252408` passed.
+- Approval matrix covers database, governance, security/legal, pricing operations, cognition/AI, application, Google Cloud billing, Neo4j billing, and deployment owners. Every status is `PENDING_OWNER_APPROVAL`.
+- Exact read-only preview specifications cover 93,006 timestamped evolution, alignment, governance, and autonomy candidates; protected core labels are excluded.
+- Clone plan requires a Neo4j 5.27-compatible managed target larger than 200,000 nodes, isolated credentials/URI, no production connectivity, safe-off flags, snapshot verification, and manual billing verification.
+- Rehearsal is not authorized. No snapshot/export, clone, database mutation, retention execution, secret change, or deployment occurred.
+
 ## Safe Startup Defaults
 
 - `PRICING_SCHEDULER_ENABLED=false`
