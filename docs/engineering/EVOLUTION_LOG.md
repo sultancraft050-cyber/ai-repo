@@ -461,3 +461,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Fixes: added a ThemeProvider with system preference/local-storage support and pre-paint bootstrap, accessible theme state labels, a responsive mobile navigation drawer, and root logo links.
 - Validation: theme contract test, frontend typecheck, production build, UI contract check, release tests, and `git diff --check`; browser automation was unavailable and is explicitly deferred.
 - Safety: no production API writes, Neo4j operations, secrets, Cloud Run/Vercel deployments, or application backend changes occurred.
+
+## 2026-07-12 — Iteration 20: Browser Smoke and Accessibility Verification
+
+- Objective: verify public frontend interactions against a local production build with Playwright and mocked API behavior.
+- Coverage: home/theme, desktop and mobile navigation, `/build/manual`, `/build/generate`, `/release`, unknown-route recovery, console/page errors, and production localhost-target guard.
+- Findings/fixes: Escape and outside-click did not close the mobile drawer; unknown routes lacked a home recovery link. Added deterministic drawer dismissal and a branded `not-found.tsx`.
+- Validation: 7 Playwright tests passed, frontend typecheck/build/UI checks passed, release tests passed, and diff whitespace remained clean. Successful home light/dark desktop/mobile screenshots are generated only in ignored local test artifacts.
+- Safety: API traffic was mocked locally; no production writes, Neo4j operations, secrets, Cloud Run/Vercel deployment, or data changes occurred.

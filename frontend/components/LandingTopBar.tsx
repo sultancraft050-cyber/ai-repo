@@ -1,7 +1,7 @@
 "use client";
 
 import { Menu, Search, ShieldCheck, Sun, SunDim, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -15,8 +15,25 @@ const mobileLinks = [
 
 export function LandingTopBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navigationRef = useRef<HTMLElement>(null);
   const { theme, toggleTheme } = useTheme();
   const dark = theme === "dark";
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!navigationRef.current?.contains(target)) setMobileOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+    };
+  }, [mobileOpen]);
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-[#070b13]/88 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl items-center gap-3">
@@ -58,7 +75,7 @@ export function LandingTopBar() {
         </div>
       </div>
       {mobileOpen ? (
-        <nav id="mobile-navigation" aria-label="Mobile navigation" className="mx-auto mt-3 grid max-w-7xl gap-1 border-t border-line pt-3 lg:hidden">
+        <nav ref={navigationRef} id="mobile-navigation" aria-label="Mobile navigation" className="mx-auto mt-3 grid max-w-7xl gap-1 border-t border-line pt-3 lg:hidden">
           {mobileLinks.map(([label, href]) => (
             <Link key={label} href={href} onClick={() => setMobileOpen(false)} className="rounded-md px-3 py-2 text-sm font-semibold text-muted hover:bg-panel hover:text-ink">
               {label}

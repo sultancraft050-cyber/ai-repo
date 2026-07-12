@@ -151,6 +151,14 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Static contract tests, typecheck, production build, UI contract checks, and release tests are the current validation evidence. Browser automation is not present in the checked-in frontend dependencies; API-backed runtime flows remain the next task.
 - No backend, Neo4j, secret, deployment, or production-data changes occurred.
 
+## Website Browser Verification
+
+- Browser verification date: 2026-07-12.
+- Added Playwright Chromium smoke coverage for home, manual/generate routes, release GET, unknown-route recovery, theme persistence, mobile drawer keyboard behavior, console errors, and localhost-target safety.
+- Seven local production-build tests passed at 1440×900 and 390×844. API requests were mocked; no production writes or credentials were used.
+- Browser-confirmed fixes: Escape/outside-click mobile drawer closure and a usable branded 404 home link.
+- Remaining browser work is fixture-backed manual/generated workflow states, shared-build runtime coverage, 1280×800/768×1024 viewports, and automated axe scoring.
+
 - `PRICING_SCHEDULER_ENABLED=false`
 - `AUTONOMOUS_AGENTS_ENABLED=false`
 - `CPU_SPECS_SEED_ON_START=false`

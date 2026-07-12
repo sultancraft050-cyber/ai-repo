@@ -1,5 +1,20 @@
 # Next Task
 
+## Add Fixture-Backed Workflow and Accessibility Coverage
+
+Extend the local Playwright harness with deterministic fixtures for manual category loading/partial failure/retry, generated-builder validation/result/error states, and the dynamic shared-build route. Add 1280×800 and 768×1024 coverage and a lightweight axe check when compatible. Keep all production writes, databases, secrets, and deployments out of scope.
+
+### Acceptance criteria
+
+- Product selection/removal, missing price, readiness, retry, and duplicate suppression are covered with mocked responses.
+- Generated validation, loading, success, no-result, server-error, compatibility, and Saudi-price states are covered.
+- Shared-build route and intermediate viewports pass.
+- Accessibility findings are explicit and no failures are suppressed.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, the engineering state files, `docs/operations/WEBSITE_FEATURE_AUDIT.md`, and `docs/operations/WEBSITE_BROWSER_VERIFICATION.md`. Extend only the local Playwright fixtures and tests. Do not call production write endpoints, mutate Neo4j, change secrets, or deploy.
+
 ## Complete Browser-Level Frontend Verification
 
 Add a small browser smoke/accessibility harness for every public route at desktop and mobile widths. Cover theme persistence and system preference, mobile menu keyboard behavior, route navigation, mocked API success/error/loading states, unknown-route handling, and a no-localhost production-target assertion. Keep all production writes, Neo4j operations, secret changes, and deployments out of scope.

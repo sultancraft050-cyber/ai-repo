@@ -9,6 +9,9 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit --incremental false",
     "ui:check": "node scripts/check-ui-contract.mjs"
+    ,"test:e2e": "playwright test"
+    ,"test:e2e:headed": "playwright test --headed"
+    ,"test:e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@xstate/react": "^5.0.0",
@@ -20,6 +23,7 @@
     "xstate": "^5.19.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
