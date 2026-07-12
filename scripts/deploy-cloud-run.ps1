@@ -1,13 +1,25 @@
 param(
     [Parameter(Mandatory = $true)] [string]$ProjectId,
-    [string]$Region = "me-central2",
+    [string]$Region = "me-central1",
     [string]$RegistryRegion = "me-central1",
     [string]$Service = "hardware-intelligence-api",
     [Parameter(Mandatory = $true)] [string]$FrontendUrl,
-    [string]$ImageTag = ""
+    [string]$ImageTag = "",
+    [switch]$AllowNonProductionRegion
 )
 
 $ErrorActionPreference = "Stop"
+$ProductionRegion = "me-central1"
+
+if ([string]::IsNullOrWhiteSpace($Region)) {
+    throw "Cloud Run region must not be empty. Production uses $ProductionRegion."
+}
+if ($Region -ne $ProductionRegion -and -not $AllowNonProductionRegion) {
+    throw "Cloud Run region '$Region' does not match production region '$ProductionRegion'. Use -AllowNonProductionRegion only for an intentional non-production deployment."
+}
+if ([string]::IsNullOrWhiteSpace($RegistryRegion)) {
+    throw "Artifact Registry region must not be empty. Production uses $ProductionRegion."
+}
 if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) {
     throw "gcloud CLI is required. Install it or run this script from Google Cloud Shell."
 }

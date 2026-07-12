@@ -2,15 +2,36 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-}"
-REGION="${REGION:-me-central2}"
-REGISTRY_REGION="${REGISTRY_REGION:-me-central1}"
+PRODUCTION_REGION="me-central1"
+REGION="${REGION-$PRODUCTION_REGION}"
+REGISTRY_REGION="${REGISTRY_REGION-$PRODUCTION_REGION}"
+ALLOW_NON_PRODUCTION_REGION="${ALLOW_NON_PRODUCTION_REGION:-false}"
 SERVICE="${SERVICE:-hardware-intelligence-api}"
 FRONTEND_URL="${FRONTEND_URL:-}"
-IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
+IMAGE_TAG="${IMAGE_TAG:-}"
 REPOSITORY="pc-builder"
 
 if [[ -z "$PROJECT_ID" || -z "$FRONTEND_URL" ]]; then
-  echo "Usage: PROJECT_ID=... FRONTEND_URL=https://... $0" >&2
+  echo "Usage: PROJECT_ID=... FRONTEND_URL=https://... [REGION=me-central1] [REGISTRY_REGION=me-central1] $0" >&2
+  exit 2
+fi
+if [[ -z "$REGION" ]]; then
+  echo "Cloud Run region must not be empty. Production uses $PRODUCTION_REGION." >&2
+  exit 2
+fi
+if [[ "$REGION" != "$PRODUCTION_REGION" && "$ALLOW_NON_PRODUCTION_REGION" != "true" ]]; then
+  echo "Cloud Run region '$REGION' does not match production region '$PRODUCTION_REGION'. Set ALLOW_NON_PRODUCTION_REGION=true only for an intentional non-production deployment." >&2
+  exit 2
+fi
+if [[ -z "$REGISTRY_REGION" ]]; then
+  echo "Artifact Registry region must not be empty. Production uses $PRODUCTION_REGION." >&2
+  exit 2
+fi
+if [[ -z "$IMAGE_TAG" ]]; then
+  IMAGE_TAG="$(git rev-parse --short HEAD)"
+fi
+if [[ -z "$IMAGE_TAG" ]]; then
+  echo "Could not determine a Git commit tag." >&2
   exit 2
 fi
 command -v gcloud >/dev/null || { echo "gcloud CLI is required" >&2; exit 2; }

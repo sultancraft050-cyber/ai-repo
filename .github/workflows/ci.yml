@@ -139,6 +139,8 @@ jobs:
       - name: Validate deployment configuration and safety defaults
         shell: bash
         run: |
+          grep -q 'PRODUCTION_REGION="me-central1"' scripts/deploy-cloud-run.sh
+          grep -q '\[string\]\$Region = "me-central1"' scripts/deploy-cloud-run.ps1
           grep -q 'PRICING_SCHEDULER_ENABLED=false' scripts/deploy-cloud-run.sh
           grep -q 'AUTONOMOUS_AGENTS_ENABLED=false' scripts/deploy-cloud-run.sh
           grep -q 'CPU_SPECS_SEED_ON_START=false' scripts/deploy-cloud-run.sh

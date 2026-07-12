@@ -105,8 +105,8 @@ Cloud Run is the preferred replacement for the expired Railway service. The repo
 Defaults:
 
 - Service: `hardware-intelligence-api`
-- Region: `me-central2`
-- Artifact Registry region: `me-central1` for this project; `me-central2` is rejected by the project’s registry location policy.
+- Region: `me-central1`
+- Artifact Registry region: `me-central1` for this project.
 - CPU: `1`
 - Memory: `512Mi`
 - Minimum instances: `0`
@@ -157,8 +157,11 @@ Create the Artifact Registry repository and runtime service account through Goog
 .\scripts\deploy-cloud-run.ps1 `
   -ProjectId "YOUR_GOOGLE_PROJECT_ID" `
   -FrontendUrl "https://YOUR_VERCEL_DOMAIN" `
+  -Region "me-central1" `
   -RegistryRegion "me-central1"
 ```
+
+Both scripts reject an empty Cloud Run region and any region other than the production region before invoking `gcloud`. An intentional non-production deployment must opt in explicitly with `-AllowNonProductionRegion` in PowerShell or `ALLOW_NON_PRODUCTION_REGION=true` in Bash. The override does not change the production default.
 
 The script builds only `backend/` with Cloud Build, deploys the existing Dockerfile, references Secret Manager by name, discovers the Cloud Run URL, and updates `BACKEND_URL` to that URL. It never prints secret values and does not modify Neo4j or Vercel.
 

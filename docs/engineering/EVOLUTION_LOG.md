@@ -394,3 +394,19 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Rollback: revert the focused commit and redeploy the previous Cloud Run revision; no schema or data rollback is required.
 - CI verification: run `29166403191` passed backend, frontend, and contract/tooling jobs.
 - Deployment attempt: safely stopped before deployment because `gcloud` is unavailable in this shell. No Cloud Run revision or production data changed; post-change production measurements remain pending.
+
+## 2026-07-12 — Iteration 14: Correct Cloud Run Deployment Region Defaults
+
+- Objective: prevent future deployment commands from accidentally targeting a region other than the existing production Cloud Run service.
+- Confirmed state: project `pc-recomendation-project`; service `hardware-intelligence-api`; production and Artifact Registry regions `me-central1`; current revision `hardware-intelligence-api-00005-kvd`.
+- Files corrected: both Cloud Run deployment scripts, active deployment documentation, CI region-default assertions, and engineering state files.
+- Guard: both scripts reject empty service or registry regions and reject a service region other than `me-central1` before invoking `gcloud`, unless the caller explicitly opts into a non-production region. Intentional parameter and environment overrides remain supported.
+- Safe defaults preserved: pricing scheduler, autonomous agents, and CPU startup seeding remain disabled.
+- Validation: PowerShell static structure inspection, Bash syntax and isolated rejection-path checks, active region search, release tests, diff check, and complete diff review.
+- Historical records: the earlier `me-central2` location-policy failure remains unchanged in prior evolution entries.
+- Production impact: none; no Cloud Build, image push, Cloud Run deployment, traffic change, Vercel change, or production command ran.
+- Data impact: none; no Neo4j, pricing, catalog, evidence, vendor, URL, or secret access.
+- Risk: low. A non-production region now requires a deliberate opt-in; production defaults match the live service.
+- Rollback: `git revert` the focused commit. No runtime or data rollback is needed because this iteration does not deploy.
+- Performance record: first CPU request 1.795s; warm requests 1.200s, 1.000s, and 0.879s; median warm improved from approximately 20.8s to 1.000s; result count 24; payload 47,514 bytes.
+- Production smoke record: 14 passed, 1 optional skipped, 0 required failures.

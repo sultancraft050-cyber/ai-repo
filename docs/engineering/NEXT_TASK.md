@@ -1,13 +1,12 @@
 # Next Task
 
-## Verify And Continue Product Search Performance Work
+## Profile The Remaining Product Search Stage
 
-The first CPU optimization removes the confirmed N+1 price-query pattern and CI is green. Deployment is pending because this shell lacks `gcloud`; the next iteration should deploy from a gcloud-enabled environment and collect post-change measurements before selecting more work.
+The batch price-read optimization is deployed and verified. CPU warm median improved from approximately 20.8 seconds to 1.000 second while count and payload remained stable. The next iteration should profile the remaining read-only CPU search stages before selecting at most one additional optimization.
 
 ### Scope
 
-- Confirm CI and production deployment of the batch-price-read optimization.
-- Record cold and at least three warm CPU samples using the same request.
+- Preserve the verified deployment baseline and repeat measurements only as needed for comparison.
 - Compare result identity, readiness, cheapest price, vendor, count, and payload size.
 - Profile the remaining slowest stage before selecting another optimization.
 - Preserve readiness, identity, Saudi price, and pagination semantics.
@@ -43,4 +42,4 @@ Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status and preserve unrelated frontend edits. Verify CI and the deployed Cloud Run revision containing the batch product-search price query. Measure the same CPU request cold and at least three times warm, compare identity/readiness/price/vendor correctness, and profile the remaining slow stage. Implement at most one additional evidence-supported read-only optimization only if needed. Do not change readiness, compatibility, pricing semantics, solver, ingestion, or identity behavior. Run focused tests, full backend pytest, compile, release checks, production smoke, and `git diff --check`; update engineering state and generate the next standalone prompt.
+Read `AGENTS.md` and all files under `docs/engineering/` first. Inspect Git status, recent history, and the complete diff. Use the verified CPU baseline (first 1.795s; warm 1.200s, 1.000s, 0.879s; 24 results; 47,514 bytes; smoke 14 passed, 1 optional skipped, 0 required failures) and profile the remaining read-only product-search stages. Implement at most one evidence-supported optimization only if a specific bottleneck is confirmed. Preserve identity, readiness, Saudi price, vendor, sorting, and pagination semantics. Do not deploy, mutate Neo4j, change secrets, or enable workers. Run focused tests, full backend pytest where available, compile, release checks, production smoke only if explicitly authorized, and `git diff --check`; update engineering state and generate the next standalone prompt.

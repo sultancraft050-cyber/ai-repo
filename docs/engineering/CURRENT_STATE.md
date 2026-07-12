@@ -93,8 +93,8 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 
 - Intended platform: Google Cloud Run.
 - Service: `hardware-intelligence-api`.
-- Region: `me-central2`.
-- Artifact Registry region: `me-central1`; repository creation in `me-central2` was rejected by Google Cloud, so the deployment script supports separate Cloud Run and registry regions.
+- Production region: `me-central1`.
+- Artifact Registry region: `me-central1`.
 - Deployment scripts: `scripts/deploy-cloud-run.ps1` and `scripts/deploy-cloud-run.sh`.
 - Deployment method: Cloud Build from the `backend` source context into Artifact Registry, then Cloud Run.
 - Resource target: request-based, 1 CPU, 512MiB, min 0, max 1, port 8080.
@@ -104,6 +104,9 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Cloud Run deployment status: healthy and smoke-verified.
 - Cloud Run image build: `dfd3d99f-4624-4867-9a92-269764064053`; image tag `me-central1-docker.pkg.dev/pc-recomendation-project/pc-builder/hardware-intelligence-api:ac6f32b`.
 - Google Cloud preflight: authenticated project `pc-recomendation-project`, billing enabled, required APIs enabled, seven secrets present, runtime service account created, per-secret accessor bindings created, Artifact Registry `pc-builder` created in `me-central1`.
+- Deployment scripts default both service and registry locations to `me-central1`, reject empty regions, and require an explicit non-production override for a service-region mismatch before invoking `gcloud`.
+- Verified CPU production performance: first request 1.795s; warm requests 1.200s, 1.000s, and 0.879s; median warm response improved from approximately 20.8s to 1.000s. Result count remained 24 and payload remained 47,514 bytes.
+- Production smoke after the CPU optimization: 14 passed, 1 optional skipped, 0 required failures.
 
 ## Safe Startup Defaults
 
