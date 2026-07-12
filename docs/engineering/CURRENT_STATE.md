@@ -124,6 +124,15 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - Orphans: 1,382 nodes have no relationships and 0 nodes are unlabeled. High-volume orphan groups are AuditEvent (504), PricingJob (353), and ConfidenceState (246).
 - Dominant volume is operational/governance/audit data. No deletion decision was made; active-code and retention-policy review is required.
 
+## Neo4j Retention Audit
+
+- Code audit date: 2026-07-12; CI prerequisite run `29184971667` passed.
+- High-volume producers are active through governance, evolution, alignment, and autonomy API routes with `persist=true` defaults. Autonomous scheduling is disabled, but manual/API persistence remains available.
+- Pricing scheduler is disabled, while the pricing worker and pricing/intelligence APIs remain active. AuditEvent and ConfidenceState producers are also active.
+- Timestamped operational archive candidate: up to 93,006 nodes older than 30 days; estimated post-archive online count 106,994 (53.50%). This is a proposal only and requires clone rehearsal.
+- Current 7-day and 30-day growth is zero for timestamped audited labels. The May 22–27 active cohort grew at approximately 17,600 timestamped nodes/day, so cleanup buys time but migration remains required.
+- Decision: `CLEANUP_BUYS_TIME_BUT_MIGRATION_REQUIRED`. No deletion candidate or retention execution was approved.
+
 ## Safe Startup Defaults
 
 - `PRICING_SCHEDULER_ENABLED=false`

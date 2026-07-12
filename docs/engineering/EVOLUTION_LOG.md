@@ -431,3 +431,14 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - High-volume orphans: AuditEvent 504, PricingJob 353, and ConfidenceState 246. These are code-review signals, not deletion candidates.
 - Safety: results came from read-only aggregate queries; no production data, schema, secrets, deployments, or application code changed.
 - Decision: no deletion recommendation or approval. The next task is active-code producer and retention-policy review.
+
+## 2026-07-12 — Iteration 17: Neo4j Operational Retention Audit
+
+- Objective: trace high-volume operational labels to active code producers and propose evidence-based retention without mutation.
+- CI prerequisite: run `29184971667` passed for commit `cd97a6c`.
+- Producers: governance/evolution/alignment/autonomy APIs can persist by default; autonomous scheduling is disabled. Pricing APIs and worker remain active while the pricing scheduler is disabled. Audit and cognition state producers remain active.
+- Growth: timestamped audited labels show zero 7-day and 30-day growth; 93,006 nodes were concentrated in the May 22–27 cohort, approximately 17,600/day during that window.
+- Classification: ConfidenceState is KEEP_PERMANENTLY; AuditEvent and PricingJob require retention policies; 93,006 timestamped operational children are ARCHIVE_CANDIDATE; non-timestamped repeated decision children are CONSOLIDATE_CANDIDATE; DELETE_CANDIDATE is empty.
+- Capacity proposal: clone rehearsal could reduce estimated online nodes to 106,994 (53.50%), but the measured active rate could refill headroom in about five days.
+- Decision: `CLEANUP_BUYS_TIME_BUT_MIGRATION_REQUIRED`.
+- Safety: no data/schema mutation, retention execution, secret change, deployment, or application-code change occurred.

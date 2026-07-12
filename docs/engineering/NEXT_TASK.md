@@ -1,15 +1,15 @@
 # Next Task
 
-## Review Neo4j Operational-Node Retention Before Migration
+## Rehearse Neo4j Retention on a Larger Isolated Clone
 
-The node-volume inventory explains 99.23% of capacity through the top-25 label populations and finds 1,382 relationship orphans concentrated in operational/audit groups. No deletion decision has been made. Review active-code producers and retention requirements before finalizing migration sizing.
+The retention audit found up to 93,006 timestamped operational archive candidates and estimated 53.50% utilization after a 30-day clone rehearsal. Cleanup buys time, but the prior active-window rate could refill capacity in about five days; migration remains required.
 
 ### Scope
 
-- Trace high-volume labels and orphan groups to their active code producers.
-- Determine governance, audit, debugging, and user-facing retention requirements.
-- Reconfirm Aura tier, utilization, quota, and target sizing after the retention review.
-- Obtain separate approval before any retention action or migration execution.
+- Obtain owner decisions for governance history, security audit retention, pricing-job retention, and cognition state.
+- Create or restore a larger isolated managed clone only after billing and database-owner approval.
+- Implement read-only selector previews for the 93,006 timestamped candidates and non-timestamped consolidation groups.
+- Rehearse archive/removal on the clone only, then run full count, relationship, product, readiness, Saudi-price, governance, and smoke parity checks.
 - Keep production data and deployment configuration unchanged.
 
 ### Exclusions
@@ -41,4 +41,4 @@ Low to medium; read-only query performance work.
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all engineering state files, `docs/operations/NEO4J_CAPACITY_ASSESSMENT.md`, and `docs/operations/NEO4J_NODE_INVENTORY.md`. Inspect Git status and recent history. Trace the high-volume operational/audit labels and orphan groups to active code producers and documented retention needs without reading complete production records. Do not delete, prune, archive, migrate, or modify schema. Produce an evidence-backed retention proposal with owner approval gates, then reassess Aura target sizing. Preserve all three safe-off flags and keep production deployment unchanged.
+Read `AGENTS.md`, all engineering state files, and all Neo4j operations documents. Inspect Git status and recent history. Obtain explicit governance, security/legal, operations, cognition, billing, and database-owner approvals. Provision or restore a larger isolated clone only after approval. Build exact read-only retention previews, then rehearse the proposed 30-day archive and any consolidation on the clone only. Compare all counts, relationships, schema, product search, readiness, Saudi prices, governance reports, approvals, and smoke results. Do not mutate the full production source, change secrets, or deploy until clone parity and rollback are approved. Preserve all safe-off flags.
