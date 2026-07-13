@@ -1,0 +1,2 @@
+product_id,store_id,sku,url,price,currency,stock,observed_at
+1,1,TEST-SKU-CURRENCY,https://synthetic.example.test/product,999.00,XYZ,available,2026-07-13T10:00:00+03:00

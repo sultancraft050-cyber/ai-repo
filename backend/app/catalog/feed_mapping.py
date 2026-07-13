@@ -7,7 +7,7 @@ import io
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -292,7 +292,16 @@ class FeedMappingService:
         except (csv.Error, json.JSONDecodeError) as error: raise MappingError("TEMPLATE_INVALID") from error
         if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows): raise MappingError("TEMPLATE_INVALID")
         if len(rows) > self.limits.max_rows: raise MappingError("RECORD_LIMIT_EXCEEDED")
-        return [self.map_record(template, row, index) for index, row in enumerate(rows, 1)]
+        results: list[MappingResult] = []
+        seen: set[str] = set()
+        for index, row in enumerate(rows, 1):
+            result = self.map_record(template, row, index)
+            fingerprint = hashlib.sha256(json.dumps(result.mapped_payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if fingerprint in seen:
+                result = replace(result, validation_status="DUPLICATE", proposed_action="SKIP", warnings=(*result.warnings, "DUPLICATE_SOURCE_ROW"))
+            seen.add(fingerprint)
+            results.append(result)
+        return results
 
     def stage(self, session: Session, template: MappingTemplate, results: list[MappingResult]) -> ImportBatch:
         valid = [result.mapped_payload for result in results]

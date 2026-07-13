@@ -90,6 +90,18 @@ def test_map_file_json_records_and_bounded_unknown_values():
         service.map_file(load("synthetic_product_v1.json"), (FIXTURES / "unknown_controlled_value.csv").read_bytes())
 
 
+def test_missing_identity_invalid_currency_timezone_and_duplicates_are_safe():
+    service = FeedMappingService()
+    with pytest.raises(MappingError, match="SOURCE_FIELD_MISSING"):
+        service.map_file(load("synthetic_product_v1.json"), (FIXTURES / "missing_product_identity.csv").read_bytes())
+    with pytest.raises(MappingError, match="CURRENCY_INVALID"):
+        service.map_file(load("synthetic_offer_v1.json"), (FIXTURES / "invalid_currency_offers.csv").read_bytes())
+    with pytest.raises(MappingError, match="TIMEZONE_INVALID"):
+        service.load_template(FIXTURES / "invalid_timezone_template.json")
+    duplicate = service.map_file(load("synthetic_product_v1.json"), (FIXTURES / "duplicate_products.csv").read_bytes())
+    assert duplicate[1].validation_status == "DUPLICATE" and duplicate[1].proposed_action == "SKIP"
+
+
 def test_cli_paths_are_fixture_only():
     from app.catalog.feed_mapping_cli import _fixture
     assert _fixture(str(FIXTURES / "synthetic_products.csv")).exists()
