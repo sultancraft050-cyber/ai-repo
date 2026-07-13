@@ -9,14 +9,14 @@ from __future__ import annotations
 import html
 import json
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
-from alembic import command
-from alembic.config import Config
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import create_engine, func, select
@@ -64,18 +64,21 @@ def initialize_local_database(url: str, *, reset: bool = False) -> None:
             path = Path("/" + url.removeprefix("sqlite:////")) if url.startswith("sqlite:////") else None
             if path and path.exists():
                 path.unlink()
-    config = Config(str(ROOT / "alembic.ini"))
-    config.set_main_option("script_location", str(ROOT / "alembic"))
-    config.set_main_option("prepend_sys_path", str(ROOT))
-    previous = os.environ.get("CATALOG_DATABASE_URL")
-    os.environ["CATALOG_DATABASE_URL"] = url
-    try:
-        command.upgrade(config, "head")
-    finally:
-        if previous is None:
-            os.environ.pop("CATALOG_DATABASE_URL", None)
-        else:
-            os.environ["CATALOG_DATABASE_URL"] = previous
+    executable = shutil.which("alembic")
+    if not executable:
+        raise RuntimeError("MIGRATION_TOOL_UNAVAILABLE: install the backend dependencies first.")
+    environment = {**os.environ, "CATALOG_DATABASE_URL": url}
+    result = subprocess.run(
+        [executable, "-c", str(ROOT / "alembic.ini"), "upgrade", "head"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode:
+        raise RuntimeError("MIGRATION_FAILED: inspect local logs and configuration.")
 
 
 def _safe(value: Any) -> str:
