@@ -285,3 +285,9 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Implementation date: 2026-07-13; `REPLAY_FAILURE_HARNESS_ENABLED=false` is the default and requires the simulator, mapping, import, and explicit local SQLite flags.
 - Added deterministic replay evidence under `/tmp/catalog-feed-replay/<run_id>/`, explicit failure-point/mode enums, bounded retry, state summaries/checksums, and local operations/CLI orchestration around existing simulator, mapping, staging, review, and commit services.
 - No second import or commit implementation was added. No real feed, external service, production database, Neo4j operation, secret change, cloud resource, or deployment occurred.
+
+## Authorized feed onboarding readiness
+
+- Readiness date: 2026-07-13; classification `READY_FOR_AUTHORIZED_SAMPLE`.
+- Added a minimum technical onboarding record, reusable source checklist, and local pilot result template. The package defines source authorization evidence, identity requirements, sample bounds, template provenance, retention, rollback, and the local-only pilot sequence.
+- No connector, credential, sample ingestion, external service, production database, Neo4j operation, secret change, cloud resource, or deployment occurred. A real source remains unapproved until an authorized sample or approved sample schema is supplied.

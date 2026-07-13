@@ -160,8 +160,8 @@ Build a local-only, read/write-guarded operations interface for reviewing staged
 Read `AGENTS.md`, all engineering-state files, `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md`, `docs/operations/PRODUCT_CATALOG_IMPORT_PIPELINE.md`, and `docs/operations/PRODUCT_IMAGE_METADATA_REVIEW_PIPELINE.md`. Implement one local Catalog Review and Import Operations Interface using synthetic fixtures and ephemeral SQLite. Do not expose public write endpoints, enable production flags, connect production databases, mutate Neo4j, download images, change secrets, create cloud resources, or deploy.
 ## Next task
 
-Authorized Feed Onboarding Readiness Package
+First Authorized Feed Sample Schema Review
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all engineering-state files, `docs/operations/AUTHORIZED_FEED_MAPPING_TEMPLATES.md`, `docs/operations/SYNTHETIC_FEED_ADAPTER_SIMULATOR.md`, and `docs/operations/SYNTHETIC_FEED_REPLAY_FAILURE_HARNESS.md`. Prepare a documentation-only authorized-feed onboarding readiness package covering approval owners, source authorization evidence, template/version checksums, retention, rollback, and production isolation. Do not connect suppliers, ingest real feeds, enable production flags, connect production databases, mutate Neo4j, change secrets, create cloud resources, or deploy.
+Read `AGENTS.md`, all engineering-state files, and the three authorized-feed onboarding documents. Review one authorized sample or approved sample schema supplied by the user, without connecting a supplier or production system. Keep production flags disabled; do not ingest real records, request credentials, mutate Neo4j, change secrets, create cloud resources, or deploy. This task is blocked until an authorized sample or approved sample schema is supplied.

@@ -589,3 +589,7 @@ Added a disabled, local-only simulator with repository JSON adapter/scenario def
 ## 2026-07-13 — Iteration 37: Synthetic Feed Replay and Failure-Injection Harness
 
 Added a disabled local replay harness with explicit failure-point/mode enums, bounded retry, deterministic evidence manifests, state summaries/checksums, replay/retry/compare CLI commands, local operations pages, and synthetic scenario definitions. It reuses the simulator, mapping, staging, review, and guarded commit services without adding a second import or commit path. No real feed, external request, production database, Neo4j operation, secret, cloud resource, or deployment was used.
+
+## 2026-07-13 — Iteration 38: Minimal Authorized Feed Onboarding Readiness
+
+Prepared a documentation-only technical package for one future authorized feed: a minimal onboarding record, reusable readiness checklist, local pilot result template, sample-file gate, identity/mapping requirements, retention, rollback, and the exact local pilot sequence. No connector, credential, sample ingestion, external service, production database, Neo4j operation, secret change, cloud resource, or deployment was used.
