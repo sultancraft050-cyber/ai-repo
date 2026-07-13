@@ -8,7 +8,7 @@ Neo4j remains the existing compatibility/readiness graph and is unchanged. Catal
 
 ## Entities and relationships
 
-The initial migration creates `catalog_products`, `catalog_product_specifications`, `catalog_product_images`, `catalog_stores`, `catalog_store_offers`, `catalog_price_history`, `catalog_import_sources`, `catalog_import_batches`, and `catalog_import_errors`. Products have specifications/images/offers; stores have offers; offers have append-only price history; import sources own batches and safe error summaries.
+The migrations create `catalog_products`, `catalog_product_specifications`, `catalog_product_images`, `catalog_product_image_reviews`, `catalog_stores`, `catalog_store_offers`, `catalog_price_history`, `catalog_import_sources`, `catalog_import_batches`, `catalog_import_records`, and `catalog_import_errors`. Products have specifications/images/offers; images have append-only review history; stores have offers; offers have append-only price history; import sources own batches and safe error summaries.
 
 Categories are controlled: CPU, GPU, MOTHERBOARD, RAM, STORAGE, PSU, CASE, COOLER. Product identity is not title-only: normalized brand plus manufacturer part number is constrained, GTIN is nullable/unique when present, and slug is unique.
 
@@ -24,6 +24,7 @@ Categories are controlled: CPU, GPU, MOTHERBOARD, RAM, STORAGE, PSU, CASE, COOLE
 
 - `CATALOG_V2_ENABLED=false` by default.
 - `CATALOG_WRITES_ENABLED=false` by default; no write route is exposed.
+- `CATALOG_IMPORT_ENABLED=false` and `CATALOG_IMAGE_REVIEW_ENABLED=false` by default; no import or image-review worker starts automatically.
 - `CATALOG_DATABASE_URL` is optional. If absent, existing application startup continues normally and Catalog V2 returns a clear unavailable response when enabled.
 - The catalog module is lazy: it does not open a connection at application startup.
 - Existing product/search/build/readiness/price behavior is unchanged.

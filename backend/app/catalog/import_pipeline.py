@@ -37,6 +37,7 @@ from app.catalog.models import (
     Store,
     StoreOffer,
 )
+from app.catalog.image_review import evaluate_metadata_payload
 
 TRUE_VALUES = {"1", "true", "yes"}
 CONTROLLED_CURRENCIES = {"SAR"}
@@ -421,13 +422,22 @@ class CatalogImportPipeline:
         if not product or not self.session:
             return staged
         payload = staged.normalized_payload
+        if _enabled("CATALOG_IMAGE_REVIEW_ENABLED"):
+            evaluation = evaluate_metadata_payload(payload, product.category, session=self.session, product_id=product.id)
+            if evaluation.classification == "REJECTED":
+                return self._mark_invalid(staged, evaluation.reason_codes[0], "Image metadata failed review.")
+            if evaluation.classification == "REVIEW_REQUIRED":
+                staged.review_status = ImportReviewStatus.PENDING
+                staged.proposed_action = ImportProposedAction.REVIEW
+                staged.error_code = evaluation.reason_codes[0]
+                staged.safe_message = "Image metadata requires review."
         if payload.get("checksum") and self.session.scalar(select(ProductImage).where(ProductImage.checksum == payload["checksum"])):
             return self._mark_duplicate(staged)
         if payload.get("is_primary", "").lower() in TRUE_VALUES:
             primary = self.session.scalar(select(ProductImage).where(ProductImage.product_id == product.id, ProductImage.is_primary.is_(True), ProductImage.review_status == ReviewStatus.APPROVED.value))
             if primary:
                 return self._mark_ambiguous(staged, "PRIMARY_IMAGE_CONFLICT", "An approved primary image already exists.")
-        if payload["rights_status"] != "APPROVED":
+        if payload["rights_status"] != "APPROVED" and not staged.error_code:
             staged.review_status = ImportReviewStatus.PENDING
             staged.proposed_action = ImportProposedAction.REVIEW
             staged.error_code = "RIGHTS_REVIEW_REQUIRED"

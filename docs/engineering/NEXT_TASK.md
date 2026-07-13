@@ -143,3 +143,18 @@ Add a disabled, local review service for already-staged product-image metadata. 
 ### Following iteration prompt
 
 Read `AGENTS.md`, all engineering-state files, `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md`, and `docs/operations/PRODUCT_CATALOG_IMPORT_PIPELINE.md`. Implement only a local Product Image Metadata Quality and Review Pipeline with synthetic fixtures. Do not download images, inspect remote files, enable catalog flags, connect production databases, mutate Neo4j, change secrets, create cloud resources, or deploy.
+
+## Local Catalog Review and Import Operations Interface
+
+Build a local-only, read/write-guarded operations interface for reviewing staged catalog products, offers, image metadata, and import batches. Use synthetic fixtures and ephemeral SQLite only; keep Catalog V2, imports, writes, and image review disabled by default. Do not add a public write API, connect production databases, touch Neo4j, download images, change secrets, or deploy.
+
+### Acceptance criteria
+
+- Review queues expose bounded summaries, stable IDs, safe reason codes, and append-only history without credentials or complete records.
+- Product/store/offer/image decisions reuse existing identity, rights, primary, and commit safeguards and remain idempotent.
+- Local CLI or internal service tests cover approval gates, rejection, retry, pagination, and audit chronology.
+- Migration, focused tests, full backend tests, release tests, and diff checks pass with all safe-off defaults unchanged.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, all engineering-state files, `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md`, `docs/operations/PRODUCT_CATALOG_IMPORT_PIPELINE.md`, and `docs/operations/PRODUCT_IMAGE_METADATA_REVIEW_PIPELINE.md`. Implement one local Catalog Review and Import Operations Interface using synthetic fixtures and ephemeral SQLite. Do not expose public write endpoints, enable production flags, connect production databases, mutate Neo4j, download images, change secrets, create cloud resources, or deploy.

@@ -37,14 +37,17 @@ class ApprovalStatus(str, Enum):
 
 class ImageRightsStatus(str, Enum):
     UNKNOWN = "unknown"
+    PENDING = "pending"
     REVIEW = "review"
     APPROVED = "approved"
     REJECTED = "rejected"
+    EXPIRED = "expired"
 
 
 class ImageQualityStatus(str, Enum):
     UNKNOWN = "unknown"
     PENDING = "pending"
+    ACCEPTABLE = "acceptable"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
 
@@ -53,6 +56,16 @@ class ReviewStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
+
+
+class ImageReviewDecision(str, Enum):
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    REQUEST_CHANGES = "REQUEST_CHANGES"
+    MARK_DUPLICATE = "MARK_DUPLICATE"
+    APPROVE_PRIMARY = "APPROVE_PRIMARY"
+    REMOVE_PRIMARY = "REMOVE_PRIMARY"
+    EXPIRE_RIGHTS = "EXPIRE_RIGHTS"
 
 
 class StockStatus(str, Enum):
@@ -181,6 +194,29 @@ class ProductImage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     product: Mapped[Product] = relationship(back_populates="images")
+
+
+class ProductImageReview(Base):
+    __tablename__ = "catalog_product_image_reviews"
+    __table_args__ = (
+        Index("ix_catalog_image_review_image", "image_id"),
+        Index("ix_catalog_image_review_decision", "decision"),
+        Index("ix_catalog_image_review_created", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    image_id: Mapped[int] = mapped_column(ForeignKey("catalog_product_images.id", ondelete="RESTRICT"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    safe_reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    reviewer_identifier: Mapped[str] = mapped_column(String(120), nullable=False)
+    previous_rights_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_rights_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    previous_quality_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_quality_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    previous_review_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_review_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    proposed_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class Store(Base):

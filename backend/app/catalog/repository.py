@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -16,6 +17,7 @@ from app.catalog.models import (
     StoreOffer,
     PriceHistory,
 )
+from app.catalog.image_review import ImageReviewService
 
 
 def now_utc() -> datetime:
@@ -42,7 +44,11 @@ class CatalogRepository:
         return list(self.session.scalars(select(ProductSpecification).where(ProductSpecification.product_id == product_id).order_by(ProductSpecification.specification_key)))
 
     def list_approved_images(self, product_id: int) -> list[ProductImage]:
-        return list(self.session.scalars(select(ProductImage).where(ProductImage.product_id == product_id, ProductImage.review_status == ReviewStatus.APPROVED, ProductImage.rights_status == "approved").order_by(ProductImage.is_primary.desc(), ProductImage.id)))
+        images = list(self.session.scalars(select(ProductImage).join(ProductImage.product).where(ProductImage.product_id == product_id, Product.approval_status == ApprovalStatus.APPROVED, ProductImage.review_status == ReviewStatus.APPROVED, ProductImage.rights_status == "approved").order_by(ProductImage.is_primary.desc(), ProductImage.id)))
+        if os.getenv("CATALOG_IMAGE_REVIEW_ENABLED", "false").lower() not in {"1", "true", "yes"}:
+            return images
+        service = ImageReviewService(self.session)
+        return [image for image in images if image.quality_status == "acceptable" and service.evaluate_image(image.id).classification == "ACCEPTABLE"]
 
     def list_stores(self, *, offset: int, limit: int) -> list[Store]:
         return list(self.session.scalars(select(Store).where(Store.status == "active").order_by(Store.name, Store.id).offset(offset).limit(limit)))

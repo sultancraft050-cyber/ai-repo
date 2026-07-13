@@ -568,3 +568,9 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Implementation: added safe-off import configuration, strict normalization/identity matching, duplicate and ambiguity handling, dependency blocking, safe staged records/errors, lifecycle counts, an internal local-only CLI, and an atomic guarded commit service.
 - Validation: synthetic CSV/JSON fixtures, focused parsing/matching/review/commit tests, full backend regression tests, and Alembic upgrade/downgrade rehearsal against disposable SQLite.
 - Safety: all catalog/import/write flags remain false by default. No production database, real product/store/offer, external image, Neo4j operation, cloud resource, secret, or deployment was touched.
+
+## 2026-07-13 — Iteration 33: Product Image Metadata Quality and Review Pipeline
+
+- Objective: add deterministic metadata-only image evaluation, guarded review decisions, public eligibility filtering, and append-only review history without fetching image bytes.
+- Implementation: added bounded URL/host policy, rights/provenance and metadata-quality checks, category heuristics, exact duplicate handling, primary replacement safeguards, `catalog_product_image_reviews`, local CLI commands, and staged-import integration behind a new safe-off flag.
+- Validation: synthetic image fixtures and focused review/import/catalog tests, migration rehearsal, full backend tests, release tests, and diff checks. No external URL, production database, image, Neo4j graph, cloud resource, secret, or deployment was touched.

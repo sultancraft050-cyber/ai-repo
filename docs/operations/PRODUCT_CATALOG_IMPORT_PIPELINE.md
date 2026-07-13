@@ -23,7 +23,7 @@ Validation states are `VALID`, `INVALID`, `DUPLICATE`, `AMBIGUOUS`, and `BLOCKED
 - Offers require resolved product and store identities plus store SKU. An existing store/SKU proposes update only for the same product; a conflict is ambiguous.
 - Specifications and image metadata require an existing product. Price observations require an existing offer and remain append-only.
 - Exact batch/catalog duplicates propose `SKIP`. Conflicting product, store, specification, offer, or primary-image identities propose `REVIEW` and cannot commit.
-- Image imports store metadata only. They do not download or inspect remote content. Unknown or pending rights require review, duplicate checksums skip, and an approved-primary conflict requires review.
+- Image imports store metadata only. They do not download or inspect remote content. When `CATALOG_IMAGE_REVIEW_ENABLED=true`, metadata evaluation supplies URL, host, rights, quality, duplicate, and primary-review outcomes; otherwise existing import safeguards remain unchanged. Unknown or pending rights require review, duplicate checksums skip, and an approved-primary conflict requires review.
 - Older prices may append history but do not replace current offer state. Negative prices, unsupported currency, bad URLs, and invalid timestamps are rejected.
 
 Dependency-safe import order is stores, products, specifications, image metadata, offers, then price observations. Unresolved dependencies are blocked; placeholders are not created.
@@ -36,6 +36,7 @@ All defaults remain safe-off:
 CATALOG_V2_ENABLED=false
 CATALOG_IMPORT_ENABLED=false
 CATALOG_WRITES_ENABLED=false
+CATALOG_IMAGE_REVIEW_ENABLED=false
 ```
 
 No import starts with the application. Missing `CATALOG_DATABASE_URL` does not affect startup. Dry run requires `CATALOG_IMPORT_ENABLED=true`; canonical commit additionally requires `CATALOG_WRITES_ENABLED=true`, a `READY` batch, approved/not-required rows, and a local SQLite session. There is no Catalog V2 public write route.

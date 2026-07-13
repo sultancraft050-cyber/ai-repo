@@ -258,3 +258,10 @@ Approval is required for protected-data deletion, production secret changes, des
 - `catalog_import_records` stores allow-listed normalized fields, controlled validation/review/action states, resolved IDs, checksums, and bounded safe errors. Batch lifecycle and aggregate counts now cover parsing through guarded completion.
 - `CATALOG_IMPORT_ENABLED=false`, `CATALOG_WRITES_ENABLED=false`, and `CATALOG_V2_ENABLED=false` remain defaults. The CLI refuses non-local database URLs; canonical commit additionally requires a ready, fully reviewed batch and local SQLite.
 - Synthetic fixture and in-memory SQLite tests only. No production database, real catalog record, retailer, image download, Neo4j operation, cloud resource, secret change, or deployment was involved.
+
+## Product Image Metadata Quality and Review Pipeline
+
+- Implementation date: 2026-07-13; metadata-only evaluation and review are local and disabled by default with `CATALOG_IMAGE_REVIEW_ENABLED=false`.
+- Added bounded URL/host policy, rights and provenance checks, dimensions/aspect/format/file-size/freshness checks, category heuristics, exact checksum/URL duplicate detection, primary-image safeguards, public-visibility filtering, and an append-only review audit table.
+- Review decisions require both image-review and catalog-write flags, explicit safe reasons/reviewer identifiers, and local SQLite. No public write route or startup worker was added.
+- Product-image import integration remains disabled with catalog imports by default; review failures never create public visibility. No images were downloaded and no visual-quality claim is made.
