@@ -265,3 +265,6 @@ Approval is required for protected-data deletion, production secret changes, des
 - Added bounded URL/host policy, rights and provenance checks, dimensions/aspect/format/file-size/freshness checks, category heuristics, exact checksum/URL duplicate detection, primary-image safeguards, public-visibility filtering, and an append-only review audit table.
 - Review decisions require both image-review and catalog-write flags, explicit safe reasons/reviewer identifiers, and local SQLite. No public write route or startup worker was added.
 - Product-image import integration remains disabled with catalog imports by default; review failures never create public visibility. No images were downloaded and no visual-quality claim is made.
+## Local catalog operations interface
+
+The repository now contains a standalone loopback-only local operations server in `backend/app/catalog/ops_server.py`. It is not mounted in the production FastAPI app, accepts only synthetic fixtures below `backend/tests/fixtures/`, requires explicit `CATALOG_OPS_ENABLED=true`, and rejects non-SQLite databases. It provides dry-run batch staging, safe row review, guarded idempotent local commits, metadata-only image review, duplicate inspection, and bounded local product/store/offer views. Production catalog flags remain disabled.
