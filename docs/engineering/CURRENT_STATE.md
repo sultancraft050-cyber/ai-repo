@@ -243,3 +243,10 @@ Approval is required for protected-data deletion, production secret changes, des
 - Added exact read-only selector catalog, protected-label/relationship checks, bounded clone-only batch design, cleanup order, clone identity gates, parity checks, stop conditions, and rollback dependencies.
 - Scope is limited to timestamped operational children, terminal PricingJob records older than 90 days, and AuditEvent records only after orphan ownership resolution. Consolidation labels remain deferred.
 - No production query, mutation, snapshot/export, clone creation, secret change, deployment, or cloud cost occurred.
+
+## Relational Product Catalog Foundation
+
+- Foundation date: 2026-07-13; Catalog V2 is disabled by default and runs in parallel with the Neo4j product behavior.
+- Added SQLAlchemy 2.x/Alembic PostgreSQL-compatible catalog models and a SQLite-test migration for products, specifications, image metadata, stores, offers, price history, import sources/batches/errors.
+- Added lazy, read-only `/catalog/*` routes gated by `CATALOG_V2_ENABLED`; missing `CATALOG_DATABASE_URL` never crashes startup. Catalog writes remain disabled and no write route exists.
+- Synthetic tests only; no real products, offers, images, PostgreSQL, storage, Neo4j, secrets, or deployments were used.

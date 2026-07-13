@@ -16,6 +16,7 @@ from app.api import (
     autonomy,
     build,
     catalog,
+    catalog_v2,
     cognition,
     compatibility,
     components,
@@ -331,6 +332,7 @@ app.include_router(performance.router)
 app.include_router(components.router)
 app.include_router(build.router)
 app.include_router(catalog.router)
+app.include_router(catalog_v2.router)
 app.include_router(products.router)
 app.include_router(pricing.router)
 app.include_router(sources.router)

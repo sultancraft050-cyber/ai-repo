@@ -120,3 +120,11 @@ Completed 2026-07-13 with result `READY_FOR_CLONE_CLEANUP_REHEARSAL` only. The s
 ### Following iteration prompt
 
 Read `NEO4J_MINIMAL_CLEANUP_PLAN.md`, `NEO4J_CLEANUP_SELECTOR_CATALOG.md`, `NEO4J_CLONE_CLEANUP_CHECKLIST.md`, and the existing retention/runbook documents. Do not create a clone or run deletion. First obtain explicit authorization and a verified isolated clone identity, then run only the documented aggregate previews and stop on any protection, parity, writer, capacity, or health mismatch.
+
+## Relational Product Catalog Foundation
+
+Completed 2026-07-13. Catalog V2 is a disabled parallel foundation; existing Neo4j-backed product behavior remains authoritative.
+
+### Following iteration prompt
+
+Read `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md` and the catalog models/repository/tests. Design a staged CSV/JSON Product and Store-Offer Import Pipeline using synthetic fixtures only. Keep `CATALOG_V2_ENABLED=false`, `CATALOG_WRITES_ENABLED=false`, all existing safe-off flags false, and do not import real products, connect production databases, mutate Neo4j, download images, or deploy.

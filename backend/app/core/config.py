@@ -53,6 +53,9 @@ class Settings:
     autonomous_agents_enabled: bool
     autonomous_agent_interval_seconds: int
     autonomous_agent_max_products: int
+    catalog_v2_enabled: bool
+    catalog_writes_enabled: bool
+    catalog_database_url: str | None
     auth_required: bool
     viewer_api_key: str | None
     analyst_api_key: str | None
@@ -111,6 +114,9 @@ class Settings:
             in {"1", "true", "yes"},
             autonomous_agent_interval_seconds=int(os.getenv("AUTONOMOUS_AGENT_INTERVAL_SECONDS", "900")),
             autonomous_agent_max_products=int(os.getenv("AUTONOMOUS_AGENT_MAX_PRODUCTS", "6")),
+            catalog_v2_enabled=os.getenv("CATALOG_V2_ENABLED", "false").lower() in {"1", "true", "yes"},
+            catalog_writes_enabled=os.getenv("CATALOG_WRITES_ENABLED", "false").lower() in {"1", "true", "yes"},
+            catalog_database_url=os.getenv("CATALOG_DATABASE_URL"),
         )
 
 

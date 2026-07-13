@@ -555,3 +555,9 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Result: `READY_FOR_CLONE_CLEANUP_REHEARSAL` only; production cleanup remains prohibited.
 - Scope: 30-day timestamped operational children, terminal PricingJob records older than 90 days, AuditEvent records only after ownership resolution, and a separate non-destructive consolidation plan for non-timestamped groups.
 - Safety: added selector, protection, batch, clone identity, parity, stop-condition, and rollback documentation. No production query, mutation, snapshot/export, clone, secret, deployment, traffic change, or cloud cost occurred.
+
+## 2026-07-13 — Iteration 31: Relational Product Catalog Foundation
+
+- Objective: add a disabled, local PostgreSQL-compatible foundation for canonical products, specifications, image metadata, stores, offers, price history, and import provenance without changing Neo4j behavior.
+- Implementation: added SQLAlchemy/Alembic models and migration, lazy database configuration, read-only gated `/catalog/*` routes, synthetic SQLite tests, and catalog documentation. Catalog writes and startup seeding remain disabled.
+- Safety: no production database connection, real import, external image download, storage resource, Neo4j operation, secret change, deployment, or cloud resource was used.
