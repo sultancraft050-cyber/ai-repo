@@ -128,3 +128,18 @@ Completed 2026-07-13. Catalog V2 is a disabled parallel foundation; existing Neo
 ### Following iteration prompt
 
 Read `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md` and the catalog models/repository/tests. Design a staged CSV/JSON Product and Store-Offer Import Pipeline using synthetic fixtures only. Keep `CATALOG_V2_ENABLED=false`, `CATALOG_WRITES_ENABLED=false`, all existing safe-off flags false, and do not import real products, connect production databases, mutate Neo4j, download images, or deploy.
+
+## Product Image Metadata Quality and Review Pipeline
+
+Add a disabled, local review service for already-staged product-image metadata. Validate dimensions, format, checksum, rights provenance, quality status, duplicate/primary conflicts, and reviewer decisions without downloading images or exposing a public write route. Use only synthetic metadata and ephemeral SQLite; keep all catalog flags and existing operational flags false.
+
+### Acceptance criteria
+
+- Only reviewed metadata can transition to approved; unknown or conflicting rights remain blocked.
+- Duplicate checksum and approved-primary conflicts are deterministic and idempotent.
+- No remote image request, production database, Neo4j operation, secret change, cloud resource, or deployment occurs.
+- Focused tests, full backend tests, migration validation when needed, release tests, and diff checks pass.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, all engineering-state files, `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md`, and `docs/operations/PRODUCT_CATALOG_IMPORT_PIPELINE.md`. Implement only a local Product Image Metadata Quality and Review Pipeline with synthetic fixtures. Do not download images, inspect remote files, enable catalog flags, connect production databases, mutate Neo4j, change secrets, create cloud resources, or deploy.

@@ -1,0 +1,12 @@
+{
+  "records": [
+    {
+      "brand": "Synthetic Fixture Labs",
+      "manufacturer_part_number": "SYN-GPU-001",
+      "gtin": "1234567890135",
+      "canonical_name": "Synthetic Fixture Graphics Card",
+      "category": "GPU",
+      "variant": "Test Variant"
+    }
+  ]
+}

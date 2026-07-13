@@ -71,9 +71,48 @@ class SourceType(str, Enum):
 
 class ImportBatchStatus(str, Enum):
     RECEIVED = "received"
-    RUNNING = "running"
+    PARSING = "parsing"
+    VALIDATING = "validating"
+    STAGED = "staged"
+    REVIEW_REQUIRED = "review_required"
+    READY = "ready"
+    COMMITTING = "committing"
     COMPLETED = "completed"
+    COMPLETED_WITH_ERRORS = "completed_with_errors"
     FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class ImportEntityType(str, Enum):
+    PRODUCT = "PRODUCT"
+    PRODUCT_SPECIFICATION = "PRODUCT_SPECIFICATION"
+    PRODUCT_IMAGE_METADATA = "PRODUCT_IMAGE_METADATA"
+    STORE = "STORE"
+    STORE_OFFER = "STORE_OFFER"
+    PRICE_OBSERVATION = "PRICE_OBSERVATION"
+
+
+class ImportValidationStatus(str, Enum):
+    VALID = "VALID"
+    INVALID = "INVALID"
+    DUPLICATE = "DUPLICATE"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+class ImportReviewStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    NOT_REQUIRED = "NOT_REQUIRED"
+
+
+class ImportProposedAction(str, Enum):
+    CREATE = "CREATE"
+    UPDATE = "UPDATE"
+    SKIP = "SKIP"
+    REVIEW = "REVIEW"
+    REJECT = "REJECT"
 
 
 class Product(Base):
@@ -209,11 +248,15 @@ class ImportBatch(Base):
     __table_args__ = (Index("ix_catalog_batch_source_status", "source_id", "status"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("catalog_import_sources.id"), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(48), nullable=False)
     status: Mapped[ImportBatchStatus] = mapped_column(String(32), nullable=False)
     received_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     accepted_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     rejected_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     duplicate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ambiguous_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    staged_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    committed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -228,3 +271,28 @@ class ImportError(Base):
     error_code: Mapped[str] = mapped_column(String(80), nullable=False)
     safe_message: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ImportRecord(Base):
+    __tablename__ = "catalog_import_records"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "row_number", name="uq_catalog_import_record_row"),
+        UniqueConstraint("batch_id", "record_checksum", name="uq_catalog_import_record_checksum"),
+        Index("ix_catalog_import_record_batch_status", "batch_id", "validation_status", "review_status"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("catalog_import_batches.id", ondelete="CASCADE"), nullable=False)
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    record_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    normalized_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    proposed_action: Mapped[str] = mapped_column(String(24), nullable=False)
+    matched_product_id: Mapped[int | None] = mapped_column(ForeignKey("catalog_products.id"))
+    matched_store_id: Mapped[int | None] = mapped_column(ForeignKey("catalog_stores.id"))
+    matched_offer_id: Mapped[int | None] = mapped_column(ForeignKey("catalog_store_offers.id"))
+    safe_error_code: Mapped[str | None] = mapped_column(String(80))
+    safe_error_message: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

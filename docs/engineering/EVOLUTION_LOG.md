@@ -561,3 +561,10 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Objective: add a disabled, local PostgreSQL-compatible foundation for canonical products, specifications, image metadata, stores, offers, price history, and import provenance without changing Neo4j behavior.
 - Implementation: added SQLAlchemy/Alembic models and migration, lazy database configuration, read-only gated `/catalog/*` routes, synthetic SQLite tests, and catalog documentation. Catalog writes and startup seeding remain disabled.
 - Safety: no production database connection, real import, external image download, storage resource, Neo4j operation, secret change, deployment, or cloud resource was used.
+
+## 2026-07-13 — Iteration 32: Staged CSV/JSON Catalog Import Pipeline
+
+- Objective: add a bounded local staging and review path for products, specifications, image metadata, stores, offers, and append-only price observations without exposing a write API.
+- Implementation: added safe-off import configuration, strict normalization/identity matching, duplicate and ambiguity handling, dependency blocking, safe staged records/errors, lifecycle counts, an internal local-only CLI, and an atomic guarded commit service.
+- Validation: synthetic CSV/JSON fixtures, focused parsing/matching/review/commit tests, full backend regression tests, and Alembic upgrade/downgrade rehearsal against disposable SQLite.
+- Safety: all catalog/import/write flags remain false by default. No production database, real product/store/offer, external image, Neo4j operation, cloud resource, secret, or deployment was touched.

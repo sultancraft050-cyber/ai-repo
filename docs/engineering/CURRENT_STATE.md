@@ -250,3 +250,11 @@ Approval is required for protected-data deletion, production secret changes, des
 - Added SQLAlchemy 2.x/Alembic PostgreSQL-compatible catalog models and a SQLite-test migration for products, specifications, image metadata, stores, offers, price history, import sources/batches/errors.
 - Added lazy, read-only `/catalog/*` routes gated by `CATALOG_V2_ENABLED`; missing `CATALOG_DATABASE_URL` never crashes startup. Catalog writes remain disabled and no write route exists.
 - Synthetic tests only; no real products, offers, images, PostgreSQL, storage, Neo4j, secrets, or deployments were used.
+
+## Staged Catalog Import Pipeline
+
+- Implementation date: 2026-07-13; CSV/JSON import is internal, local-only, and disabled by default.
+- Six explicit batch types cover products, specifications, image metadata, stores, offers, and append-only price observations. Strict identifiers replace title/fuzzy matching, and unresolved or conflicting identities remain staged for review.
+- `catalog_import_records` stores allow-listed normalized fields, controlled validation/review/action states, resolved IDs, checksums, and bounded safe errors. Batch lifecycle and aggregate counts now cover parsing through guarded completion.
+- `CATALOG_IMPORT_ENABLED=false`, `CATALOG_WRITES_ENABLED=false`, and `CATALOG_V2_ENABLED=false` remain defaults. The CLI refuses non-local database URLs; canonical commit additionally requires a ready, fully reviewed batch and local SQLite.
+- Synthetic fixture and in-memory SQLite tests only. No production database, real catalog record, retailer, image download, Neo4j operation, cloud resource, secret change, or deployment was involved.
