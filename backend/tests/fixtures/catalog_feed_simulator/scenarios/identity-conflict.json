@@ -1,0 +1,1 @@
+{"scenario_id":"identity-conflict","scenario_name":"Identity conflict","source_type":"SYNTHETIC_FIXTURE","authorization_status":"SYNTHETIC_ONLY","description":"Conflicting synthetic GTIN and brand/MPN identity requiring review."}

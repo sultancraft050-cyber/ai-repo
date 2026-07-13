@@ -1,0 +1,18 @@
+{
+  "adapter_id": "synthetic-sa-retailer-v1",
+  "adapter_version": "1.0.0",
+  "adapter_name": "Synthetic Saudi fixture retailer",
+  "source_type": "SYNTHETIC_FIXTURE",
+  "authorization_status": "SYNTHETIC_ONLY",
+  "supported_entity_types": ["PRODUCT", "PRODUCT_SPECIFICATION", "PRODUCT_IMAGE_METADATA", "STORE", "STORE_OFFER", "PRICE_OBSERVATION"],
+  "supported_formats": ["CSV", "JSON_ARRAY", "JSON_RECORDS"],
+  "template_id": "synthetic-product",
+  "template_version": "1.0.0",
+  "default_country": "SA",
+  "default_currency": "SAR",
+  "default_timezone": "Asia/Riyadh",
+  "scenario_id": "initial-catalog-load",
+  "deterministic_seed": 20260713,
+  "maximum_records": 100,
+  "created_at": "2026-07-13T00:00:00+03:00"
+}

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.catalog.database import CatalogDatabase
 from app.catalog.feed_mapping import FeedMappingService, MappingError
+from app.catalog.feed_simulator import SimulatorError, clean_run, generate as generate_simulation, list_adapters, list_runs, list_scenarios, preview as preview_simulation, read_manifest, stage_run
 from app.catalog.image_review import ImageReviewService
 from app.catalog.import_pipeline import CatalogImportPipeline, ImportLimits, commit_batch, read_file_bounded, stage_result
 from app.catalog.models import (
@@ -95,7 +96,7 @@ def _status(value: Any) -> str:
 def _layout(title: str, body: str) -> HTMLResponse:
     nav = """<nav aria-label="Operations navigation">
       <a href="/">Overview</a><a href="/batches">Batches</a>
-      <a href="/images/pending">Image queue</a><a href="/images/duplicates">Duplicates</a>
+      <a href="/images/pending">Image queue</a><a href="/images/duplicates">Duplicates</a><a href="/feed-simulator">Feed simulator</a>
       <a href="/catalog/products">Products</a><a href="/catalog/stores">Stores</a><a href="/catalog/offers">Offers</a>
     </nav>"""
     return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -158,6 +159,71 @@ def create_ops_app() -> FastAPI:
         rows = [[f'<a href="/feed-mappings/{item.template_id}/{item.version}">{item.template_id}</a>', item.version, item.checksum, item.entity_type, item.data["source_type"], item.data["authorization_status"], item.data["country"], item.data["default_currency"], item.data["default_timezone"]] for item in templates]
         body = '<p class="ok">Synthetic templates only; no feed is fetched.</p>'
         return _layout("Feed mapping templates", body + _table(["Template", "Version", "Checksum", "Entity", "Source", "Authorization", "Country", "Currency", "Timezone"], rows))
+
+    @app.get("/feed-simulator", response_class=HTMLResponse)
+    def feed_simulator() -> HTMLResponse:
+        adapters = list_adapters() if _enabled("CATALOG_FEED_SIMULATOR_ENABLED") else []
+        scenarios = list_scenarios() if _enabled("CATALOG_FEED_SIMULATOR_ENABLED") else []
+        body = "<p class=\"ok\">Synthetic fixture generation only; no transport or external service is available.</p>"
+        body += _table(["Adapters", "Scenarios", "Simulator flag"], [[len(adapters), len(scenarios), "enabled" if _enabled("CATALOG_FEED_SIMULATOR_ENABLED") else "disabled"]])
+        body += "<p>Use the local CLI for generation and bounded previews. Generated files remain under the system temporary directory.</p>"
+        return _layout("Synthetic feed simulator", body)
+
+    @app.get("/feed-simulator/adapters", response_class=HTMLResponse)
+    def feed_simulator_adapters() -> HTMLResponse:
+        rows = [[item.get("adapter_id"), item.get("adapter_version"), item.get("authorization_status"), ", ".join(item.get("supported_entity_types", []))] for item in list_adapters()] if _enabled("CATALOG_FEED_SIMULATOR_ENABLED") else []
+        return _layout("Synthetic feed adapters", _table(["Adapter", "Version", "Authorization", "Entities"], rows))
+
+    @app.get("/feed-simulator/scenarios", response_class=HTMLResponse)
+    def feed_simulator_scenarios() -> HTMLResponse:
+        rows = [[item.get("scenario_id"), item.get("scenario_name"), item.get("description")] for item in list_scenarios()] if _enabled("CATALOG_FEED_SIMULATOR_ENABLED") else []
+        return _layout("Synthetic feed scenarios", _table(["Scenario", "Name", "Description"], rows))
+
+    @app.get("/feed-simulator/runs", response_class=HTMLResponse)
+    def feed_simulator_runs() -> HTMLResponse:
+        rows = [[f'<a href="/feed-simulator/runs/{item["run_id"]}">{item["run_id"]}</a>', item.get("scenario_id"), item.get("entity_type"), item.get("record_count"), item.get("generated_file_checksum")] for item in list_runs()] if _enabled("CATALOG_FEED_SIMULATOR_ENABLED") else []
+        return _layout("Synthetic feed runs", _table(["Run", "Scenario", "Entity", "Records", "Checksum"], rows))
+
+    @app.get("/feed-simulator/runs/{run_id}", response_class=HTMLResponse)
+    def feed_simulator_run(run_id: str) -> HTMLResponse:
+        try:
+            manifest = read_manifest(run_id)
+            return _layout("Synthetic feed run", _table(["Field", "Value"], [[key, value] for key, value in manifest.items()]))
+        except SimulatorError as error: raise HTTPException(404, error.code) from error
+
+    @app.post("/feed-simulator/generate")
+    async def feed_simulator_generate(request: Request):
+        form = await _mapping_form(request)
+        try:
+            run = generate_simulation(adapter_id=form.get("adapter", "synthetic-sa-retailer-v1"), scenario_id=form.get("scenario", "initial-catalog-load"), output_format=form.get("format", "csv"), seed=int(form.get("seed", "20260713")), timestamp_anchor=form.get("timestamp_anchor", "2026-07-13T09:00:00+03:00"), entity_type=form.get("entity_type"))
+            return {"run_id": run.run_id, "manifest": run.manifest}
+        except (SimulatorError, ValueError) as error:
+            raise HTTPException(400, getattr(error, "code", "SCENARIO_INVALID")) from error
+
+    @app.post("/feed-simulator/preview")
+    async def feed_simulator_preview(request: Request):
+        form = await _mapping_form(request)
+        try:
+            run = generate_simulation(adapter_id=form.get("adapter", "synthetic-sa-retailer-v1"), scenario_id=form.get("scenario", "initial-catalog-load"), output_format=form.get("format", "csv"), seed=int(form.get("seed", "20260713")), timestamp_anchor=form.get("timestamp_anchor", "2026-07-13T09:00:00+03:00"), entity_type=form.get("entity_type"))
+            return preview_simulation(run)
+        except (SimulatorError, ValueError) as error:
+            raise HTTPException(400, getattr(error, "code", "SCENARIO_INVALID")) from error
+
+    @app.post("/feed-simulator/stage")
+    async def feed_simulator_stage(request: Request):
+        if not _enabled("CATALOG_IMPORT_ENABLED"): raise HTTPException(409, "STAGING_DISABLED")
+        form = await _mapping_form(request)
+        try:
+            url = app.state.catalog_ops_url
+            run = generate_simulation(adapter_id=form.get("adapter", "synthetic-sa-retailer-v1"), scenario_id=form.get("scenario", "initial-catalog-load"), output_format="csv", seed=int(form.get("seed", "20260713")), timestamp_anchor=form.get("timestamp_anchor", "2026-07-13T09:00:00+03:00"), entity_type=form.get("entity_type"))
+            return stage_run(run, url)
+        except (SimulatorError, MappingError, ValueError) as error:
+            raise HTTPException(400, getattr(error, "code", "STAGING_DISABLED")) from error
+
+    @app.post("/feed-simulator/runs/{run_id}/clean")
+    async def feed_simulator_clean(run_id: str):
+        try: clean_run(run_id); return {"cleaned": run_id}
+        except SimulatorError as error: raise HTTPException(404, error.code) from error
 
     @app.get("/feed-mappings/compare", response_class=HTMLResponse)
     def feed_mapping_compare(first: str | None = None, second: str | None = None) -> HTMLResponse:

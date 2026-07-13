@@ -1,0 +1,18 @@
+{
+  "adapter_id": "invalid-revoked",
+  "adapter_version": "1.0.0",
+  "adapter_name": "Invalid fixture",
+  "source_type": "REMOTE_API",
+  "authorization_status": "REVOKED",
+  "supported_entity_types": ["PRODUCT"],
+  "supported_formats": ["CSV"],
+  "template_id": "synthetic-product",
+  "template_version": "1.0.0",
+  "default_country": "SA",
+  "default_currency": "SAR",
+  "default_timezone": "Asia/Riyadh",
+  "scenario_id": "initial-catalog-load",
+  "deterministic_seed": 1,
+  "maximum_records": 10,
+  "created_at": "2026-07-13T00:00:00+03:00"
+}

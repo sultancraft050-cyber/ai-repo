@@ -1,0 +1,1 @@
+{"scenario_id":"revoked-unauthorized-adapter","scenario_name":"Revoked or unauthorized adapter","source_type":"REMOTE_API","authorization_status":"REVOKED","description":"Definition is rejected before generation."}

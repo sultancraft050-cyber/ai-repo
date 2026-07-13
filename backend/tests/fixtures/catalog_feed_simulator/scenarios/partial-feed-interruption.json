@@ -1,0 +1,1 @@
+{"scenario_id":"partial-feed-interruption","scenario_name":"Partial feed interruption","source_type":"SYNTHETIC_FIXTURE","authorization_status":"SYNTHETIC_ONLY","description":"Bounded truncation and deterministic retry files without transport."}

@@ -272,3 +272,10 @@ The repository now contains a standalone loopback-only local operations server i
 ## Authorized feed mapping templates
 
 Versioned JSON feed mappings now support synthetic product, store, offer, specification, image-metadata, and price-observation previews. `CATALOG_FEED_MAPPING_ENABLED=false` is safe-off; preview also requires the existing import flag, and staging reuses the existing import pipeline. Templates are fixture-only, checksum-versioned, authorization-gated, strict-identity, provenance-aware, and limited to a deterministic transform whitelist. No connector, network access, real feed, production database, Neo4j operation, secret, or deployment was involved.
+
+## Synthetic authorized feed adapter simulator
+
+- Implementation date: 2026-07-13; `CATALOG_FEED_SIMULATOR_ENABLED=false` is the default and no run starts automatically.
+- Repository JSON adapters/scenarios generate bounded deterministic synthetic CSV/JSON files only below `/tmp/catalog-feed-simulator`; strict enum mutations cover initial, incremental, price/stock, duplicate, conflict, malformed, stale, image-review, and interrupted-feed cases.
+- Every generated record set passes through the existing mapping service. Optional staging remains local-SQLite-only through existing import safeguards; the simulator has no catalog commit command and adds no production route.
+- No real feed, external request, image download, production database, Neo4j operation, cloud resource, secret change, or deployment occurred.

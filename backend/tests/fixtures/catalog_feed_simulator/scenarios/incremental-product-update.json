@@ -1,0 +1,1 @@
+{"scenario_id":"incremental-product-update","scenario_name":"Incremental product update","source_type":"SYNTHETIC_FIXTURE","authorization_status":"SYNTHETIC_ONLY","description":"Corrected display name, unchanged identity, and duplicate replay."}

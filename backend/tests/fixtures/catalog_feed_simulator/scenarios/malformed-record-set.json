@@ -1,0 +1,1 @@
+{"scenario_id":"malformed-record-set","scenario_name":"Malformed record set","source_type":"SYNTHETIC_FIXTURE","authorization_status":"SYNTHETIC_ONLY","description":"Use controlled mutations to remove identity, add unknown fields, or replace values."}

@@ -1,0 +1,1 @@
+{"scenario_id":"stale-and-out-of-order","scenario_name":"Stale and out-of-order observations","source_type":"SYNTHETIC_FIXTURE","authorization_status":"SYNTHETIC_ONLY","description":"Current, older, and duplicate timestamp observations."}

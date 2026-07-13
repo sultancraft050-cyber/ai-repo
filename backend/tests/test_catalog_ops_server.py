@@ -68,3 +68,20 @@ def test_standalone_routes_are_not_mounted_in_production_app():
     assert "/imports/dry-run" not in production_paths
     assert not any(path.startswith("/batches/") for path in production_paths)
     assert not any(path.startswith("/images/pending") for path in production_paths)
+
+
+def test_simulator_routes_are_standalone_and_not_public(monkeypatch, tmp_path):
+    monkeypatch.setenv("CATALOG_OPS_ENABLED", "true")
+    monkeypatch.setenv("CATALOG_DATABASE_URL", f"sqlite:///{tmp_path / 'simulator.sqlite3'}")
+    local_app = ops_server.create_ops_app()
+    local_paths = {route.path for route in local_app.routes if hasattr(route, "path")}
+    assert "/feed-simulator" in local_paths
+    assert "/feed-simulator/adapters" in local_paths
+    assert "/feed-simulator/scenarios" in local_paths
+    assert "/feed-simulator/runs" in local_paths
+    assert "/feed-simulator/generate" in local_paths
+    assert "/feed-simulator/preview" in local_paths
+    assert "/feed-simulator/stage" in local_paths
+    assert "/feed-simulator/runs/{run_id}/clean" in local_paths
+    production_paths = {route.path for route in production_app.routes if hasattr(route, "path")}
+    assert "/feed-simulator" not in production_paths

@@ -1,0 +1,1 @@
+{"scenario_id":"invalid-pricing","scenario_name":"Invalid pricing","source_type":"SYNTHETIC_FIXTURE","authorization_status":"SYNTHETIC_ONLY","description":"Use controlled mutations to exercise invalid prices and currencies."}

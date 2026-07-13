@@ -581,3 +581,7 @@ Added a manually started, SQLite-only loopback operations interface for syntheti
 ## 2026-07-13 — Iteration 35: Authorized Product and Store Feed Mapping Templates
 
 Added disabled, local-only, versioned JSON mappings for synthetic product, store, offer, specification, image metadata, and price observation feeds. The service validates authorization, entity/source types, strict identity requirements, Saudi country/currency/timezone rules, unknown fields, credential-like names, deterministic transform whitelists, version checksums, and safe provenance before reusing the existing staged import pipeline. Standalone operations pages and a fixture-only CLI provide validation, preview, comparison, and guarded staging. No real feed, connector, external request, image, production database, Neo4j operation, secret, cloud resource, or deployment was used.
+
+## 2026-07-13 — Iteration 36: Synthetic Authorized Feed Adapter Simulator
+
+Added a disabled, local-only simulator with repository JSON adapter/scenario definitions, deterministic timestamp-anchored synthetic records, strict mutation enums, bounded CSV/JSON output under `/tmp/catalog-feed-simulator`, safe manifests, existing mapping-service validation, CLI commands, and standalone operations pages. All catalog and operational flags remain false by default. No real feed, connector, network request, image download, production database, Neo4j operation, secret, cloud resource, migration, or deployment was used.
