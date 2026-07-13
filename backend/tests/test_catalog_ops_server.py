@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 
 from app.catalog import ops_server
@@ -54,7 +53,8 @@ def test_temporary_database_migrates_and_overview_is_safe(monkeypatch, tmp_path)
     monkeypatch.delenv("CATALOG_WRITES_ENABLED", raising=False)
     monkeypatch.setenv("CATALOG_DATABASE_URL", f"sqlite:///{database}")
     app = ops_server.create_ops_app()
-    response = TestClient(app).get("/")
+    overview = next(route.endpoint for route in app.routes if route.path == "/")
+    response = overview()
     assert response.status_code == 200
     assert "Operations overview" in response.text
     assert str(database) not in response.text
