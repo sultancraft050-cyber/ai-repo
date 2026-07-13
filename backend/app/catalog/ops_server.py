@@ -7,6 +7,7 @@ production database, Neo4j, or an external URL.
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 import os
 import shutil
@@ -23,6 +24,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.catalog.database import CatalogDatabase
+from app.catalog.feed_mapping import FeedMappingService, MappingError
 from app.catalog.image_review import ImageReviewService
 from app.catalog.import_pipeline import CatalogImportPipeline, ImportLimits, commit_batch, read_file_bounded, stage_result
 from app.catalog.models import (
@@ -135,6 +137,7 @@ def create_ops_app() -> FastAPI:
     factory = _session_factory(url)
     app = FastAPI(title="Local Catalog Operations", docs_url=None, redoc_url=None)
     app.state.catalog_ops_url = url
+    app.state.feed_mapping_previews = {}
 
     @app.get("/", response_class=HTMLResponse)
     def overview() -> HTMLResponse:
@@ -147,6 +150,76 @@ def create_ops_app() -> FastAPI:
         body += _table(["Flag", "Value"], [[key, "enabled" if value else "disabled"] for key, value in flags.items()])
         body += "<h2>Dry-run synthetic import</h2><form method=\"post\" action=\"/imports/dry-run\"><label for=\"path\">Fixture path</label> <input id=\"path\" name=\"path\" required size=\"70\" placeholder=\"backend/tests/fixtures/catalog_import/valid_products.csv\"><label for=\"entity\">Entity type</label> <select id=\"entity\" name=\"entity_type\"><option>PRODUCT</option><option>STORE</option><option>STORE_OFFER</option><option>PRODUCT_IMAGE_METADATA</option></select><button type=\"submit\">Run dry-run</button></form>"
         return _layout("Operations overview", body)
+
+    @app.get("/feed-mappings", response_class=HTMLResponse)
+    def feed_mappings() -> HTMLResponse:
+        service = FeedMappingService()
+        templates = service.list_templates(FIXTURE_ROOT / "catalog_feed_mappings")
+        rows = [[f'<a href="/feed-mappings/{item.template_id}/{item.version}">{item.template_id}</a>', item.version, item.checksum, item.entity_type, item.data["source_type"], item.data["authorization_status"], item.data["country"], item.data["default_currency"], item.data["default_timezone"]] for item in templates]
+        body = '<p class="ok">Synthetic templates only; no feed is fetched.</p>'
+        return _layout("Feed mapping templates", body + _table(["Template", "Version", "Checksum", "Entity", "Source", "Authorization", "Country", "Currency", "Timezone"], rows))
+
+    @app.get("/feed-mappings/compare", response_class=HTMLResponse)
+    def feed_mapping_compare(first: str | None = None, second: str | None = None) -> HTMLResponse:
+        if not first or not second: return _layout("Compare feed mapping versions", "<p>Provide first and second fixture template paths.</p>")
+        try:
+            service = FeedMappingService(); result = service.compare_versions(service.load_template(_fixture_path(first)), service.load_template(_fixture_path(second)))
+            return _layout("Compare feed mapping versions", _table(["Field", "Value"], [[key, json.dumps(value) if isinstance(value, (list, dict)) else value] for key, value in result.items()]))
+        except MappingError as error:
+            raise HTTPException(400, error.code) from error
+
+    @app.get("/feed-mappings/previews/{preview_id}", response_class=HTMLResponse)
+    def feed_mapping_preview(preview_id: str) -> HTMLResponse:
+        preview = app.state.feed_mapping_previews.get(preview_id)
+        if not preview: raise HTTPException(404, "Preview not found")
+        return _layout("Feed mapping preview", f"<pre>{_safe(json.dumps(preview, sort_keys=True))}</pre>")
+
+    @app.get("/feed-mappings/{template_id}/{version}", response_class=HTMLResponse)
+    def feed_mapping_detail(template_id: str, version: str) -> HTMLResponse:
+        service = FeedMappingService()
+        templates = [item for item in service.list_templates(FIXTURE_ROOT / "catalog_feed_mappings") if item.template_id == template_id and item.version == version]
+        if not templates: raise HTTPException(404, "Template not found")
+        item = templates[0]
+        rows = [["Template ID", item.template_id], ["Version", item.version], ["Checksum", item.checksum], ["Entity", item.entity_type], ["Source type", item.data["source_type"]], ["Authorization", item.data["authorization_status"]], ["Mapped fields", ", ".join(mapping["target_field"] for mapping in item.data["field_mappings"])], ["Transforms", json.dumps(item.data["transforms"], sort_keys=True)]]
+        return _layout(f"Feed mapping {template_id} v{version}", _table(["Field", "Value"], rows))
+
+    async def _mapping_form(request: Request) -> dict[str, str]:
+        body = await request.body()
+        if len(body) > 8_192: raise HTTPException(413, "FORM_TOO_LARGE")
+        parsed = parse_qs(body.decode("utf-8", errors="strict"), keep_blank_values=True)
+        return {key: values[0] for key, values in parsed.items()}
+
+    @app.post("/feed-mappings/validate")
+    async def validate_feed_mapping(request: Request):
+        form = await _mapping_form(request)
+        try:
+            item = FeedMappingService().load_template(_fixture_path(form.get("template", "")))
+            return {"valid": True, "template_id": item.template_id, "template_version": item.version, "checksum": item.checksum}
+        except (MappingError, OSError) as error:
+            raise HTTPException(400, getattr(error, "code", "TEMPLATE_INVALID")) from error
+
+    @app.post("/feed-mappings/preview")
+    async def preview_feed_mapping(request: Request):
+        form = await _mapping_form(request)
+        try:
+            service = FeedMappingService(); item = service.load_template(_fixture_path(form.get("template", ""))); results = service.map_file(item, _fixture_path(form.get("file", "")).read_bytes())
+            preview_id = hashlib.sha256(f"{item.checksum}:{len(results)}".encode()).hexdigest()[:16]
+            payload = {"preview_id": preview_id, "template_id": item.template_id, "template_version": item.version, "checksum": item.checksum, "record_count": len(results), "validation_counts": {status: sum(result.validation_status == status for result in results) for status in sorted({result.validation_status for result in results})}, "records": [result.safe_dict() for result in results]}
+            app.state.feed_mapping_previews[preview_id] = payload
+            return payload
+        except (MappingError, OSError) as error:
+            raise HTTPException(400, getattr(error, "code", "TEMPLATE_INVALID")) from error
+
+    @app.post("/feed-mappings/stage")
+    async def stage_feed_mapping(request: Request):
+        form = await _mapping_form(request)
+        if not _enabled("CATALOG_IMPORT_ENABLED"): raise HTTPException(409, "TEMPLATE_DISABLED")
+        try:
+            service = FeedMappingService(); item = service.load_template(_fixture_path(form.get("template", ""))); results = service.map_file(item, _fixture_path(form.get("file", "")).read_bytes())
+            with factory() as session: batch = service.stage(session, item, results)
+            return {"batch_id": batch.id, "template_id": item.template_id, "template_version": item.version, "checksum": item.checksum}
+        except (MappingError, OSError) as error:
+            raise HTTPException(400, getattr(error, "code", "TEMPLATE_INVALID")) from error
 
     @app.post("/imports/dry-run")
     async def dry_run(request: Request) -> RedirectResponse:

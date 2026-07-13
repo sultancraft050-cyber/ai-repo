@@ -268,3 +268,7 @@ Approval is required for protected-data deletion, production secret changes, des
 ## Local catalog operations interface
 
 The repository now contains a standalone loopback-only local operations server in `backend/app/catalog/ops_server.py`. It is not mounted in the production FastAPI app, accepts only synthetic fixtures below `backend/tests/fixtures/`, requires explicit `CATALOG_OPS_ENABLED=true`, and rejects non-SQLite databases. It provides dry-run batch staging, safe row review, guarded idempotent local commits, metadata-only image review, duplicate inspection, and bounded local product/store/offer views. Production catalog flags remain disabled.
+
+## Authorized feed mapping templates
+
+Versioned JSON feed mappings now support synthetic product, store, offer, specification, image-metadata, and price-observation previews. `CATALOG_FEED_MAPPING_ENABLED=false` is safe-off; preview also requires the existing import flag, and staging reuses the existing import pipeline. Templates are fixture-only, checksum-versioned, authorization-gated, strict-identity, provenance-aware, and limited to a deterministic transform whitelist. No connector, network access, real feed, production database, Neo4j operation, secret, or deployment was involved.

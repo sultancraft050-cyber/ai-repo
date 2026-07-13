@@ -577,3 +577,7 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 ## 2026-07-13 — Iteration 34: Local Catalog Review and Import Operations Interface
 
 Added a manually started, SQLite-only loopback operations interface for synthetic catalog fixture dry-runs, batch and staged-row review, guarded idempotent commits, image metadata decisions, duplicate groups, and local catalog inspection. The routes live only in a standalone app and are not mounted into production. No external URL or image is fetched, and no production database, Neo4j, cloud resource, secret, or deployment was touched. Catalog operations, import, image review, and writes remain opt-in and disabled by default.
+
+## 2026-07-13 — Iteration 35: Authorized Product and Store Feed Mapping Templates
+
+Added disabled, local-only, versioned JSON mappings for synthetic product, store, offer, specification, image metadata, and price observation feeds. The service validates authorization, entity/source types, strict identity requirements, Saudi country/currency/timezone rules, unknown fields, credential-like names, deterministic transform whitelists, version checksums, and safe provenance before reusing the existing staged import pipeline. Standalone operations pages and a fixture-only CLI provide validation, preview, comparison, and guarded staging. No real feed, connector, external request, image, production database, Neo4j operation, secret, cloud resource, or deployment was used.

@@ -58,6 +58,7 @@ class Settings:
     catalog_import_enabled: bool
     catalog_image_review_enabled: bool
     catalog_ops_enabled: bool
+    catalog_feed_mapping_enabled: bool
     catalog_database_url: str | None
     auth_required: bool
     viewer_api_key: str | None
@@ -122,6 +123,7 @@ class Settings:
             catalog_import_enabled=os.getenv("CATALOG_IMPORT_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_image_review_enabled=os.getenv("CATALOG_IMAGE_REVIEW_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_ops_enabled=os.getenv("CATALOG_OPS_ENABLED", "false").lower() in {"1", "true", "yes"},
+            catalog_feed_mapping_enabled=os.getenv("CATALOG_FEED_MAPPING_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_database_url=os.getenv("CATALOG_DATABASE_URL"),
         )
 
