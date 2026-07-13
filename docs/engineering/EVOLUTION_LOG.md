@@ -548,3 +548,10 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Result: `BLOCKED_MISSING_ESSENTIAL_FACTS`; no source identifier, Aura tier/region/version/capacity verification, snapshot status, target selection/costs, budget, or approvals were supplied, so no readiness was inferred.
 - Documentation: simplified the checklist, approval record, and readiness document; optional operational details were removed from the gate.
 - Safety: documentation-only; no production query or mutation, snapshot/export/restore, target creation, secret change, deployment, traffic change, or cloud cost occurred.
+
+## 2026-07-13 — Iteration 30: Minimal Neo4j Cleanup Preparation
+
+- Objective: prepare exact technical selectors and a bounded clone-rehearsal procedure without executing cleanup.
+- Result: `READY_FOR_CLONE_CLEANUP_REHEARSAL` only; production cleanup remains prohibited.
+- Scope: 30-day timestamped operational children, terminal PricingJob records older than 90 days, AuditEvent records only after ownership resolution, and a separate non-destructive consolidation plan for non-timestamped groups.
+- Safety: added selector, protection, batch, clone identity, parity, stop-condition, and rollback documentation. No production query, mutation, snapshot/export, clone, secret, deployment, traffic change, or cloud cost occurred.

@@ -112,3 +112,11 @@ Completed 2026-07-13 with result `BLOCKED_MISSING_ESSENTIAL_FACTS`. The gate is 
 ### Following iteration prompt
 
 Read the three Neo4j migration gate documents and collect only the missing essential facts from an authorized Aura Console/billing owner. Do not create a target, snapshot, export, restore, secret version, deployment, traffic change, or migration prompt unless the result becomes `READY_TO_CREATE_ISOLATED_TARGET`.
+
+## Minimal Neo4j Cleanup Preparation
+
+Completed 2026-07-13 with result `READY_FOR_CLONE_CLEANUP_REHEARSAL` only. The selectors and clone gates are prepared, but no clone or cleanup is authorized.
+
+### Following iteration prompt
+
+Read `NEO4J_MINIMAL_CLEANUP_PLAN.md`, `NEO4J_CLEANUP_SELECTOR_CATALOG.md`, `NEO4J_CLONE_CLEANUP_CHECKLIST.md`, and the existing retention/runbook documents. Do not create a clone or run deletion. First obtain explicit authorization and a verified isolated clone identity, then run only the documented aggregate previews and stop on any protection, parity, writer, capacity, or health mismatch.

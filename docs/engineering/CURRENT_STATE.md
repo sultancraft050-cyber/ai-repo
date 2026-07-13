@@ -236,3 +236,10 @@ Approval is required for protected-data deletion, production secret changes, des
 - Gate simplification date: 2026-07-13; result `BLOCKED_MISSING_ESSENTIAL_FACTS`.
 - The gate now records only the source identifier, current provider facts, snapshot/create-from-snapshot status, selected target/cost/budget facts, purchase path, and migration/billing/deployment approvals.
 - No reliable provider values or approvals were invented. Target creation remains prohibited until every required field is supplied and approved.
+
+## Minimal Neo4j Cleanup Preparation
+
+- Cleanup-plan date: 2026-07-13; result `READY_FOR_CLONE_CLEANUP_REHEARSAL` only.
+- Added exact read-only selector catalog, protected-label/relationship checks, bounded clone-only batch design, cleanup order, clone identity gates, parity checks, stop conditions, and rollback dependencies.
+- Scope is limited to timestamped operational children, terminal PricingJob records older than 90 days, and AuditEvent records only after orphan ownership resolution. Consolidation labels remain deferred.
+- No production query, mutation, snapshot/export, clone creation, secret change, deployment, or cloud cost occurred.
