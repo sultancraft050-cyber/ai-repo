@@ -15,7 +15,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -150,9 +150,12 @@ def create_ops_app() -> FastAPI:
 
     @app.post("/imports/dry-run")
     async def dry_run(request: Request) -> RedirectResponse:
-        form = await request.form()
-        path = str(form.get("path", ""))
-        entity_type = str(form.get("entity_type", ""))
+        body = await request.body()
+        if len(body) > 8_192:
+            raise HTTPException(413, "FORM_TOO_LARGE")
+        form = parse_qs(body.decode("utf-8", errors="strict"), keep_blank_values=True)
+        path = form.get("path", [""])[0]
+        entity_type = form.get("entity_type", [""])[0]
         try:
             fixture = _fixture_path(path)
             fmt = fixture.suffix.lstrip(".").lower()
