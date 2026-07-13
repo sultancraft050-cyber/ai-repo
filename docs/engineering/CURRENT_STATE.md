@@ -230,3 +230,9 @@ Approval is required for protected-data deletion, production secret changes, des
 - The three safe-off flags remain false, but they do not disable manual/API persistence; a route-level writer freeze is required before cutover.
 - Recommended path is a larger Neo4j 5.27-compatible AuraDB Professional target, migration before cleanup, clone-rehearsed retention, and source retention for rollback. Direct purchase is preferred pending billing verification; Marketplace credits are not assumed.
 - Aura tier/region/limits/utilization, snapshot/export facts, billing, target identity, and all owner approvals remain manual gates. No target, snapshot/export, secret version, deployment, traffic change, or database mutation occurred.
+
+## Minimal Neo4j Migration Approval Gate
+
+- Gate simplification date: 2026-07-13; result `BLOCKED_MISSING_ESSENTIAL_FACTS`.
+- The gate now records only the source identifier, current provider facts, snapshot/create-from-snapshot status, selected target/cost/budget facts, purchase path, and migration/billing/deployment approvals.
+- No reliable provider values or approvals were invented. Target creation remains prohibited until every required field is supplied and approved.

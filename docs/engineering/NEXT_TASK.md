@@ -104,3 +104,11 @@ Completed 2026-07-13 with result `READY_PENDING_MANUAL_APPROVALS`. The writer ma
 ### Following iteration prompt
 
 Read `AGENTS.md`, all engineering-state files, `docs/operations/NEO4J_MIGRATION_EXECUTION_READINESS.md`, `docs/operations/NEO4J_MIGRATION_MANUAL_CHECKLIST.md`, and `docs/operations/NEO4J_MIGRATION_APPROVAL_RECORD.md`. Do not execute migration. Collect only user-supplied/manual Aura Console, billing, target-isolation, and owner-approval facts; stop on missing or conflicting provider evidence. Preserve all safe-off flags and production rollback assets.
+
+## Minimal Neo4j Migration Approval Gate
+
+Completed 2026-07-13 with result `BLOCKED_MISSING_ESSENTIAL_FACTS`. The gate is intentionally limited to the essential provider, cost, budget, snapshot, target, and three approval fields.
+
+### Following iteration prompt
+
+Read the three Neo4j migration gate documents and collect only the missing essential facts from an authorized Aura Console/billing owner. Do not create a target, snapshot, export, restore, secret version, deployment, traffic change, or migration prompt unless the result becomes `READY_TO_CREATE_ISOLATED_TARGET`.

@@ -1,22 +1,28 @@
 # Neo4j Migration Approval Record
 
-**Project:** `pc-recomendation-project`
-**Source service:** `hardware-intelligence-api`
-**Source revision:** `hardware-intelligence-api-00005-kvd`
-**Decision:** `PENDING_OWNER_APPROVAL`
+Record only the essential provider and approval facts below. Do not invent values or record credentials, connection URIs, or private account identifiers.
 
-No names, approvals, billing facts, target identity, or dates are invented here. Each owner must supply a dated written reference before execution.
+| Essential fact | Value | Status |
+|---|---|---|
+| Source database identifier | `[INSERT ONE RELIABLE INSTANCE NAME OR ID]` | REQUIRED |
+| Current Aura tier | `[INSERT]` | REQUIRED |
+| Current region | `[INSERT]` | REQUIRED |
+| Neo4j version | `[INSERT]` | REQUIRED |
+| Current nodes and verified capacity limit | `[INSERT]` | REQUIRED |
+| Latest successful snapshot | `[INSERT DATE AND STATUS]` | REQUIRED |
+| Create-from-snapshot available | `[YES / NO]` | REQUIRED |
+| Target tier or target capacity | `[INSERT]` | REQUIRED |
+| Target region | `[INSERT]` | REQUIRED |
+| Estimated monthly cost | `[INSERT]` | REQUIRED |
+| Estimated temporary overlap cost | `[INSERT]` | REQUIRED |
+| Purchase path | `[MARKETPLACE / DIRECT]` | REQUIRED |
+| Promotional credit usable | `[YES / NO / UNKNOWN]` | REQUIRED; UNKNOWN blocks |
+| Approved monthly budget | `[INSERT]` | REQUIRED |
+| Migration owner approval | `[APPROVED / PENDING]` | REQUIRED; PENDING blocks |
+| Billing approval | `[APPROVED / PENDING]` | REQUIRED; PENDING blocks |
+| Deployment approval | `[APPROVED / PENDING]` | REQUIRED; PENDING blocks |
+| Approval date | `[INSERT]` | REQUIRED |
 
-| Owner | Exact decision required | Required evidence | Blocking questions | Status | Approval reference | Date |
-|---|---|---|---|---|---|---|
-| Database owner | Approve source snapshot, target size, method, and rollback | Snapshot health, parity plan, source retention | Is restore proven and is source retained? | `PENDING_OWNER_APPROVAL` | — | — |
-| Application owner | Approve zero-difference parity and maintenance window | Search/build/readiness/price/compatibility checks | What latency tolerance and test evidence are required? | `PENDING_OWNER_APPROVAL` | — | — |
-| Governance owner | Approve writer freeze and retention boundaries | Writer map, protected-label list, audit trail | Which governance history must remain online? | `PENDING_OWNER_APPROVAL` | — | — |
-| Security/legal owner | Approve data handling, credentials, retention, and archive | Isolation proof, secret procedure, retention obligations | What legal retention/archive period applies? | `PENDING_OWNER_APPROVAL` | — | — |
-| Billing owner | Approve Marketplace/direct path and overlap budget | Console quote, credit eligibility, budget | Do credits apply to this exact SKU? | `PENDING_OWNER_APPROVAL` | — | — |
-| Deployment owner | Approve Cloud Run/Secret Manager cutover and rollback | Revision/traffic plan, numbered secret versions | What window and rollback authority apply? | `PENDING_OWNER_APPROVAL` | — | — |
-| Neo4j account owner | Approve Aura target tier, region, snapshot/export permissions | Tier, limits, version, snapshot/export facts | Which method and target capacity are contractually available? | `PENDING_OWNER_APPROVAL` | — | — |
+## Gate rule
 
-## Execution gate
-
-Execution remains prohibited until every row has an explicit approval reference and date, the manual Aura and billing checklists are complete, the isolated target identity is proven non-production, and the final parity/rollback owner signs off. Approval of this document does not authorize target creation, snapshot/export, secret changes, deployment, traffic changes, or retention.
+The result is `READY_TO_CREATE_ISOLATED_TARGET` only when every required value is supplied, all three approvals are `APPROVED`, the snapshot is recent and successful, create-from-snapshot is confirmed, and the current source remains intact for rollback. Otherwise the result is `BLOCKED_MISSING_ESSENTIAL_FACTS`.

@@ -541,3 +541,10 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Decision: `READY_PENDING_MANUAL_APPROVALS`; recommend larger AuraDB Professional, migration before cleanup, clone-rehearsed retention, and source retention for rollback. Direct versus Marketplace purchase remains a billing-owner decision.
 - Deliverables: execution-readiness plan, manual Aura/billing checklist, and approval record with parity, cutover, stop-condition, isolation, and rollback gates.
 - Safety: repository-only inspection; no production query, mutation, snapshot/export, target creation, secret change, cloud cost, deployment, or traffic change occurred.
+
+## 2026-07-13 — Iteration 29: Minimal Neo4j Migration Approval Gate
+
+- Objective: reduce target-creation readiness to essential provider and approval facts only.
+- Result: `BLOCKED_MISSING_ESSENTIAL_FACTS`; no source identifier, Aura tier/region/version/capacity verification, snapshot status, target selection/costs, budget, or approvals were supplied, so no readiness was inferred.
+- Documentation: simplified the checklist, approval record, and readiness document; optional operational details were removed from the gate.
+- Safety: documentation-only; no production query or mutation, snapshot/export/restore, target creation, secret change, deployment, traffic change, or cloud cost occurred.
