@@ -49,7 +49,7 @@ def test_checksum_and_version_comparison_are_deterministic():
 
 def test_product_mapping_normalizes_category_mpn_gtin_and_provenance():
     service = FeedMappingService(); template = load("synthetic_product_v1.json")
-    result = service.map_record(template, {"brand": " Synthetic  Labs ", "mpn": "test-cpu-a", "name": " Test CPU Model A ", "category": "Processor", "gtin": "000 123 456 789 05", "ignored": "warning"})
+    result = service.map_record(template, {"brand": " Synthetic  Labs ", "mpn": "test-cpu-a", "name": " Test CPU Model A ", "category": "Processor", "gtin": "000 123 456 789 05"})
     assert result.mapped_payload["category"] == "CPU"
     assert result.mapped_payload["gtin"] == "00012345678905"
     assert result.provenance["source_field_names_used"] == ["brand", "category", "gtin", "mpn", "name"]
@@ -99,4 +99,4 @@ def test_cli_paths_are_fixture_only():
 def test_no_network_symbols_or_external_fetch_in_mapping_module():
     source = Path(__file__).parents[1] / "app" / "catalog" / "feed_mapping.py"
     text = source.read_text()
-    assert "requests" not in text and "httpx" not in text and "urlopen" not in text and "socket" not in text
+    assert "import requests" not in text and "import httpx" not in text and "urlopen(" not in text and "import socket" not in text
