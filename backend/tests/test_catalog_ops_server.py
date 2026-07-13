@@ -63,7 +63,7 @@ def test_temporary_database_migrates_and_overview_is_safe(monkeypatch, tmp_path)
 
 
 def test_standalone_routes_are_not_mounted_in_production_app():
-    production_paths = {route.path for route in production_app.routes}
+    production_paths = {route.path for route in production_app.routes if hasattr(route, "path")}
     assert "/imports/dry-run" not in production_paths
     assert not any(path.startswith("/batches/") for path in production_paths)
     assert not any(path.startswith("/images/pending") for path in production_paths)

@@ -278,7 +278,7 @@ def create_ops_app() -> FastAPI:
             except (ValueError, RuntimeError) as exc: raise HTTPException(409, str(exc).split(":", 1)[0]) from exc
         return RedirectResponse("/images/pending", status_code=303)
 
-    for method, path, decision in (("approve", "APPROVE"), ("reject", "REJECT"), ("approve-primary", "APPROVE_PRIMARY"), ("expire-rights", "EXPIRE_RIGHTS"), ("remove-primary", "REMOVE_PRIMARY"), ("request-changes", "REQUEST_CHANGES"), ("mark-duplicate", "MARK_DUPLICATE")):
+    for method, decision in (("approve", "APPROVE"), ("reject", "REJECT"), ("approve-primary", "APPROVE_PRIMARY"), ("expire-rights", "EXPIRE_RIGHTS"), ("remove-primary", "REMOVE_PRIMARY"), ("request-changes", "REQUEST_CHANGES"), ("mark-duplicate", "MARK_DUPLICATE")):
         app.add_api_route(f"/images/{{image_id}}/{method}", lambda image_id, _decision=decision: _image_decision(image_id, _decision), methods=["POST"])
 
     @app.get("/images/duplicates", response_class=HTMLResponse)
