@@ -60,6 +60,7 @@ class Settings:
     catalog_ops_enabled: bool
     catalog_feed_mapping_enabled: bool
     catalog_feed_simulator_enabled: bool
+    replay_failure_harness_enabled: bool
     catalog_database_url: str | None
     auth_required: bool
     viewer_api_key: str | None
@@ -126,6 +127,7 @@ class Settings:
             catalog_ops_enabled=os.getenv("CATALOG_OPS_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_feed_mapping_enabled=os.getenv("CATALOG_FEED_MAPPING_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_feed_simulator_enabled=os.getenv("CATALOG_FEED_SIMULATOR_ENABLED", "false").lower() in {"1", "true", "yes"},
+            replay_failure_harness_enabled=os.getenv("REPLAY_FAILURE_HARNESS_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_database_url=os.getenv("CATALOG_DATABASE_URL"),
         )
 

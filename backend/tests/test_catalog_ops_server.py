@@ -83,5 +83,14 @@ def test_simulator_routes_are_standalone_and_not_public(monkeypatch, tmp_path):
     assert "/feed-simulator/preview" in local_paths
     assert "/feed-simulator/stage" in local_paths
     assert "/feed-simulator/runs/{run_id}/clean" in local_paths
+    assert "/replay-harness" in local_paths
+    assert "/replay-harness/scenarios" in local_paths
+    assert "/replay-harness/runs" in local_paths
+    assert "/replay-harness/runs/{run_id}" in local_paths
+    assert "/replay-harness/compare" in local_paths
+    assert "/replay-harness/run" in local_paths
+    assert "/replay-harness/retry" in local_paths
+    assert "/replay-harness/replay" in local_paths
+    assert "/replay-harness/runs/{run_id}/clean" in local_paths
     production_paths = {route.path for route in production_app.routes if hasattr(route, "path")}
     assert "/feed-simulator" not in production_paths

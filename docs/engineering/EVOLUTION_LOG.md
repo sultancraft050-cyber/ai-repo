@@ -585,3 +585,7 @@ Added disabled, local-only, versioned JSON mappings for synthetic product, store
 ## 2026-07-13 — Iteration 36: Synthetic Authorized Feed Adapter Simulator
 
 Added a disabled, local-only simulator with repository JSON adapter/scenario definitions, deterministic timestamp-anchored synthetic records, strict mutation enums, bounded CSV/JSON output under `/tmp/catalog-feed-simulator`, safe manifests, existing mapping-service validation, CLI commands, and standalone operations pages. All catalog and operational flags remain false by default. No real feed, connector, network request, image download, production database, Neo4j operation, secret, cloud resource, migration, or deployment was used.
+
+## 2026-07-13 — Iteration 37: Synthetic Feed Replay and Failure-Injection Harness
+
+Added a disabled local replay harness with explicit failure-point/mode enums, bounded retry, deterministic evidence manifests, state summaries/checksums, replay/retry/compare CLI commands, local operations pages, and synthetic scenario definitions. It reuses the simulator, mapping, staging, review, and guarded commit services without adding a second import or commit path. No real feed, external request, production database, Neo4j operation, secret, cloud resource, or deployment was used.

@@ -1,0 +1,1 @@
+{"scenario_id":"partial-full-retry","scenario_version":"1.0.0","simulator_scenario":"partial-feed-interruption","expected_result":"clean-run equivalent"}

@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.catalog.database import CatalogDatabase
 from app.catalog.feed_mapping import FeedMappingService, MappingError
 from app.catalog.feed_simulator import SimulatorError, clean_run, generate as generate_simulation, list_adapters, list_runs, list_scenarios, preview as preview_simulation, read_manifest, stage_run
+from app.catalog.replay_harness import HarnessError, clean_run as clean_replay_run, compare as compare_replay, list_scenarios as list_replay_scenarios, replay as replay_runs, retry as retry_replay, run as run_replay, show_manifest as show_replay_manifest
 from app.catalog.image_review import ImageReviewService
 from app.catalog.import_pipeline import CatalogImportPipeline, ImportLimits, commit_batch, read_file_bounded, stage_result
 from app.catalog.models import (
@@ -96,7 +97,7 @@ def _status(value: Any) -> str:
 def _layout(title: str, body: str) -> HTMLResponse:
     nav = """<nav aria-label="Operations navigation">
       <a href="/">Overview</a><a href="/batches">Batches</a>
-      <a href="/images/pending">Image queue</a><a href="/images/duplicates">Duplicates</a><a href="/feed-simulator">Feed simulator</a>
+      <a href="/images/pending">Image queue</a><a href="/images/duplicates">Duplicates</a><a href="/feed-simulator">Feed simulator</a><a href="/replay-harness">Replay harness</a>
       <a href="/catalog/products">Products</a><a href="/catalog/stores">Stores</a><a href="/catalog/offers">Offers</a>
     </nav>"""
     return HTMLResponse(f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -224,6 +225,62 @@ def create_ops_app() -> FastAPI:
     async def feed_simulator_clean(run_id: str):
         try: clean_run(run_id); return {"cleaned": run_id}
         except SimulatorError as error: raise HTTPException(404, error.code) from error
+
+    @app.get("/replay-harness", response_class=HTMLResponse)
+    def replay_harness() -> HTMLResponse:
+        enabled = _enabled("REPLAY_FAILURE_HARNESS_ENABLED")
+        return _layout("Replay and failure harness", f'<p class="ok">Synthetic local replay only; harness is {"enabled" if enabled else "disabled"}.</p><p>Use the CLI for bounded scenario execution and evidence.</p>')
+
+    @app.get("/replay-harness/scenarios", response_class=HTMLResponse)
+    def replay_harness_scenarios() -> HTMLResponse:
+        rows = [[item.get("scenario_id"), item.get("simulator_scenario"), item.get("expected_result")] for item in list_replay_scenarios()]
+        return _layout("Replay scenarios", _table(["Scenario", "Simulator scenario", "Expected result"], rows))
+
+    @app.get("/replay-harness/runs", response_class=HTMLResponse)
+    def replay_harness_runs() -> HTMLResponse:
+        return _layout("Replay runs", "<p>Run manifests are stored only under the local temporary evidence directory.</p>")
+
+    @app.get("/replay-harness/runs/{run_id}", response_class=HTMLResponse)
+    def replay_harness_run(run_id: str) -> HTMLResponse:
+        try: return _layout("Replay run", _table(["Field", "Value"], [[key, value] for key, value in show_replay_manifest(run_id).items()]))
+        except HarnessError as error: raise HTTPException(404, error.code) from error
+
+    @app.get("/replay-harness/compare", response_class=HTMLResponse)
+    def replay_harness_compare(first: str | None = None, second: str | None = None) -> HTMLResponse:
+        if not first or not second: return _layout("Compare replay runs", "<p>Provide first and second run IDs.</p>")
+        try: return _layout("Compare replay runs", _table(["Field", "Value"], [[key, value] for key, value in compare_replay(first, second).items()]))
+        except HarnessError as error: raise HTTPException(404, error.code) from error
+
+    @app.post("/replay-harness/run")
+    async def replay_harness_run_action(request: Request):
+        form = await _mapping_form(request)
+        try:
+            result = run_replay(scenario_id=form.get("scenario", "exact-replay"), database_url=app.state.catalog_ops_url, seed=int(form.get("seed", "20260713")), timestamp_anchor=form.get("timestamp_anchor", "2026-07-13T09:00:00+03:00"), failure_point=form.get("failure_point"), failure_mode=form.get("failure_mode"))
+            return result.manifest
+        except (HarnessError, ValueError) as error: raise HTTPException(400, getattr(error, "code", "HARNESS_DISABLED")) from error
+
+    @app.post("/replay-harness/retry")
+    async def replay_harness_retry_action(request: Request):
+        form = await _mapping_form(request)
+        try: return retry_replay(form.get("run_id", ""), database_url=app.state.catalog_ops_url, retry_count=int(form.get("retry_count", "1"))).manifest
+        except (HarnessError, ValueError) as error: raise HTTPException(400, getattr(error, "code", "HARNESS_DISABLED")) from error
+
+    @app.post("/replay-harness/replay")
+    async def replay_harness_replay_action(request: Request):
+        form = await _mapping_form(request)
+        try: return [item.manifest for item in replay_runs(scenario_id=form.get("scenario", "exact-replay"), database_url=app.state.catalog_ops_url, seed=int(form.get("seed", "20260713")), timestamp_anchor=form.get("timestamp_anchor", "2026-07-13T09:00:00+03:00"))]
+        except (HarnessError, ValueError) as error: raise HTTPException(400, getattr(error, "code", "HARNESS_DISABLED")) from error
+
+    @app.post("/replay-harness/compare")
+    async def replay_harness_compare_action(request: Request):
+        form = await _mapping_form(request)
+        try: return compare_replay(form.get("first", ""), form.get("second", ""))
+        except HarnessError as error: raise HTTPException(400, error.code) from error
+
+    @app.post("/replay-harness/runs/{run_id}/clean")
+    async def replay_harness_clean_action(run_id: str):
+        try: clean_replay_run(run_id); return {"cleaned": run_id}
+        except HarnessError as error: raise HTTPException(404, error.code) from error
 
     @app.get("/feed-mappings/compare", response_class=HTMLResponse)
     def feed_mapping_compare(first: str | None = None, second: str | None = None) -> HTMLResponse:

@@ -1,0 +1,1 @@
+{"scenario_id":"price-replay","scenario_version":"1.0.0","simulator_scenario":"price-and-stock-update","expected_result":"append-only price replay"}

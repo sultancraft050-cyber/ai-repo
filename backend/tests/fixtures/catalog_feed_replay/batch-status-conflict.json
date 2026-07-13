@@ -1,0 +1,1 @@
+{"scenario_id":"batch-status-conflict","scenario_version":"1.0.0","simulator_scenario":"initial-catalog-load","expected_result":"invalid lifecycle transition blocked"}

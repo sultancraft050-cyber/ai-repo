@@ -1,0 +1,1 @@
+{"scenario_id":"malformed-retry","scenario_version":"1.0.0","simulator_scenario":"malformed-record-set","expected_result":"corrected retry creates separate batch"}

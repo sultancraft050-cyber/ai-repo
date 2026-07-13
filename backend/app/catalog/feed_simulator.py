@@ -308,8 +308,11 @@ def stage_run(run: SimulationRun, database_url: str) -> dict[str, Any]:
         batch = FeedMappingService().stage(session, template, results)
         source = session.scalar(select(ImportSource).where(ImportSource.id == batch.source_id))
         if source is not None:
-            source.name = f"simulator:{run.run_id}:{adapter.adapter_id}:{run.manifest['scenario_id']}:{run.manifest['deterministic_seed']}:{template.version}:{template.checksum}"[:200]
-            session.commit()
+            provenance_name = f"simulator:{run.run_id}:{adapter.adapter_id}:{run.manifest['scenario_id']}:{run.manifest['deterministic_seed']}:{template.version}:{template.checksum}"[:200]
+            existing = session.scalar(select(ImportSource).where(ImportSource.name == provenance_name))
+            if existing is None or existing.id == source.id:
+                source.name = provenance_name
+                session.commit()
         return {"run_id": run.run_id, "batch_id": batch.id, "status": batch.status, "received_count": batch.received_count, "staged_count": batch.staged_count, "committed_count": batch.committed_count, "automatic_commit": False}
 
 

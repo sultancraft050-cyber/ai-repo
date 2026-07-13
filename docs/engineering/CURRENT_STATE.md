@@ -279,3 +279,9 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Repository JSON adapters/scenarios generate bounded deterministic synthetic CSV/JSON files only below `/tmp/catalog-feed-simulator`; strict enum mutations cover initial, incremental, price/stock, duplicate, conflict, malformed, stale, image-review, and interrupted-feed cases.
 - Every generated record set passes through the existing mapping service. Optional staging remains local-SQLite-only through existing import safeguards; the simulator has no catalog commit command and adds no production route.
 - No real feed, external request, image download, production database, Neo4j operation, cloud resource, secret change, or deployment occurred.
+
+## Synthetic feed replay and failure-injection harness
+
+- Implementation date: 2026-07-13; `REPLAY_FAILURE_HARNESS_ENABLED=false` is the default and requires the simulator, mapping, import, and explicit local SQLite flags.
+- Added deterministic replay evidence under `/tmp/catalog-feed-replay/<run_id>/`, explicit failure-point/mode enums, bounded retry, state summaries/checksums, and local operations/CLI orchestration around existing simulator, mapping, staging, review, and commit services.
+- No second import or commit implementation was added. No real feed, external service, production database, Neo4j operation, secret change, cloud resource, or deployment occurred.
