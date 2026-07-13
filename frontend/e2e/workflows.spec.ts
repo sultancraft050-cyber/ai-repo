@@ -52,6 +52,35 @@ test("manual builder renders missing price and vendor safely", async ({ page }) 
   await expect(page.locator("body")).not.toContainText(/undefined|null|NaN/);
 });
 
+test("product images use safe URLs, stable frames, category placeholders and one-shot failure fallback", async ({ page }) => {
+  await mockCommon(page);
+  await page.route("**/products/search?*category=CPU*", (route) => route.fulfill({ json: [product("CPU", "external", { image_url: "https://cdn.example.test/cpu.jpg" })] }));
+  await page.route("**/products/search?*category=GPU*", (route) => route.fulfill({ json: [product("GPU", "local", { image_url: "/fixture-image.svg" })] }));
+  await page.route("**/products/search?*category=RAM*", (route) => route.fulfill({ json: [product("RAM", "bad", { image_url: "javascript:alert(1)" })] }));
+  await page.route("**/cdn.example.test/**", (route) => route.fulfill({ status: 200, contentType: "image/svg+xml", body: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'><rect width='2' height='2' fill='red'/></svg>" }));
+  await page.route("**/fixture-image.svg", (route) => route.fulfill({ status: 200, contentType: "image/svg+xml", body: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2'><rect width='2' height='2' fill='blue'/></svg>" }));
+  await page.goto("/build/manual");
+
+  await page.getByRole("button", { name: "Add CPU" }).click();
+  const cpuImage = page.getByRole("dialog").getByTestId("product-image").first();
+  await expect(cpuImage).toHaveAttribute("data-image-state", "image");
+  await expect(cpuImage.locator("img")).toHaveAttribute("alt", /Fixture CPU external CPU image/);
+  await expect(cpuImage.locator("img")).toHaveAttribute("loading", "lazy");
+  await expect(cpuImage).toHaveCSS("aspect-ratio", "320 / 160");
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: "Add GPU" }).click();
+  await expect(page.getByRole("dialog").getByTestId("product-image").first().locator("img")).toHaveAttribute("src", /fixture-image\.svg/);
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: "Add RAM" }).click();
+  const ramImage = page.getByRole("dialog").getByTestId("product-image").first();
+  await expect(ramImage).toHaveAttribute("data-image-state", "placeholder");
+  await expect(ramImage).toHaveAttribute("data-image-category", "RAM");
+  await expect(ramImage.locator('[role="img"]')).toHaveAttribute("aria-label", /Fixture RAM bad RAM placeholder/);
+  await page.getByRole("button", { name: "Close" }).click();
+});
+
 test.describe("manual builder pagination edge cases", () => {
   for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024 }, { width: 390, height: 844 }]) {
     test(`loads deterministic second page without duplicates at ${viewport.width}px`, async ({ page }) => {

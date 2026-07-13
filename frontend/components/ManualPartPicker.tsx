@@ -18,6 +18,7 @@ import {
 import { CalmNotice, IconButton, StateBadge, cx, focusRing, interactiveButton, motionSafeSpin } from "@/components/ui/PublicUi";
 import { searchProducts, validateAndMeasure } from "@/lib/api";
 import { summarizeBuyerNotes } from "@/lib/uiText";
+import { ProductImage } from "@/components/ProductImage";
 import {
   componentOrder,
   selectionKeyByKind,
@@ -477,7 +478,6 @@ function PartRow({
 }) {
   const price = selected ? bestSarPrice(selected) : null;
   const state = selected ? productCatalogState(selected) : null;
-  const imageUrl = selected?.processed_image_url || selected?.image_url;
 
   return (
     <div className="grid min-h-[70px] grid-cols-1 items-center gap-3 border-b border-slate-800 px-3 py-3 last:border-b-0 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
@@ -490,10 +490,15 @@ function PartRow({
       <div className="min-w-0">
         {selected ? (
           <div className="flex min-w-0 items-center gap-3">
-            {imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imageUrl} alt="" className="hidden h-12 w-16 rounded border border-slate-700 bg-white object-contain sm:block" />
-            ) : null}
+            <ProductImage
+              imageUrl={selected?.processed_image_url || selected?.image_url}
+              productName={displayProductName(selected)}
+              category={kind}
+              width={64}
+              height={48}
+              variant="build-summary"
+              className="hidden shrink-0 border border-slate-700 sm:grid"
+            />
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-white">{displayProductName(selected)}</div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
@@ -993,26 +998,16 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
 
 function ProductArtwork({ product, productName }: { product: ProductSearchResult; productName: string }) {
   const category = String(product.category);
-  const imageUrl = product.processed_image_url || product.image_url;
-  if (imageUrl) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={imageUrl} alt={productName} className="h-full max-h-full w-full max-w-full object-contain" />
-    );
-  }
-
-  const brand = englishText(product.brand) || brandFromName(productName) || "Product";
-  const model = shortModelName(productName, category);
   return (
-    <div className="grid h-full w-full place-items-center rounded-md bg-slate-50 p-4 text-center">
-      <div>
-        <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-lg border border-slate-200 bg-white text-sm font-black uppercase text-slate-700 shadow-sm">
-          {category.slice(0, 3)}
-        </div>
-        <div className="text-xs font-bold uppercase tracking-wide text-slate-900">{brand}</div>
-        <div className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-slate-500">{model}</div>
-      </div>
-    </div>
+    <ProductImage
+      imageUrl={product.processed_image_url || product.image_url}
+      productName={productName}
+      category={category}
+      width={320}
+      height={160}
+      variant="card"
+      className="max-w-full"
+    />
   );
 }
 
@@ -1263,11 +1258,6 @@ function tbOrGbSpec(tb: unknown, gb: unknown): string {
   return gbSpec(gb);
 }
 
-function brandFromName(name: string): string {
-  const match = name.match(/\b(AMD|Intel|NVIDIA|ASUS|MSI|Gigabyte|Corsair|Kingston|Samsung|WD|Crucial|DeepCool|NZXT|Seasonic)\b/i);
-  return match?.[1] ?? "";
-}
-
 function productModelKey(name: string): string {
   const match =
     name.match(/\bRyzen\s+\d\s+\d{4}[A-Z0-9]*\b/i) ??
@@ -1275,20 +1265,6 @@ function productModelKey(name: string): string {
     name.match(/\bRTX\s+\d{4}(?:\s+SUPER|\s+Ti)?\b/i) ??
     name.match(/\bRX\s+\d{4}\s?XT\b/i);
   return match?.[0]?.replace(/\s+/g, "_").toUpperCase() ?? "";
-}
-
-function shortModelName(name: string, category: string): string {
-  const cleaned = englishText(name);
-  const words = cleaned.split(" ").filter(Boolean);
-  if (category === "CPU") {
-    const match = cleaned.match(/\b(?:Ryzen|Core)\s+\d?\s*[A-Za-z0-9-]+\b/i);
-    if (match?.[0]) return match[0].replace(/\s+/g, " ");
-  }
-  if (category === "GPU") {
-    const match = cleaned.match(/\b(?:RTX|RX)\s+\d{4}(?:\s+SUPER|\s+Ti|\s+XT)?\b/i);
-    if (match?.[0]) return match[0].replace(/\s+/g, " ");
-  }
-  return words.slice(0, 4).join(" ") || category;
 }
 
 function bestSarPrice(product: ProductSearchResult): { amount: number; vendor?: string } | null {

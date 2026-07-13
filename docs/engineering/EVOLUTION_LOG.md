@@ -525,3 +525,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - One guarded production initial load completed with zero blocked POST/PUT/PATCH/DELETE and zero non-GET/HEAD requests reaching production.
 - Historical four-POST attribution remains unresolved; homepage `/analytics/events` remains a plausible static source only. No harmlessness or Neo4j effect was inferred.
 - Theme, drawer, manual, generated, shared-build, reduced-motion, and full route interactions were not verified in recovery. No additional production request occurred.
+
+## 2026-07-13 — Iteration 27: Product Image Rendering Reliability
+
+- Objective: standardize visible product imagery without changing product records, API contracts, or selection behavior.
+- Audit: the only active product-image renderers were the manual picker card artwork and selected-part summary row; generated/shared/saved/comparison contexts currently expose no image renderers.
+- Implementation: added the strict `ProductImage` component with card, build-summary, and detail variants, explicit dimensions, contain fitting, category-aware local SVG placeholders, safe URL handling, accessible descriptions, and one-shot failure fallback.
+- Tests: added synthetic Playwright coverage for approved external/local URLs, missing/unsafe URLs, stable frames, lazy loading, category placeholders, and fallback behavior. Existing workflow and axe suites remain fixture-backed.
+- Safety: no production navigation, production write, image download, Neo4j operation, secret change, cloud-resource creation, or deployment occurred.

@@ -214,3 +214,11 @@ Workers and CPU seeding may be enabled intentionally through environment configu
 ## Approval Boundaries
 
 Approval is required for protected-data deletion, production secret changes, destructive migrations, ambiguous identity merges, trusted-source conflict resolution, autonomous graph mutation, and recommendation-governance changes.
+
+## Product Image Rendering Reliability
+
+- Implementation date: 2026-07-13.
+- Added `frontend/components/ProductImage.tsx` as the shared, strict-typed renderer for the selected-part summary and manual picker cards.
+- Frames have explicit dimensions, stable aspect ratios, centered `object-contain` fitting, lazy loading by default, category-aware local SVG placeholders, safe URL validation, and one-shot load failure fallback.
+- Deterministic fixture coverage exercises approved external/local URLs, missing and unsafe URLs, placeholders, alt text, stable sizing, and fallback behavior. No API, product data, image download, Neo4j, secret, or deployment change occurred.
+- Generated/shared/saved/comparison contexts currently do not render product images; they remain deferred until their contracts expose image fields.

@@ -88,3 +88,11 @@ Low to medium; read-only query performance work.
 ### Following iteration prompt
 
 Read `AGENTS.md`, all engineering-state files, `docs/operations/NEO4J_RETENTION_APPROVAL_PACKAGE.md`, and `docs/operations/NEO4J_CLONE_REHEARSAL_RUNBOOK.md`. Do not execute rehearsal until the user supplies dated approvals for every owner, completed Aura snapshot/readiness checks, `MANUAL_BILLING_VERIFICATION_REQUIRED` outcomes, and an isolated clone identity/capacity/URI fingerprint with proof it is not production. Once supplied, validate prerequisites and report any blockers before running even read-only clone previews. Never mutate the production source, change secrets, or deploy. Preserve all safe-off flags.
+
+## Product Image Rendering Reliability
+
+Completed 2026-07-13. Product imagery is centralized in `ProductImage`, with deterministic local fixture coverage and no production or data impact. The next standalone task is relational catalog execution design or Neo4j migration preparation; do not import images or execute a migration without approvals.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, all engineering-state files, and `docs/operations/PRODUCT_IMAGE_RENDERING_IMPLEMENTATION.md`. Choose one bounded planning task: relational catalog execution design or Neo4j migration preparation. Keep production data, Neo4j, secrets, image downloads, Cloud Run/Vercel, and all write requests out of scope until explicit approvals are supplied.

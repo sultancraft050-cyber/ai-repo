@@ -24,6 +24,8 @@ export function product(category: string, suffix = "001", overrides: Record<stri
     region_currency: "SAR",
     stale: false,
     best_value: suffix === "001",
+    image_url: null,
+    processed_image_url: null,
     ...overrides,
   };
 }
