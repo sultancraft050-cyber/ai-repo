@@ -533,3 +533,11 @@ No shared-build URL was supplied, so that optional route remains unverified. Bac
 - Implementation: added the strict `ProductImage` component with card, build-summary, and detail variants, explicit dimensions, contain fitting, category-aware local SVG placeholders, safe URL handling, accessible descriptions, and one-shot failure fallback.
 - Tests: added synthetic Playwright coverage for approved external/local URLs, missing/unsafe URLs, stable frames, lazy loading, category placeholders, and fallback behavior. Existing workflow and axe suites remain fixture-backed.
 - Safety: no production navigation, production write, image download, Neo4j operation, secret change, cloud-resource creation, or deployment occurred.
+
+## 2026-07-13 — Iteration 28: Neo4j Migration Execution Readiness
+
+- Objective: prepare an evidence-backed migration-readiness package without creating a target or touching production data.
+- Audit: mapped 18 Neo4j writer families across startup, workers, schedulers, protected/API persistence, analytics, imports, user builds, telemetry, cognition, governance, evolution, alignment, autonomy, and ops/audit paths. Background scheduler/agent/startup-seed flags remain false, but manual/API writers require an explicit freeze.
+- Decision: `READY_PENDING_MANUAL_APPROVALS`; recommend larger AuraDB Professional, migration before cleanup, clone-rehearsed retention, and source retention for rollback. Direct versus Marketplace purchase remains a billing-owner decision.
+- Deliverables: execution-readiness plan, manual Aura/billing checklist, and approval record with parity, cutover, stop-condition, isolation, and rollback gates.
+- Safety: repository-only inspection; no production query, mutation, snapshot/export, target creation, secret change, cloud cost, deployment, or traffic change occurred.

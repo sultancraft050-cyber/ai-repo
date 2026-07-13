@@ -222,3 +222,11 @@ Approval is required for protected-data deletion, production secret changes, des
 - Frames have explicit dimensions, stable aspect ratios, centered `object-contain` fitting, lazy loading by default, category-aware local SVG placeholders, safe URL validation, and one-shot load failure fallback.
 - Deterministic fixture coverage exercises approved external/local URLs, missing and unsafe URLs, placeholders, alt text, stable sizing, and fallback behavior. No API, product data, image download, Neo4j, secret, or deployment change occurred.
 - Generated/shared/saved/comparison contexts currently do not render product images; they remain deferred until their contracts expose image fields.
+
+## Neo4j Migration Execution Readiness
+
+- Readiness package date: 2026-07-13; result `READY_PENDING_MANUAL_APPROVALS`.
+- Repository-only audit mapped 18 Neo4j writer families, including startup schema/default-agent writes, always-started pricing/cognition workers, manual/API persistence routes, analytics/feedback, catalog/imports, user builds/watchlists, telemetry, and ops/audit records.
+- The three safe-off flags remain false, but they do not disable manual/API persistence; a route-level writer freeze is required before cutover.
+- Recommended path is a larger Neo4j 5.27-compatible AuraDB Professional target, migration before cleanup, clone-rehearsed retention, and source retention for rollback. Direct purchase is preferred pending billing verification; Marketplace credits are not assumed.
+- Aura tier/region/limits/utilization, snapshot/export facts, billing, target identity, and all owner approvals remain manual gates. No target, snapshot/export, secret version, deployment, traffic change, or database mutation occurred.

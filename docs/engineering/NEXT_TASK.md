@@ -96,3 +96,11 @@ Completed 2026-07-13. Product imagery is centralized in `ProductImage`, with det
 ### Following iteration prompt
 
 Read `AGENTS.md`, all engineering-state files, and `docs/operations/PRODUCT_IMAGE_RENDERING_IMPLEMENTATION.md`. Choose one bounded planning task: relational catalog execution design or Neo4j migration preparation. Keep production data, Neo4j, secrets, image downloads, Cloud Run/Vercel, and all write requests out of scope until explicit approvals are supplied.
+
+## Neo4j Migration Execution Readiness
+
+Completed 2026-07-13 with result `READY_PENDING_MANUAL_APPROVALS`. The writer map, provider checklist, parity manifest, cutover sequence, stop conditions, isolation requirements, and rollback plan are documented. No target or migration execution is authorized.
+
+### Following iteration prompt
+
+Read `AGENTS.md`, all engineering-state files, `docs/operations/NEO4J_MIGRATION_EXECUTION_READINESS.md`, `docs/operations/NEO4J_MIGRATION_MANUAL_CHECKLIST.md`, and `docs/operations/NEO4J_MIGRATION_APPROVAL_RECORD.md`. Do not execute migration. Collect only user-supplied/manual Aura Console, billing, target-isolation, and owner-approval facts; stop on missing or conflicting provider evidence. Preserve all safe-off flags and production rollback assets.
