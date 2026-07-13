@@ -55,10 +55,11 @@ def test_temporary_database_migrates_and_overview_is_safe(monkeypatch, tmp_path)
     app = ops_server.create_ops_app()
     overview = next(route.endpoint for route in app.routes if route.path == "/")
     response = overview()
+    content = response.body.decode("utf-8")
     assert response.status_code == 200
-    assert "Operations overview" in response.text
-    assert str(database) not in response.text
-    assert "No records" not in response.text
+    assert "Operations overview" in content
+    assert str(database) not in content
+    assert "No records" not in content
     assert "catalog_import_batches" in inspect(ops_server._local_engine(f"sqlite:///{database}")).get_table_names()
 
 
