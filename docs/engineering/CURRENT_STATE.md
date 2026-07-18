@@ -314,3 +314,17 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Schema Migration: Executed Alembic head migrations via proxy tunnel port 5433, confirming all catalog tables exist and counts begin at 0.
 - Synthetic Verification: Created `cloud_sql_verification_cli.py` to insert and clean up synthetic data, verifying database constraints, cheapest price observation, and dependencies without Neo4j operations or GCS uploads.
 - Verification Status: `SYNTHETIC_CLOUD_SQL_VERIFICATION_PASSED` confirmed. Row counts returned to baseline cleanly.
+
+## BuildCores OpenDB Bounded Import into Cloud SQL
+
+- Import date: 2026-07-18; commit `784f6c2b5988bf5a7e94bd2121f9d56521386dd9` of BuildCores OpenDB.
+- License: ODC-By 1.0. Attribution file created at `docs/third-party/BUILDCORES_OPENDB_ATTRIBUTION.md`.
+- Pre-import backup ID: `1784401199081` (SUCCESSFUL).
+- Implemented `buildcores_import_cli.py` (new Cloud SQL–aware CLI with dry-run, import, idempotency, and verify commands).
+- Dry-run: 25,699 files discovered, 280 records selected, 0 duplicates, 0 price/offer/image data — PASSED.
+- Import: 280 products and 1,562 specifications inserted across CPU(40), GPU(40), MOTHERBOARD(40), RAM(40), STORAGE(40), PSU(30), CASE(30), COOLER(20).
+- Verification: 0 store offers, 0 price history, 0 images, 0 duplicate GTINs, 0 duplicate brand+MPN — PASSED.
+- Idempotency: 280 scanned, 0 would insert — PASSED.
+- Tests: 442 backend pytest passing (41 new tests in `test_buildcores_import_cli.py`).
+- Safety: No Neo4j modification, no Cloud Run deployment, no traffic change, no price/image/offer data, no secrets exposed.
+
