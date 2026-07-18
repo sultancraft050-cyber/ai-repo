@@ -166,3 +166,23 @@ def test_production_route_list_unchanged():
                     public_catalog_writes.append((path, m))
                     
     assert len(public_catalog_writes) == 0, f"Found public catalog write routes: {public_catalog_writes}"
+
+
+def test_cloud_sql_verification_cli_guards(monkeypatch):
+    from app.catalog.cloud_sql_verification_cli import main
+    monkeypatch.setenv("CATALOG_CLOUD_VERIFICATION_ENABLED", "false")
+    with pytest.raises(SystemExit):
+        main()
+
+    monkeypatch.setenv("CATALOG_CLOUD_VERIFICATION_ENABLED", "true")
+    monkeypatch.setenv("CATALOG_DATABASE_URL", "sqlite:///:memory:")
+    with pytest.raises(SystemExit):
+        main()
+
+    monkeypatch.setenv("CATALOG_DATABASE_URL", "postgresql://user:pw@127.0.0.1/other_db")
+    with pytest.raises(SystemExit):
+        main()
+
+    monkeypatch.setenv("CATALOG_DATABASE_URL", "postgresql://user:pw@localhost/catalog")
+    with pytest.raises(SystemExit):
+        main()

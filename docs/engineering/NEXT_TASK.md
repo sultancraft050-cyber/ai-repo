@@ -160,8 +160,8 @@ Build a local-only, read/write-guarded operations interface for reviewing staged
 Read `AGENTS.md`, all engineering-state files, `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md`, `docs/operations/PRODUCT_CATALOG_IMPORT_PIPELINE.md`, and `docs/operations/PRODUCT_IMAGE_METADATA_REVIEW_PIPELINE.md`. Implement one local Catalog Review and Import Operations Interface using synthetic fixtures and ephemeral SQLite. Do not expose public write endpoints, enable production flags, connect production databases, mutate Neo4j, download images, change secrets, create cloud resources, or deploy.
 ## Next task
 
-Run Cloud SQL Schema Migration and Synthetic Verification
+BuildCores OpenDB Bounded Import into Cloud SQL
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all engineering-state files, and the `docs/operations/CLOUD_SQL_PRIMARY_CATALOG_STORAGE.md` operations guide. Configure the Cloud SQL credentials and execution settings. Run programmatic migrations and ingest synthetic datasets using the CLI, verifying table row counts and schema integrity without modifying production resources or Neo4j data.
+Read `AGENTS.md`, all engineering-state files, `docs/operations/BUILDCORES_OPENDB_CATALOG_BOOTSTRAP.md`, and `docs/operations/CLOUD_SQL_PRIMARY_CATALOG_STORAGE.md`. Configure the import credentials and connect to the Cloud SQL staging instance. Run the OpenDB adapter to ingest real catalog records into Cloud SQL under the 300 product cap, verifying counts and schema relations without modifying production resources or Neo4j data.

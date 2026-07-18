@@ -307,3 +307,10 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Migration CLI: Created a standalone `migration_cli.py` to execute Alembic head migrations and inspect table row counts programmatically.
 - Safe Health Checks: Extended `/health` and protected `/health/catalog` endpoint to report connection statuses safely.
 - Invariant Safety: Verified Catalog V2 and all import pipelines remain disabled by default. Neo4j and production systems are completely unaffected.
+
+## Cloud SQL Schema Migration and Verification
+
+- Pre-Migration Backup: Created backup ID `1784398990540` successfully on `catalog-postgres-staging` instance.
+- Schema Migration: Executed Alembic head migrations via proxy tunnel port 5433, confirming all catalog tables exist and counts begin at 0.
+- Synthetic Verification: Created `cloud_sql_verification_cli.py` to insert and clean up synthetic data, verifying database constraints, cheapest price observation, and dependencies without Neo4j operations or GCS uploads.
+- Verification Status: `SYNTHETIC_CLOUD_SQL_VERIFICATION_PASSED` confirmed. Row counts returned to baseline cleanly.

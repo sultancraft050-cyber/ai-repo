@@ -608,3 +608,10 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Implementation: Configured psycopg2 driver, URL generator supporting TCP and Unix-socket connections, bounded connection pools, GCS media metadata mapping, and standalone `migration_cli.py` for head migrations and database row inspections.
 - Safety & Health: Excluded all non-catalog databases from migration. Extended `/health` and defined `/health/catalog` endpoints reporting database status with password and connection redaction.
 - Invariant: Verification tests ensure startup migrations/seeding are disabled and all settings default to safe-off. Neo4j and production systems are unaffected. All 407 tests pass.
+
+## 2026-07-18 — Iteration 41: Cloud SQL Schema Migration and Synthetic Verification
+
+- Objective: Execute Alembic migrations on Google Cloud SQL staging database and verify constraints/reads with synthetic datasets.
+- Implementation: Created backup ID `1784398990540` for safe rollback. Initialized local proxy connection to `catalog-postgres-staging` database. Created `cloud_sql_verification_cli.py` to insert synthetic products, stores, offers, specs, image metadata, and price histories. Tested constraint validations and cleaned all records.
+- Results: Successful completion of `SYNTHETIC_CLOUD_SQL_VERIFICATION_PASSED`. All baseline counts restored cleanly.
+- Tests: Added CLI guard coverage tests. All 401 tests (with stashed OpenDB modules) passed.
