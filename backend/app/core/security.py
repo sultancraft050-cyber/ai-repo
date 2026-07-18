@@ -56,6 +56,7 @@ ENDPOINT_RULES: tuple[EndpointRule, ...] = (
     EndpointRule("GET", "/approvals", "analyst", "level_0"),
     EndpointRule("GET", "/health/workers", "analyst", "level_0"),
     EndpointRule("GET", "/health/external-sources", "analyst", "level_0"),
+    EndpointRule("GET", "/health/catalog", "analyst", "level_0"),
     EndpointRule("GET", "/sources/product-url/known", "analyst", "level_0"),
     EndpointRule("POST", "/pricing/refresh", "analyst", "level_0"),
     EndpointRule("POST", "/pricing/canonicalize", "analyst", "level_0"),

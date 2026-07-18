@@ -62,6 +62,11 @@ class Settings:
     catalog_feed_simulator_enabled: bool
     replay_failure_harness_enabled: bool
     catalog_database_url: str | None
+    catalog_db_user: str | None
+    catalog_db_name: str | None
+    catalog_cloud_sql_connection_name: str | None
+    catalog_db_password: str | None
+    catalog_media_bucket: str | None
     auth_required: bool
     viewer_api_key: str | None
     analyst_api_key: str | None
@@ -129,6 +134,11 @@ class Settings:
             catalog_feed_simulator_enabled=os.getenv("CATALOG_FEED_SIMULATOR_ENABLED", "false").lower() in {"1", "true", "yes"},
             replay_failure_harness_enabled=os.getenv("REPLAY_FAILURE_HARNESS_ENABLED", "false").lower() in {"1", "true", "yes"},
             catalog_database_url=os.getenv("CATALOG_DATABASE_URL"),
+            catalog_db_user=os.getenv("CATALOG_DB_USER"),
+            catalog_db_name=os.getenv("CATALOG_DB_NAME"),
+            catalog_cloud_sql_connection_name=os.getenv("CATALOG_CLOUD_SQL_CONNECTION_NAME"),
+            catalog_db_password=os.getenv("CATALOG_DB_PASSWORD"),
+            catalog_media_bucket=os.getenv("CATALOG_MEDIA_BUCKET"),
         )
 
 

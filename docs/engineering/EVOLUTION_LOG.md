@@ -593,3 +593,18 @@ Added a disabled local replay harness with explicit failure-point/mode enums, bo
 ## 2026-07-13 — Iteration 38: Minimal Authorized Feed Onboarding Readiness
 
 Prepared a documentation-only technical package for one future authorized feed: a minimal onboarding record, reusable readiness checklist, local pilot result template, sample-file gate, identity/mapping requirements, retention, rollback, and the exact local pilot sequence. No connector, credential, sample ingestion, external service, production database, Neo4j operation, secret change, cloud resource, or deployment was used.
+
+## 2026-07-18 — Iteration 39: BuildCores OpenDB Catalog Bootstrap
+
+- Objective: Map a bounded subset of real structured PC component records from BuildCores OpenDB into Catalog V2 local SQLite database.
+- Implementation: Created `buildcores_opendb_adapter.py` and `buildcores_opendb_cli.py` to parse CPU, GPU, Motherboard, RAM, Storage, PSU, Case, and Cooler records. Mapped key specifications (sockets, clock speeds, capacities, form factors) into relational staging.
+- Quality Reporting: Added detailed quality stats (files discovered, parsed, valid, review, rejected, duplicate, missing MPN/GTIN, unmapped fields, controlled conflicts) in CLI output.
+- Public Catalog Pages: Added Next.js server-rendered routes `/components`, `/components/[category]`, `/components/[product-id]`, and `/compare` with full search, brand filtering, sorting, price status, category placeholders, and ODC-By 1.0 license attributions.
+- Safety: No images were downloaded, no 3D assets copied, and Neo4j and production PostgreSQL remained completely untouched. All tests pass successfully (394/394).
+
+## 2026-07-18 — Iteration 40: Cloud SQL Primary Catalog Integration
+
+- Objective: Integrate Google Cloud SQL PostgreSQL and Cloud Storage as the primary database backend for Catalog V2.
+- Implementation: Configured psycopg2 driver, URL generator supporting TCP and Unix-socket connections, bounded connection pools, GCS media metadata mapping, and standalone `migration_cli.py` for head migrations and database row inspections.
+- Safety & Health: Excluded all non-catalog databases from migration. Extended `/health` and defined `/health/catalog` endpoints reporting database status with password and connection redaction.
+- Invariant: Verification tests ensure startup migrations/seeding are disabled and all settings default to safe-off. Neo4j and production systems are unaffected. All 407 tests pass.

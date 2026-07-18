@@ -33,6 +33,7 @@ from app.api import (
     user_builds,
 )
 from app.core.config import settings
+from app.catalog.database import catalog_database
 from app.core.security import RateLimiter, authenticate_api_key, endpoint_rule, has_role, payload_hash, trace_id
 from app.core.version import (
     BACKEND_VERSION,
@@ -366,6 +367,7 @@ def health() -> dict[str, str | bool | None]:
     return {
         "ok": manager.unavailable_reason is None,
         "neo4j": "connected" if manager.unavailable_reason is None else "unavailable",
+        "catalog": catalog_database.check_health(),
         "detail": manager.unavailable_reason,
         "environment": settings.environment,
         "market_data_mode": settings.market_data_mode,
@@ -373,6 +375,15 @@ def health() -> dict[str, str | bool | None]:
         **public_release,
         "current_gen_enrichment_version": version_info.get("current_gen_enrichment_version")
         or CURRENT_GEN_ENRICHMENT_VERSION,
+    }
+
+
+@app.get("/health/catalog")
+def health_catalog() -> dict[str, str | bool]:
+    status = catalog_database.check_health()
+    return {
+        "ok": status in {"connected", "disabled", "not configured"},
+        "status": status
     }
 
 

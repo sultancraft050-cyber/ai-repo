@@ -291,3 +291,19 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Readiness date: 2026-07-13; classification `READY_FOR_AUTHORIZED_SAMPLE`.
 - Added a minimum technical onboarding record, reusable source checklist, and local pilot result template. The package defines source authorization evidence, identity requirements, sample bounds, template provenance, retention, rollback, and the local-only pilot sequence.
 - No connector, credential, sample ingestion, external service, production database, Neo4j operation, secret change, cloud resource, or deployment occurred. A real source remains unapproved until an authorized sample or approved sample schema is supplied.
+
+## BuildCores OpenDB Catalog Bootstrap
+
+- Ingestion Adapter & CLI: Implemented `buildcores_opendb_adapter.py` and `buildcores_opendb_cli.py` to map OpenDB product records (CPU, GPU, Motherboard, RAM, Storage, PSU, Case, Cooler) into the relational staging pipeline.
+- Identity Gates & Limits: Capped imports at a total maximum of 300 products (with category-specific constraints). Identity matches strictly by valid GTIN or Brand+MPN; generic/missing identifiers default to `REVIEW_REQUIRED`.
+- Public Catalog Pages: Implemented read-only browser views at `/components`, `/components/[category]`, `/components/[product-id]`, and `/compare` with server-rendered search, brand filtering, sorting, price status, CSS image placeholders, and ODC-By 1.0 license attributions.
+- Safety & Tests: Ephemeral SQLite and validation tests guarantee zero Neo4j writes, zero production database connections, and zero remote image downloads. Full backend pytest (394/394) and frontend typecheck/build are passing.
+
+## Cloud SQL Primary Catalog Storage Integration
+
+- PostgreSQL Driver & URLs: Added `psycopg2-binary>=2.9` database driver. Configured URL generator building PostgreSQL TCP and Cloud SQL Unix-sockets.
+- Pooling & Protection: Configured connection pooling parameters (`pool_size=5`, `max_overflow=10`, `pool_timeout=30`, `pool_recycle=1800`) suited for `db-f1-micro` instance. Password and connection details are redacted in logs.
+- Cloud Storage: Set GCS private media bucket metadata mapping without image downloads or raw byte storage in SQL.
+- Migration CLI: Created a standalone `migration_cli.py` to execute Alembic head migrations and inspect table row counts programmatically.
+- Safe Health Checks: Extended `/health` and protected `/health/catalog` endpoint to report connection statuses safely.
+- Invariant Safety: Verified Catalog V2 and all import pipelines remain disabled by default. Neo4j and production systems are completely unaffected.

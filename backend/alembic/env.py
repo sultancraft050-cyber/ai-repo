@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.catalog.models import Base
+from app.catalog.database import build_db_url
 
 config = context.config
 if config.config_file_name:
@@ -13,14 +14,16 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    context.configure(url=os.getenv("CATALOG_DATABASE_URL", config.get_main_option("sqlalchemy.url")), target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
+    url = build_db_url() or config.get_main_option("sqlalchemy.url")
+    context.configure(url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online() -> None:
+    url = build_db_url() or config.get_main_option("sqlalchemy.url")
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = os.getenv("CATALOG_DATABASE_URL", section["sqlalchemy.url"])
+    section["sqlalchemy.url"] = url
     connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

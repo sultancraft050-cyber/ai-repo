@@ -160,8 +160,8 @@ Build a local-only, read/write-guarded operations interface for reviewing staged
 Read `AGENTS.md`, all engineering-state files, `docs/operations/PRODUCT_CATALOG_SCHEMA_IMPLEMENTATION.md`, `docs/operations/PRODUCT_CATALOG_IMPORT_PIPELINE.md`, and `docs/operations/PRODUCT_IMAGE_METADATA_REVIEW_PIPELINE.md`. Implement one local Catalog Review and Import Operations Interface using synthetic fixtures and ephemeral SQLite. Do not expose public write endpoints, enable production flags, connect production databases, mutate Neo4j, download images, change secrets, create cloud resources, or deploy.
 ## Next task
 
-First Authorized Feed Sample Schema Review
+Run Cloud SQL Schema Migration and Synthetic Verification
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all engineering-state files, and the three authorized-feed onboarding documents. Review one authorized sample or approved sample schema supplied by the user, without connecting a supplier or production system. Keep production flags disabled; do not ingest real records, request credentials, mutate Neo4j, change secrets, create cloud resources, or deploy. This task is blocked until an authorized sample or approved sample schema is supplied.
+Read `AGENTS.md`, all engineering-state files, and the `docs/operations/CLOUD_SQL_PRIMARY_CATALOG_STORAGE.md` operations guide. Configure the Cloud SQL credentials and execution settings. Run programmatic migrations and ingest synthetic datasets using the CLI, verifying table row counts and schema integrity without modifying production resources or Neo4j data.
