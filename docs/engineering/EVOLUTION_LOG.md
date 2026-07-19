@@ -639,3 +639,12 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Validation: Generated 200 read-only requests. health/neo4j and non-catalog read endpoints resolved to 200 OK. 5% of /catalog/products and /catalog/products/180 successfully routed to V2 (200 OK with 280 products) while 95% fallback to V1 (404 Not Found as expected).
 - Logs: No 500 errors, pool timeouts, or unexpected activities. Rollback not required.
 - Safety: Zero database writes, zero Neo4j mutations, zero config/code alterations.
+
+## 2026-07-19 — Iteration 45: Increase Cloud SQL Catalog Revision to 25% Traffic
+
+- Objective: Increase traffic split to 25% for the verified catalog revision to monitor connection stability under higher load.
+- Implementation: Ran `gcloud run services update-traffic` to split traffic: 75% on `hardware-intelligence-api-00005-kvd` and 25% on `hardware-intelligence-api-catalog-v2-20260719`.
+- Validation: Generated 425 read-only requests. health, health/neo4j, and non-catalog read endpoints resolved to 200 OK across both revisions. 25% of /catalog/products successfully routed to V2 (200 OK) while 75% routed to V1 (404 Not Found as expected).
+- Connection Pool Management: Encountered connection slot exhaustion due to db-f1-micro tier limit (25 max connections limit). Successfully restarted staging Cloud SQL instance to reset slots, and ran validation traffic with controlled rate-limiting (1-second delays). Active connections stabilized at 22 (13 user connections).
+- Logs: Checked logs for both revisions. Post-restart logs contain 0 errors, 0 pool timeouts, and 0 secret leakage.
+- Safety: Zero writes, zero Neo4j mutations, zero config/code alterations.
