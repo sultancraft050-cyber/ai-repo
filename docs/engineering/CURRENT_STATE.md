@@ -328,3 +328,21 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Tests: 442 backend pytest passing (41 new tests in `test_buildcores_import_cli.py`).
 - Safety: No Neo4j modification, no Cloud Run deployment, no traffic change, no price/image/offer data, no secrets exposed.
 
+## Cloud SQL Catalog Zero-Traffic Revision
+
+- Deployment date: 2026-07-19; commit `edb701f957e731d345f2b5fc42f90c872429f321`.
+- Cloud Build ID: `3b948870-08fa-4956-ab78-a42b5df04b9f`.
+- Image: `me-central1-docker.pkg.dev/pc-recomendation-project/pc-builder/hardware-intelligence-api@sha256:fc7b615357db93a1e4b684b26d285bfbc51d6aa74eaf3a50cce5e6e357aed623` (immutable digest).
+- New revision `hardware-intelligence-api-catalog-v2-20260719` deployed with `--no-traffic`; tagged `catalog-v2-canary`.
+- Previous production revision `hardware-intelligence-api-00005-kvd` remains at 100% traffic.
+- Cloud SQL instance `catalog-postgres-staging` attached; secret `catalog-db-password-staging:1` (pinned numeric version).
+- All 280 BuildCores products bulk-approved (pending→approved) before deployment so catalog API returns full 280-product set.
+- Catalog validation: 280 products, all 8 categories correct, case-insensitive search, deterministic pagination, specs accessible, offers/images/stores empty. All `200 OK`.
+- Health: `ok:true`, `neo4j:connected`, `catalog:connected` on canary revision.
+- Logs: no 500s, no credentials, no import/migration/scheduler startup.
+- Production URL `hardware-intelligence-api-lywizc5z5q-ww.a.run.app` continues to serve `200 OK` from previous revision.
+- Tests: 442 passed. No code changes; documentation and gitignore only.
+- Tagged revision URL: `https://catalog-v2-canary---hardware-intelligence-api-lywizc5z5q-ww.a.run.app`
+- Safety: no traffic change, no writes, no migrations, no imports, no Neo4j modification, no secrets exposed.
+
+

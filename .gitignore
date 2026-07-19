@@ -46,3 +46,6 @@ build/
 *.pyc
 *.tsbuildinfo
 .env
+
+cloud-run-before-*.yaml
+*.yaml.bak

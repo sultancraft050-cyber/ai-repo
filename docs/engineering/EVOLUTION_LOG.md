@@ -615,3 +615,19 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Implementation: Created backup ID `1784398990540` for safe rollback. Initialized local proxy connection to `catalog-postgres-staging` database. Created `cloud_sql_verification_cli.py` to insert synthetic products, stores, offers, specs, image metadata, and price histories. Tested constraint validations and cleaned all records.
 - Results: Successful completion of `SYNTHETIC_CLOUD_SQL_VERIFICATION_PASSED`. All baseline counts restored cleanly.
 - Tests: Added CLI guard coverage tests. All 401 tests (with stashed OpenDB modules) passed.
+
+## 2026-07-18 — Iteration 42: BuildCores OpenDB Bounded Import into Cloud SQL
+
+- Objective: Import the first bounded, reviewed BuildCores OpenDB product catalog batch into Cloud SQL staging.
+- Implementation: Created `buildcores_import_cli.py` (Cloud SQL-aware CLI with dry-run, import, idempotency, and verify commands). Implemented in-memory slug deduplication across the import batch. Created `run_import.py` as self-contained runner (starts proxy, loads secret, runs CLI, stops proxy).
+- Results: 280 products and 1,562 specifications inserted. Category breakdown: CPU:40, GPU:40, MOTHERBOARD:40, RAM:40, STORAGE:40, PSU:30, CASE:30, COOLER:20. Zero offers/prices/images/stores. Idempotency PASSED. Verification PASSED.
+- Pre-import backup: ID `1784401199081` (SUCCESSFUL). ODC-By 1.0 attribution file created.
+- Tests: 442 backend pytest passing (41 new tests in `test_buildcores_import_cli.py`).
+
+## 2026-07-19 — Iteration 43: Cloud SQL Catalog Zero-Traffic Revision
+
+- Objective: Build and deploy a new Cloud Run revision connected to Cloud SQL with Catalog V2 enabled (read-only), receiving zero production traffic.
+- Implementation: Built image `hardware-intelligence-api:edb701f` via Cloud Build (ID `3b948870-08fa-4956-ab78-a42b5df04b9f`). Deployed revision `hardware-intelligence-api-catalog-v2-20260719` with `--no-traffic --tag=catalog-v2-canary`. Used immutable digest `sha256:fc7b615357db93a1e4b684b26d285bfbc51d6aa74eaf3a50cce5e6e357aed623`. Pinned secret `catalog-db-password-staging:1`. Bulk-approved 280 pending products before deployment.
+- Validation: `/health` `ok:true`, `neo4j:connected`, `catalog:connected`. 280 products returned across all 8 categories. Case-insensitive search, deterministic pagination, product detail, specs all PASSED. Offers/images/stores correctly empty. No 500s in logs.
+- Traffic: Previous revision `hardware-intelligence-api-00005-kvd` remained at 100%. Canary at 0%.
+- Tagged URL: `https://catalog-v2-canary---hardware-intelligence-api-lywizc5z5q-ww.a.run.app`
