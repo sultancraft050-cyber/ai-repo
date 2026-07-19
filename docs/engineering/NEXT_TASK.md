@@ -1,16 +1,16 @@
 # Next Task
 
-## Increase the Verified Cloud SQL Catalog Revision to 50% Traffic
+## Complete Cutover to the Cloud SQL Catalog V2 Revision (100% Traffic)
 
-The 25% production canary for `hardware-intelligence-api-catalog-v2-20260719` succeeded without any errors or regressions after resolving db-f1-micro connection limits. The next step is to increase the traffic split to 50% to verify connection stability and query latencies under equal-load conditions.
+The 50% production canary split succeeded without any errors or regressions after managing db-f1-micro connection limits. The next step is to complete the cutover by directing 100% of production traffic to `hardware-intelligence-api-catalog-v2-20260719` and turning off the legacy V1 revision.
 
 ### Acceptance criteria
 
-- A `gcloud run services update-traffic` command shifts exactly 50% of traffic to the catalog revision.
-- Production revision `hardware-intelligence-api-00005-kvd` receives exactly 50% of traffic.
-- Monitor logs of both revisions for at least 15 minutes.
+- A `gcloud run services update-traffic` command shifts exactly 100% of traffic to the catalog revision.
+- Production revision `hardware-intelligence-api-00005-kvd` receives exactly 0% of traffic.
+- Monitor logs of the new revision for at least 15 minutes.
 - Confirm zero database connection pool timeouts, zero 500 errors, and zero credentials exposed in logs.
-- Test the production endpoint and verify 50% of catalog requests are successfully routed to V2 (200 OK) while 50% are routed to V1 (404 Not Found as expected).
+- Test the production endpoint and verify 100% of catalog requests are successfully routed to V2 (200 OK) with 280 products.
 
 ### Rollback command
 
@@ -23,7 +23,8 @@ gcloud run services update-traffic hardware-intelligence-api `
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, all engineering-state files, `docs/operations/CLOUD_SQL_CATALOG_25_PERCENT_CANARY_RESULT.md`, and `docs/operations/CLOUD_SQL_CATALOG_CUTOVER_CHECKLIST.md`. Shift exactly 50% of traffic to `hardware-intelligence-api-catalog-v2-20260719` using `gcloud run services update-traffic`. Monitor logs for 15 minutes. Document the results, health checks, and connection pool status. Roll back immediately if any 5xx errors or regressions occur. Do not enable catalog writes, imports, or migrations.
+Read `AGENTS.md`, all engineering-state files, `docs/operations/CLOUD_SQL_CATALOG_50_PERCENT_CANARY_RESULT.md`, and `docs/operations/CLOUD_SQL_CATALOG_CUTOVER_CHECKLIST.md`. Shift exactly 100% of traffic to `hardware-intelligence-api-catalog-v2-20260719` using `gcloud run services update-traffic`. Monitor logs for 15 minutes. Document the results, health checks, and connection pool status. Roll back immediately if any 5xx errors or regressions occur. Do not enable catalog writes, imports, or migrations.
+
 
 
 ### Acceptance criteria

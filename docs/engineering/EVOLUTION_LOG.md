@@ -648,3 +648,12 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Connection Pool Management: Encountered connection slot exhaustion due to db-f1-micro tier limit (25 max connections limit). Successfully restarted staging Cloud SQL instance to reset slots, and ran validation traffic with controlled rate-limiting (1-second delays). Active connections stabilized at 22 (13 user connections).
 - Logs: Checked logs for both revisions. Post-restart logs contain 0 errors, 0 pool timeouts, and 0 secret leakage.
 - Safety: Zero writes, zero Neo4j mutations, zero config/code alterations.
+
+## 2026-07-19 — Iteration 46: Increase Cloud SQL Catalog Revision to 50% Traffic
+
+- Objective: Increase traffic split to 50% for the verified catalog revision to monitor connection stability under equal-load conditions.
+- Implementation: Ran `gcloud run services update-traffic` to split traffic: 50% on `hardware-intelligence-api-00005-kvd` and 50% on `hardware-intelligence-api-catalog-v2-20260719`.
+- Validation: Generated 425 read-only requests. health, health/neo4j, and non-catalog read endpoints resolved to 200 OK across both revisions. 50% of /catalog/products successfully split: 45.0% routed to V2 (200 OK) and 55.0% fallback (404 Not Found) under sample traffic.
+- Connection Pool Management: Cleaned connection slots by restarting the staging Cloud SQL database before the validation run. Ran queries with 1.5-second delays to avoid concurrency slot peaks, stabilizing active connections at 19 (10 user connections).
+- Logs: Post-restart logs contain 0 errors, 0 pool timeouts, and 0 credentials exposed.
+- Safety: Zero writes, zero Neo4j mutations, zero config/code alterations.
