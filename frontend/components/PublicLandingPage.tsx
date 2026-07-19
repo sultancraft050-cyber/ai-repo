@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { ArrowRight, CheckCircle2, Cpu, MessageSquare, ShieldCheck, Wand2 } from "lucide-react";
-import { recordAnalyticsEvent, submitFeedback } from "@/lib/api";
+import { recordAnalyticsEvent, submitFeedback, listCatalogProducts, CatalogProduct } from "@/lib/api";
 import { getGuestId } from "@/lib/userSession";
 import type { FeedbackSubmissionResponse, FeedbackType } from "@/types/builder";
 
@@ -23,12 +23,29 @@ export function PublicLandingPage() {
   const [feedbackStatus, setFeedbackStatus] = useState<FeedbackSubmissionResponse | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
+  const [homepageProducts, setHomepageProducts] = useState<CatalogProduct[]>([]);
+  const [homepageLoading, setHomepageLoading] = useState(true);
+  const [homepageError, setHomepageError] = useState("");
+
   useEffect(() => {
     recordAnalyticsEvent({
       event_type: "landing_page_visit",
       anonymous_session_id: getGuestId(),
       metadata: { page: "home" }
     }).catch(() => undefined);
+
+    async function loadHomepageProducts() {
+      try {
+        setHomepageLoading(true);
+        const data = await listCatalogProducts(0, 8);
+        setHomepageProducts(data);
+      } catch (err: any) {
+        setHomepageError(err.message || "Failed to load components.");
+      } finally {
+        setHomepageLoading(false);
+      }
+    }
+    loadHomepageProducts();
   }, []);
 
   async function sendFeedback() {
@@ -121,6 +138,79 @@ export function PublicLandingPage() {
           before purchase.
         </div>
 
+        {/* Browse PC Components Section */}
+        <div className="rounded-xl border border-line bg-[#0b101d] p-6 sm:p-8 shadow-tight relative overflow-hidden">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b border-line pb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-ink">Browse PC Components</h2>
+              <p className="text-sm text-muted mt-1">
+                Explore our catalog of <strong>280</strong> high-quality PC hardware options.
+              </p>
+            </div>
+            <a
+              href="/components"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-signal hover:bg-signal/80 text-slate-950 font-bold rounded-lg text-sm transition-all"
+            >
+              View all components
+              <ArrowRight size={15} />
+            </a>
+          </div>
+
+          {/* Category quick selectors */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            {["CPU", "GPU", "MOTHERBOARD", "RAM", "STORAGE", "PSU", "CASE", "COOLER"].map((cat) => (
+              <a
+                key={cat}
+                href={`/components?category=${cat}`}
+                className="px-3 py-1.5 bg-panel border border-line hover:border-signal text-xs font-bold text-muted hover:text-ink rounded-full transition-all"
+              >
+                {cat}
+              </a>
+            ))}
+          </div>
+
+          {/* Catalog items selection grid */}
+          {homepageLoading && (
+            <div className="grid place-items-center py-10">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-signal border-t-transparent"></div>
+            </div>
+          )}
+
+          {homepageError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-lg text-xs">
+              {homepageError}
+            </div>
+          )}
+
+          {!homepageLoading && !homepageError && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              {homepageProducts.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-panel border border-line rounded-lg p-4 flex flex-col justify-between hover:border-signal/40 transition-all"
+                >
+                  <div>
+                    <span className="text-[9px] font-black uppercase text-signal bg-signal/10 px-1.5 py-0.5 rounded border border-signal/20">
+                      {p.category}
+                    </span>
+                    <h3 className="text-sm font-bold text-ink mt-2 line-clamp-2 hover:text-signal">
+                      <a href={`/components/${p.id}`}>{p.canonical_name}</a>
+                    </h3>
+                    <p className="text-[11px] text-muted font-medium mt-0.5">By {p.brand}</p>
+                  </div>
+                  <a
+                    href={`/components/${p.id}`}
+                    className="text-xs font-black text-signal hover:underline mt-4 flex items-center gap-1"
+                  >
+                    View details
+                    <ArrowRight size={12} />
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div id="feedback" className="scroll-mt-20">
           {feedbackOpen ? (
             <div className="rounded-lg border border-line bg-panel p-4 shadow-tight">
@@ -186,7 +276,7 @@ function PathCard({
   href: string;
   icon: ReactNode;
   primary?: boolean;
-}) {
+ }) {
   return (
     <a
       href={href}

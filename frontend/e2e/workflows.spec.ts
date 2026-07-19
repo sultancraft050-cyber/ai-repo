@@ -10,6 +10,79 @@ async function mockCommon(page: Page) {
   await page.route("**/build/data-completeness?*", (route) => route.fulfill({ json: completeness }));
   await page.route("**/api/compatibility/check", (route) => route.fulfill({ json: { valid: true, checks: [], total_power_draw_w: 450, required_psu_w: 650 } }));
   await page.route("**/api/performance/calculate", (route) => route.fulfill({ json: { expected_fps: 120, one_percent_low_fps: 90 } }));
+  await page.route("**/catalog/products*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: 180,
+          category: "RAM",
+          brand: "ADATA",
+          manufacturer_part_number: "AD3U1600W8G11-R",
+          exact_model: "1600 CL11",
+          variant: "1600 CL11",
+          canonical_name: "ADATA DDR3-1600 CL11 8GB",
+          slug: "adata-ddr3-1600",
+          lifecycle_status: "active",
+          approval_status: "approved",
+          created_at: "2026-07-18T19:08:25Z",
+          updated_at: "2026-07-19T17:34:58Z"
+        },
+        {
+          id: 181,
+          category: "CPU",
+          brand: "Intel",
+          manufacturer_part_number: "BX8071513700K",
+          exact_model: "i7-13700K",
+          variant: "Retail",
+          canonical_name: "Intel Core i7-13700K Processor",
+          slug: "intel-i7-13700k",
+          lifecycle_status: "active",
+          approval_status: "approved",
+          created_at: "2026-07-18T19:08:25Z",
+          updated_at: "2026-07-19T17:34:58Z"
+        }
+      ])
+    });
+  });
+  await page.route("**/catalog/products/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 181,
+        category: "CPU",
+        brand: "Intel",
+        manufacturer_part_number: "BX8071513700K",
+        exact_model: "i7-13700K",
+        variant: "Retail",
+        canonical_name: "Intel Core i7-13700K Processor",
+        slug: "intel-i7-13700k",
+        lifecycle_status: "active",
+        approval_status: "approved",
+        created_at: "2026-07-18T19:08:25Z",
+        updated_at: "2026-07-19T17:34:58Z",
+        specifications: [
+          {
+            specification_key: "socket",
+            normalized_value: "LGA1700",
+            display_value: "LGA1700",
+            unit: null
+          },
+          {
+            specification_key: "cores",
+            normalized_value: "16",
+            display_value: "16 Cores",
+            unit: null
+          }
+        ],
+        images: [],
+        offers: [],
+        cheapest_sar_offer: null
+      })
+    });
+  });
 }
 
 async function expectNoSeriousAxe(page: Page) {
@@ -194,6 +267,7 @@ for (const viewport of [{ name: "laptop", width: 1280, height: 800 }, { name: "t
 }
 
 test("axe scans home themes, open mobile navigation and 404", async ({ page }) => {
+  await mockCommon(page);
   await page.goto("/");
   await expectNoSeriousAxe(page);
   await page.getByRole("button", { name: /Switch to/ }).click();
@@ -206,6 +280,7 @@ test("axe scans home themes, open mobile navigation and 404", async ({ page }) =
 });
 
 test("mobile drawer contains focus and returns it after close", async ({ page }) => {
+  await mockCommon(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   const menu = page.getByRole("button", { name: "Open navigation menu" });
@@ -219,6 +294,7 @@ test("mobile drawer contains focus and returns it after close", async ({ page })
 });
 
 test("reduced motion keeps theme, drawer and loading interactions functional", async ({ page }) => {
+  await mockCommon(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.getByRole("button", { name: /Switch to/ })).toBeVisible();
@@ -228,4 +304,51 @@ test("reduced motion keeps theme, drawer and loading interactions functional", a
   await expect(page.getByRole("navigation", { name: "Mobile navigation" })).toBeVisible();
   await expect(page).toHaveTitle(/Saudi PC Build Assistant/);
   expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
+});
+
+test("storefront integration workflow", async ({ page }) => {
+  await mockCommon(page);
+  // 1. Open storefront.
+  await page.goto("/components");
+
+  // 2. Confirm products load.
+  await expect(page.locator("h1")).toContainText(/Components|Catalog/i);
+  const firstProductLink = page.locator("a[href^='/components/']").first();
+  await expect(firstProductLink).toBeVisible({ timeout: 15000 });
+
+  // 3. Filter CPU.
+  const cpuButton = page.getByRole("button", { name: /^CPU \(/ });
+  await cpuButton.click();
+  await expect(page).toHaveURL(/category=CPU/);
+
+  // 4. Search a known manufacturer.
+  const searchInput = page.getByPlaceholder("Search by manufacturer, model, MPN...");
+  await searchInput.fill("ADATA");
+  await expect(page).toHaveURL(/search=ADATA/);
+
+  // 5. Navigate to page 2 when available.
+  const nextPageButton = page.getByRole("button", { name: "Next Page" });
+  if (await nextPageButton.isEnabled()) {
+    await nextPageButton.click();
+    await expect(page).toHaveURL(/page=2/);
+  }
+
+  // 6. Open a product.
+  const productLink = page.locator("a[href^='/components/']").first();
+  await productLink.click();
+  await expect(page).toHaveURL(/\/components\/\d+/);
+
+  // 7. Confirm specifications render.
+  await expect(page.getByText("Technical Specifications")).toBeVisible();
+
+  // 8. Confirm "No current offer" is shown.
+  await expect(page.getByText("No current offer")).toBeVisible();
+
+  // 9. Confirm placeholder image renders.
+  const detailImage = page.getByTestId("product-image");
+  await expect(detailImage).toHaveAttribute("data-image-state", "placeholder");
+
+  // 10. Return to the storefront.
+  await page.getByRole("link", { name: "Back to Catalog" }).click();
+  await expect(page).toHaveURL(/\/components/);
 });

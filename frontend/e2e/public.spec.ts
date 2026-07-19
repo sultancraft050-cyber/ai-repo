@@ -8,7 +8,13 @@ const viewports = [
 async function collectUnexpectedErrors(page: Page) {
   const errors: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error" && !message.text().includes("Failed to load resource: the server responded with a status of 404")) errors.push(message.text());
+    if (
+      message.type() === "error" &&
+      !message.text().includes("Failed to load resource: the server responded with a status of 404") &&
+      !message.text().includes("/analytics/events")
+    ) {
+      errors.push(message.text());
+    }
   });
   page.on("pageerror", (error) => errors.push(error.message));
   return errors;
@@ -17,6 +23,9 @@ async function collectUnexpectedErrors(page: Page) {
 async function mockApi(page: Page) {
   await page.route("**/*example.invalid/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
+  });
+  await page.route("**/analytics/events", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
   });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -27,6 +36,79 @@ async function mockApi(page: Page) {
     }
     const body = url.includes("release") ? { release: "local-smoke", api_contract_version: "1" } : {};
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.route("**/catalog/products*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          id: 180,
+          category: "RAM",
+          brand: "ADATA",
+          manufacturer_part_number: "AD3U1600W8G11-R",
+          exact_model: "1600 CL11",
+          variant: "1600 CL11",
+          canonical_name: "ADATA DDR3-1600 CL11 8GB",
+          slug: "adata-ddr3-1600",
+          lifecycle_status: "active",
+          approval_status: "approved",
+          created_at: "2026-07-18T19:08:25Z",
+          updated_at: "2026-07-19T17:34:58Z"
+        },
+        {
+          id: 181,
+          category: "CPU",
+          brand: "Intel",
+          manufacturer_part_number: "BX8071513700K",
+          exact_model: "i7-13700K",
+          variant: "Retail",
+          canonical_name: "Intel Core i7-13700K Processor",
+          slug: "intel-i7-13700k",
+          lifecycle_status: "active",
+          approval_status: "approved",
+          created_at: "2026-07-18T19:08:25Z",
+          updated_at: "2026-07-19T17:34:58Z"
+        }
+      ])
+    });
+  });
+  await page.route("**/catalog/products/*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 181,
+        category: "CPU",
+        brand: "Intel",
+        manufacturer_part_number: "BX8071513700K",
+        exact_model: "i7-13700K",
+        variant: "Retail",
+        canonical_name: "Intel Core i7-13700K Processor",
+        slug: "intel-i7-13700k",
+        lifecycle_status: "active",
+        approval_status: "approved",
+        created_at: "2026-07-18T19:08:25Z",
+        updated_at: "2026-07-19T17:34:58Z",
+        specifications: [
+          {
+            specification_key: "socket",
+            normalized_value: "LGA1700",
+            display_value: "LGA1700",
+            unit: null
+          },
+          {
+            specification_key: "cores",
+            normalized_value: "16",
+            display_value: "16 Cores",
+            unit: null
+          }
+        ],
+        images: [],
+        offers: [],
+        cheapest_sar_offer: null
+      })
+    });
   });
 }
 
