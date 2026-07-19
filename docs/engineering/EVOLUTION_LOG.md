@@ -666,3 +666,11 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Connection Pool Management: Monitored staging database connections, which stabilized at 19 (10 user connections) under regular load. A transient connection slot exhaustion warning during rapid validation traffic burst successfully self-healed.
 - Logs: Post-cutover logs contain 0 errors, 0 credentials exposed, and 0 unexpected migrations or imports.
 - Safety: Zero writes, zero Neo4j mutations, zero config/code alterations.
+
+## 2026-07-19 — Iteration 48: Small Guarded Homepage and Theme Capture
+
+- Objective: Capture visual baseline screenshots of the production homepage and manual builder, and document styling design tokens.
+- Implementation: Created a Playwright script inside `frontend` to capture 4 screenshots under different viewports and themes (Desktop Light, Mobile Light, Desktop Dark, Manual Builder Desktop).
+- Validation: Ran checks detecting 0 console errors, 0 failed API/asset requests, and 0 layout/contrast errors on both pages. Verified screenshots match requested dimensions (1440x900 and 390x844).
+- Documentation: Created `docs/operations/HOMEPAGE_THEME_CAPTURE_RESULT.md` summarizing visual-audit results, and `docs/design/CURRENT_THEME_BASELINE.md` mapping design token colors (ink, panel, line, muted, signal, caution, danger, violet) and globals.css rules.
+- Safety: Read-only visual audit. No source code changes, no deployments, no traffic split changes, no database writes.

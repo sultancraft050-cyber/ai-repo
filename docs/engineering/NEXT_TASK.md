@@ -1,18 +1,21 @@
 # Next Task
 
-## Run a Small Guarded Homepage and Theme Capture
+## Design the Catalog-Powered Homepage Product Sections
 
-After explicit approval, create one fresh guarded context with service workers blocked and routing installed before page creation. Capture only homepage/theme behavior, continue only GET/HEAD, abort all other methods, redact all request details, and stop immediately on Cloud Run, mutation-path, or unknown non-telemetry destinations. Do not expand to multi-route interactions.
+The visual-audit baseline and theme capture were successfully completed, confirming a clean and error-free production baseline. The next step is to design and implement catalog-powered components on the homepage to showcase the 280 imported products from Cloud SQL, supporting categories, filters, search, and pagination.
+
 ### Acceptance criteria
 
-- Manual picker selection, removal, retry, missing-price, and duplicate suppression pass with fixtures.
-- Generated success, no-result, server-error, compatibility, SAR price, and vendor states pass.
-- Shared-build rendering passes at desktop, tablet, and mobile sizes.
-- Axe findings are explicit and no accessibility failures are silently suppressed.
+- Define the layout and component structure for homepage catalog displays (e.g. CPU, GPU, Motherboard cards).
+- Design and mock the component rendering states (loading, success, empty, error fallback).
+- Add tests to cover homepage components behavior.
+- Ensure all designs conform to the design token rules established in `docs/design/CURRENT_THEME_BASELINE.md`.
+- No writes, imports, or deployments are within scope.
 
 ### Following iteration prompt
 
-Read `AGENTS.md`, the engineering state files, `docs/operations/WEBSITE_BROWSER_VERIFICATION.md`, and `docs/operations/WEBSITE_PRODUCTION_VERIFICATION.md`. Extend only local Playwright fixtures and tests for manual/generated/shared-build states, 1280×800 and 768×1024 viewports, and axe checks. Do not call production write endpoints, mutate Neo4j, change secrets, or deploy.
+Read `AGENTS.md`, all engineering-state files, `docs/design/CURRENT_THEME_BASELINE.md`, and `docs/operations/HOMEPAGE_THEME_CAPTURE_RESULT.md`. Create homepage components to render catalog products from the database (read-only), complete with loading, empty, and error mock states. Verify visually and with unit tests. Do not enable writes, imports, or deploy.
+
 
 ## Add Fixture-Backed Workflow and Accessibility Coverage
 
