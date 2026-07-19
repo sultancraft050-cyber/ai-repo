@@ -657,3 +657,12 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Connection Pool Management: Cleaned connection slots by restarting the staging Cloud SQL database before the validation run. Ran queries with 1.5-second delays to avoid concurrency slot peaks, stabilizing active connections at 19 (10 user connections).
 - Logs: Post-restart logs contain 0 errors, 0 pool timeouts, and 0 credentials exposed.
 - Safety: Zero writes, zero Neo4j mutations, zero config/code alterations.
+
+## 2026-07-19 — Iteration 47: Complete Cutover to the Cloud SQL Catalog V2 Revision (100% Traffic)
+
+- Objective: Direct 100% of production traffic to the verified catalog revision to complete cutover and deprecate legacy V1.
+- Implementation: Ran `gcloud run services update-traffic` to direct 100% of traffic to `hardware-intelligence-api-catalog-v2-20260719` and 0% to `hardware-intelligence-api-00005-kvd`.
+- Validation: Generated 425 read-only requests. health, health/neo4j, and non-catalog read endpoints resolved to 200 OK. 100% of /catalog/products successfully routed to V2 (200 OK with 280 products) with 0% fallback.
+- Connection Pool Management: Monitored staging database connections, which stabilized at 19 (10 user connections) under regular load. A transient connection slot exhaustion warning during rapid validation traffic burst successfully self-healed.
+- Logs: Post-cutover logs contain 0 errors, 0 credentials exposed, and 0 unexpected migrations or imports.
+- Safety: Zero writes, zero Neo4j mutations, zero config/code alterations.

@@ -1,32 +1,8 @@
 # Next Task
 
-## Complete Cutover to the Cloud SQL Catalog V2 Revision (100% Traffic)
+## Run a Small Guarded Homepage and Theme Capture
 
-The 50% production canary split succeeded without any errors or regressions after managing db-f1-micro connection limits. The next step is to complete the cutover by directing 100% of production traffic to `hardware-intelligence-api-catalog-v2-20260719` and turning off the legacy V1 revision.
-
-### Acceptance criteria
-
-- A `gcloud run services update-traffic` command shifts exactly 100% of traffic to the catalog revision.
-- Production revision `hardware-intelligence-api-00005-kvd` receives exactly 0% of traffic.
-- Monitor logs of the new revision for at least 15 minutes.
-- Confirm zero database connection pool timeouts, zero 500 errors, and zero credentials exposed in logs.
-- Test the production endpoint and verify 100% of catalog requests are successfully routed to V2 (200 OK) with 280 products.
-
-### Rollback command
-
-```powershell
-gcloud run services update-traffic hardware-intelligence-api `
-  --region=me-central1 `
-  --to-revisions=hardware-intelligence-api-00005-kvd=100 `
-  --project=pc-recomendation-project
-```
-
-### Following iteration prompt
-
-Read `AGENTS.md`, all engineering-state files, `docs/operations/CLOUD_SQL_CATALOG_50_PERCENT_CANARY_RESULT.md`, and `docs/operations/CLOUD_SQL_CATALOG_CUTOVER_CHECKLIST.md`. Shift exactly 100% of traffic to `hardware-intelligence-api-catalog-v2-20260719` using `gcloud run services update-traffic`. Monitor logs for 15 minutes. Document the results, health checks, and connection pool status. Roll back immediately if any 5xx errors or regressions occur. Do not enable catalog writes, imports, or migrations.
-
-
-
+After explicit approval, create one fresh guarded context with service workers blocked and routing installed before page creation. Capture only homepage/theme behavior, continue only GET/HEAD, abort all other methods, redact all request details, and stop immediately on Cloud Run, mutation-path, or unknown non-telemetry destinations. Do not expand to multi-route interactions.
 ### Acceptance criteria
 
 - Manual picker selection, removal, retry, missing-price, and duplicate suppression pass with fixtures.

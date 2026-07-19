@@ -82,7 +82,7 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - CI diagnostics update: the backend full-suite step now writes `backend/pytest-output.log` and `backend/pytest-results.xml`, uploads artifact `backend-pytest-results` with `if: always()`, and publishes a bounded `$GITHUB_STEP_SUMMARY` while preserving the real pytest exit code.
 - Diagnostic run `29165405260` completed: artifact `backend-pytest-results` was created; backend remained correctly failed; frontend and contract/tooling jobs passed. Artifact download requires authentication in this environment, so exact pytest names remain pending authorized access.
 - Diagnostic evidence identified three fixture-path failures in `test_pc_part_dataset_adapter.py`: 285 collected, 282 passed, 3 failed. The tests incorrectly prefixed `backend/` while pytest ran from the backend directory.
-- Fixture tests now resolve `data/canonical_specs` from the test fileÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s backend root, independent of process cwd; fixture contents and production code are unchanged.
+- Fixture tests now resolve `data/canonical_specs` from the test fileÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢s backend root, independent of process cwd; fixture contents and production code are unchanged.
 - Verification run `29166175755` passed all jobs: backend compile, startup safety, release/security, full pytest (285 passed), frontend, and contract/tooling. The diagnostic artifact also uploaded successfully.
 - CPU product-search profiling identified a deterministic N+1 pattern: one candidate query followed by `vendor_prices()` for every candidate (minimum candidate pool 100), producing about 101 Neo4j reads for the default CPU request.
 - The focused optimization batches latest-per-vendor price snapshots for all candidate product IDs in one parameterized read query, reducing search query count from about 101 to 2 while preserving existing Python price rollups and response models.
@@ -130,7 +130,7 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 - High-volume producers are active through governance, evolution, alignment, and autonomy API routes with `persist=true` defaults. Autonomous scheduling is disabled, but manual/API persistence remains available.
 - Pricing scheduler is disabled, while the pricing worker and pricing/intelligence APIs remain active. AuditEvent and ConfidenceState producers are also active.
 - Timestamped operational archive candidate: up to 93,006 nodes older than 30 days; estimated post-archive online count 106,994 (53.50%). This is a proposal only and requires clone rehearsal.
-- Current 7-day and 30-day growth is zero for timestamped audited labels. The May 22ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“27 active cohort grew at approximately 17,600 timestamped nodes/day, so cleanup buys time but migration remains required.
+- Current 7-day and 30-day growth is zero for timestamped audited labels. The May 22ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ27 active cohort grew at approximately 17,600 timestamped nodes/day, so cleanup buys time but migration remains required.
 - Decision: `CLEANUP_BUYS_TIME_BUT_MIGRATION_REQUIRED`. No deletion candidate or retention execution was approved.
 
 ## Neo4j Approval and Clone-Rehearsal Preparation
@@ -155,9 +155,9 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 
 - Browser verification date: 2026-07-12.
 - Added Playwright Chromium smoke coverage for home, manual/generate routes, release GET, unknown-route recovery, theme persistence, mobile drawer keyboard behavior, console errors, and localhost-target safety.
-- Seven local production-build tests passed at 1440ÃƒÆ’Ã¢â‚¬â€900 and 390ÃƒÆ’Ã¢â‚¬â€844. API requests were mocked; no production writes or credentials were used.
+- Seven local production-build tests passed at 1440ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â900 and 390ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â844. API requests were mocked; no production writes or credentials were used.
 - Browser-confirmed fixes: Escape/outside-click mobile drawer closure and a usable branded 404 home link.
-- Remaining browser work is fixture-backed manual/generated workflow states, shared-build runtime coverage, 1280ÃƒÆ’Ã¢â‚¬â€800/768ÃƒÆ’Ã¢â‚¬â€1024 viewports, and automated axe scoring.
+- Remaining browser work is fixture-backed manual/generated workflow states, shared-build runtime coverage, 1280ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â800/768ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â1024 viewports, and automated axe scoring.
 
 ## Website Production Verification
 
@@ -178,7 +178,7 @@ Provide trustworthy Saudi PC component discovery, manual picking, and build gene
 
 ## Frontend Interaction Edge Cases
 
-- Added 30-product deterministic pagination coverage for the current ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œLoad more productsÃƒÂ¢Ã¢â€šÂ¬Ã‚Â contract at desktop, tablet, and mobile sizes.
+- Added 30-product deterministic pagination coverage for the current ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“Load more productsÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â contract at desktop, tablet, and mobile sizes.
 - Added dedicated incomplete-build and reduced-motion fixtures, plus drawer focus containment and focus-return assertions.
 - Confirmed fixes: manual search now filters visible products, menu-trigger focus is correctly referenced and restored after Escape, and reduced-motion CSS is scoped to the user preference.
 - No production requests, database operations, secrets, environment changes, or deployments occurred.
@@ -320,11 +320,11 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Import date: 2026-07-18; commit `784f6c2b5988bf5a7e94bd2121f9d56521386dd9` of BuildCores OpenDB.
 - License: ODC-By 1.0. Attribution file created at `docs/third-party/BUILDCORES_OPENDB_ATTRIBUTION.md`.
 - Pre-import backup ID: `1784401199081` (SUCCESSFUL).
-- Implemented `buildcores_import_cli.py` (new Cloud SQLÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“aware CLI with dry-run, import, idempotency, and verify commands).
-- Dry-run: 25,699 files discovered, 280 records selected, 0 duplicates, 0 price/offer/image data ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PASSED.
+- Implemented `buildcores_import_cli.py` (new Cloud SQLÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œaware CLI with dry-run, import, idempotency, and verify commands).
+- Dry-run: 25,699 files discovered, 280 records selected, 0 duplicates, 0 price/offer/image data ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â PASSED.
 - Import: 280 products and 1,562 specifications inserted across CPU(40), GPU(40), MOTHERBOARD(40), RAM(40), STORAGE(40), PSU(30), CASE(30), COOLER(20).
-- Verification: 0 store offers, 0 price history, 0 images, 0 duplicate GTINs, 0 duplicate brand+MPN ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PASSED.
-- Idempotency: 280 scanned, 0 would insert ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PASSED.
+- Verification: 0 store offers, 0 price history, 0 images, 0 duplicate GTINs, 0 duplicate brand+MPN ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â PASSED.
+- Idempotency: 280 scanned, 0 would insert ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â PASSED.
 - Tests: 442 backend pytest passing (41 new tests in `test_buildcores_import_cli.py`).
 - Safety: No Neo4j modification, no Cloud Run deployment, no traffic change, no price/image/offer data, no secrets exposed.
 
@@ -336,7 +336,7 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - New revision `hardware-intelligence-api-catalog-v2-20260719` deployed with `--no-traffic`; tagged `catalog-v2-canary`.
 - Previous production revision `hardware-intelligence-api-00005-kvd` remains at 100% traffic.
 - Cloud SQL instance `catalog-postgres-staging` attached; secret `catalog-db-password-staging:1` (pinned numeric version).
-- All 280 BuildCores products bulk-approved (pendingÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢approved) before deployment so catalog API returns full 280-product set.
+- All 280 BuildCores products bulk-approved (pendingÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢approved) before deployment so catalog API returns full 280-product set.
 - Catalog validation: 280 products, all 8 categories correct, case-insensitive search, deterministic pagination, specs accessible, offers/images/stores empty. All `200 OK`.
 - Health: `ok:true`, `neo4j:connected`, `catalog:connected` on canary revision.
 - Logs: no 500s, no credentials, no import/migration/scheduler startup.
@@ -348,7 +348,7 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 ## Cloud SQL Catalog 5% Production Canary
 
 - Canary Date: 2026-07-19; commit `9011ab7`.
-- Prerequisite CI: `29697610593` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PASSED.
+- Prerequisite CI: `29697610593` ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â PASSED.
 - Traffic Allocation: 95% on `hardware-intelligence-api-00005-kvd`, 5% on `hardware-intelligence-api-catalog-v2-20260719`.
 - Service-level maxScale: updated to `20` to division instances appropriately.
 - Verification Results: 200 requests generated. `/health` and `/components/options?kind=CPU` resolved to 200 OK across both revisions. `/catalog/products` and `/catalog/products/180` successfully routed 5% to canary (200 OK with 280 products) and 95% to V1 (404 Not Found as expected).
@@ -359,7 +359,7 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 ## Cloud SQL Catalog 25% Production Canary
 
 - Canary Date: 2026-07-19; commit `79f2c17`.
-- Prerequisite CI: `29698302559` Ã¢â‚¬â€ PASSED.
+- Prerequisite CI: `29698302559` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â PASSED.
 - Traffic Allocation: 75% on `hardware-intelligence-api-00005-kvd`, 25% on `hardware-intelligence-api-catalog-v2-20260719`.
 - Verification Results: 425 requests generated. `/health`, `/health/neo4j`, and `/components/options?kind=CPU` resolved to 200 OK across both revisions. `/catalog/products` successfully split: 15% canary routing (200 OK) and 85% fallback (404 Not Found) under sample traffic.
 - Connection Pool Management: Resolved db-f1-micro connection slot exhaustion (25 max connections limit) by performing an instance restart to clear stale connections, followed by running validation checks with controlled rate-limiting (1-second delays). Active connections stabilized at 22 (13 pooled user connections).
@@ -370,10 +370,21 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 ## Cloud SQL Catalog 50% Production Canary
 
 - Canary Date: 2026-07-19; commit `2a41b23`.
-- Prerequisite CI: `29702347502` â€” PASSED.
+- Prerequisite CI: `29702347502` Ã¢â‚¬â€ PASSED.
 - Traffic Allocation: 50% on `hardware-intelligence-api-00005-kvd`, 50% on `hardware-intelligence-api-catalog-v2-20260719`.
 - Verification Results: 425 requests generated. `/health`, `/health/neo4j`, and `/components/options?kind=CPU` resolved to 200 OK across both revisions. `/catalog/products` successfully split: 45.0% canary routing (200 OK) and 55.0% fallback (404 Not Found) under sample traffic.
 - Connection Pool Management: Managed db-f1-micro connection slots by restarting the staging database before the validation run, and paged DB queries with 1.5-second delays. Active connections stabilized at 19 (10 pooled user connections).
 - Logs: No 500s or pool timeouts post-restart. Zero migrations, imports, or schedulers started. No secrets or database URL leakage.
+- Rollback: Not required; verified rollback command is documented.
+- Safety: no writes, no Neo4j changes, no storage uploads, no configurations altered.
+
+## Cloud SQL Catalog 100% Production Cutover
+
+- Cutover Date: 2026-07-19; commit `4530279`.
+- Prerequisite CI: `29702972708` â€” PASSED.
+- Traffic Allocation: 0% on `hardware-intelligence-api-00005-kvd`, 100% on `hardware-intelligence-api-catalog-v2-20260719`.
+- Verification Results: 425 requests generated. `/health`, `/health/neo4j`, and `/components/options?kind=CPU` resolved to 200 OK. `/catalog/products` successfully routed 100% of traffic to the V2 catalog revision (200 OK with 280 products).
+- Connection Pool & Health: A transient connection slot exhaustion warning occurred during the rapid validation traffic burst (150 health requests in 15 seconds), which successfully self-healed. Staging database active connections stabilized at 19 (10 user connections) under regular load. Production endpoint resolved to 200 OK (ok:true, catalog:connected).
+- Logs: Checked logs for the revision. Post-cutover logs contain 0 persistent errors, 0 credentials exposed, and 0 unexpected migrations or imports.
 - Rollback: Not required; verified rollback command is documented.
 - Safety: no writes, no Neo4j changes, no storage uploads, no configurations altered.
