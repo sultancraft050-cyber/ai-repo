@@ -899,3 +899,94 @@ function normalizeSavedBuild(build: SavedBuild): SavedBuild {
     public_visibility: Boolean(build.public_visibility)
   };
 }
+
+export interface CatalogSpec {
+  specification_key: string;
+  normalized_value: string;
+  display_value: string;
+  unit: string | null;
+}
+
+export interface CatalogImage {
+  id: number;
+  source_url: string | null;
+  storage_key: string | null;
+  source_name: string;
+  width: number | null;
+  height: number | null;
+  format: string | null;
+}
+
+export interface CatalogStore {
+  id: number;
+  name: string;
+  slug: string;
+  country: string;
+  website: string | null;
+}
+
+export interface CatalogOffer {
+  id: number;
+  store_id: number;
+  store_sku: string;
+  product_url: string;
+  currency: string;
+  regular_price: number | null;
+  sale_price: number | null;
+  stock_status: string;
+  observed_at: string;
+  expires_at: string | null;
+  store: CatalogStore | null;
+}
+
+export interface CatalogProduct {
+  id: number;
+  category: string;
+  brand: string;
+  manufacturer_part_number: string;
+  gtin: string | null;
+  exact_model: string | null;
+  variant: string | null;
+  canonical_name: string;
+  slug: string;
+  lifecycle_status: string;
+  approval_status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CatalogProductDetail extends CatalogProduct {
+  specifications: CatalogSpec[];
+  images: CatalogImage[];
+  offers: CatalogOffer[];
+  cheapest_sar_offer: CatalogOffer | null;
+}
+
+export async function listCatalogProducts(
+  offset = 0,
+  limit = 50,
+  category?: string,
+  search?: string
+): Promise<CatalogProduct[]> {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  if (category) params.append("category", category);
+  if (search) params.append("search", search);
+  return requestJson<CatalogProduct[]>(`/catalog/products?${params.toString()}`);
+}
+
+export async function getCatalogProduct(productId: number): Promise<CatalogProductDetail> {
+  return requestJson<CatalogProductDetail>(`/catalog/products/${productId}`);
+}
+
+export async function getCatalogOffers(productId: number): Promise<CatalogOffer[]> {
+  return requestJson<CatalogOffer[]>(`/catalog/products/${productId}/offers`);
+}
+
+export async function getCatalogImages(productId: number): Promise<CatalogImage[]> {
+  return requestJson<CatalogImage[]>(`/catalog/products/${productId}/images`);
+}
+
+export async function listCatalogStores(offset = 0, limit = 50): Promise<CatalogStore[]> {
+  const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+  return requestJson<CatalogStore[]>(`/catalog/stores?${params.toString()}`);
+}

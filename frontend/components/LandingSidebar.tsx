@@ -1,13 +1,15 @@
 "use client";
 
-import { BarChart3, Boxes, Cpu, MessageSquare, MonitorUp, Save } from "lucide-react";
+import { BarChart3, Boxes, Cpu, MessageSquare, MonitorUp, Save, Award } from "lucide-react";
 
 const navItems = [
   { label: "Home", icon: Boxes, href: "/" },
+  { label: "Components", icon: Boxes, href: "/components" },
   { label: "Generate", icon: Cpu, href: "/build/generate" },
   { label: "Pick Parts", icon: Boxes, href: "/build/manual" },
   { label: "Saved", icon: Save, href: "/build/generate#saved-builds" },
-  { label: "Compare", icon: BarChart3, href: "/build/generate" },
+  { label: "Compare", icon: BarChart3, href: "/compare" },
+  { label: "Attribution", icon: Award, href: "/attribution" },
   { label: "Feedback", icon: MessageSquare, href: "/#feedback" }
 ];
 
