@@ -152,6 +152,212 @@ export async function fetchComponentOptions(
   return result.options;
 }
 
+export const EXPLICIT_REVIEWED_MAPPING: Record<string, string> = {
+  "48": "cpu-spec:CPU|AMD|RYZEN_5_5600",
+  "37": "cpu-spec:CPU|INTEL|CORE_I5_14400F",
+  "46": "cpu-spec:CPU|INTEL|CORE_I9_13900K",
+  "58": "cpu-spec:CPU|INTEL|CORE_I5_12600KF",
+  "54": "cpu-spec:CPU|AMD|RYZEN_5_3400G"
+};
+
+export const KNOWN_V1_CPUS = new Set([
+  'cpu:amd:ryzen-7-7800x3d', 'cpu:amd:ryzen-9-7950x', 'cpu:intel:core-i7-14700k', 'cpu:amd:ryzen-5-7600', 'cpu:intel:core-i5-14400f', 'product-f5cf00e1-4317-413b-8edd-e7053dd9497b',
+  'cpu-spec:CPU|AMD|RYZEN_7_5700X', 'cpu-spec:CPU|AMD|RYZEN_5_5500', 'cpu-spec:CPU|AMD|RYZEN_5_3600', 'cpu-spec:CPU|AMD|RYZEN_5_5600', 'cpu-spec:CPU|AMD|RYZEN_9_9950X3D',
+  'cpu-spec:CPU|AMD|RYZEN_7_9800X3D', 'cpu-spec:CPU|AMD|RYZEN_5_5600G', 'cpu-spec:CPU|AMD|RYZEN_7_5700X3D', 'cpu-spec:CPU|AMD|RYZEN_7_5800X3D', 'cpu-spec:CPU|AMD|RYZEN_7_5825U',
+  'cpu-spec:CPU|AMD|RYZEN_5_5600X', 'cpu-spec:CPU|AMD|RYZEN_7_3700X', 'cpu-spec:CPU|AMD|RYZEN_5_5500U', 'cpu-spec:CPU|AMD|RYZEN_7_5700G', 'cpu-spec:CPU|AMD|RYZEN_5_7520U',
+  'cpu-spec:CPU|AMD|RYZEN_5_2600', 'cpu-spec:CPU|AMD|RYZEN_5_3500X', 'cpu-spec:CPU|AMD|RYZEN_7_5800X', 'cpu-spec:CPU|AMD|RYZEN_5_3400G', 'cpu-spec:CPU|AMD|RYZEN_7_5700U',
+  'cpu-spec:CPU|AMD|RYZEN_3_3200G', 'cpu-spec:CPU|INTEL|CORE_ULTRA_7_270K_PLUS', 'cpu-spec:CPU|AMD|RYZEN_7_7730U', 'cpu-spec:CPU|AMD|RYZEN_AI_MAX_395', 'cpu-spec:CPU|AMD|RYZEN_7_7735H',
+  'cpu-spec:CPU|AMD|RYZEN_AI_7_350', 'cpu-spec:CPU|AMD|RYZEN_9_5950X', 'cpu-spec:CPU|AMD|RYZEN_5_5500X3D', 'cpu-spec:CPU|AMD|RYZEN_5_7500F', 'cpu-spec:CPU|AMD|RYZEN_5_9600X',
+  'cpu-spec:CPU|AMD|RYZEN_5_PRO_4650G', 'cpu-spec:CPU|AMD|RYZEN_5_3500U', 'cpu-spec:CPU|INTEL|CORE_ULTRA_9_285K', 'cpu-spec:CPU|AMD|RYZEN_7_5700', 'cpu-spec:CPU|AMD|RYZEN_7_2700X',
+  'cpu-spec:CPU|AMD|FX_8350', 'cpu-spec:CPU|AMD|RYZEN_5_1600', 'cpu-spec:CPU|INTEL|CORE_ULTRA_X7_358H', 'cpu-spec:CPU|AMD|RYZEN_3_7320U', 'cpu-spec:CPU|INTEL|CORE_I5_12400F',
+  'cpu-spec:CPU|AMD|RYZEN_9_9950X', 'cpu-spec:CPU|AMD|RYZEN_3_2200G', 'cpu-spec:CPU|AMD|RYZEN_7_1700', 'cpu-spec:CPU|AMD|RYZEN_5_4600G', 'cpu-spec:CPU|AMD|RYZEN_7_9700X',
+  'cpu-spec:CPU|AMD|RYZEN_9_3900X', 'cpu-spec:CPU|AMD|RYZEN_AI_9_HX_370', 'cpu-spec:CPU|AMD|RYZEN_9_5900X', 'cpu-spec:CPU|AMD|FX_9590', 'cpu-spec:CPU|AMD|RYZEN_5_5625U',
+  'cpu-spec:CPU|AMD|RYZEN_7_260', 'cpu-spec:CPU|AMD|RYZEN_5_PRO_4650U', 'cpu-spec:CPU|AMD|RYZEN_5_4500', 'cpu-spec:CPU|AMD|RYZEN_5_3600X', 'cpu-spec:CPU|AMD|RYZEN_7_8845H',
+  'cpu-spec:CPU|AMD|RYZEN_5_7600X', 'cpu-spec:CPU|AMD|RYZEN_5_PRO_5650U', 'cpu-spec:CPU|AMD|RYZEN_5_2400G', 'cpu-spec:CPU|AMD|RYZEN_7_9850X3D', 'cpu-spec:CPU|AMD|THREADRIPPER_9995WX',
+  'cpu-spec:CPU|AMD|FX_6300', 'cpu-spec:CPU|AMD|RYZEN_5_2600X', 'cpu-spec:CPU|INTEL|CORE_I5_9400F', 'cpu-spec:CPU|INTEL|CORE_I5_10400', 'cpu-spec:CPU|AMD|RYZEN_7_4800H',
+  'cpu-spec:CPU|AMD|RYZEN_7_7700', 'cpu-spec:CPU|AMD|RYZEN_5_4500U', 'cpu-spec:CPU|INTEL|CORE_ULTRA_X9_388H', 'cpu-spec:CPU|AMD|RYZEN_5_7600', 'cpu-spec:CPU|INTEL|CORE_2_DUO_E8400',
+  'cpu-spec:CPU|INTEL|CORE_I5_10400F', 'cpu-spec:CPU|AMD|RYZEN_7_6800H', 'cpu-spec:CPU|AMD|RYZEN_7_5800H', 'cpu-spec:CPU|INTEL|CORE_I3_10100', 'cpu-spec:CPU|AMD|RYZEN_7_250',
+  'cpu-spec:CPU|INTEL|CORE_I5_14400F', 'cpu-spec:CPU|INTEL|CORE_I9_14900K', 'cpu-spec:CPU|INTEL|CORE_ULTRA_7_255H', 'cpu-spec:CPU|INTEL|CORE_I7_3770', 'cpu-spec:CPU|INTEL|CORE_I9_14900HX',
+  'cpu-spec:CPU|INTEL|CORE_ULTRA_9_275HX', 'cpu-spec:CPU|INTEL|CORE_I5_13420H', 'cpu-spec:CPU|AMD|RYZEN_3_3100', 'cpu-spec:CPU|AMD|RYZEN_5_PRO_3500U', 'cpu-spec:CPU|AMD|RYZEN_5_1400',
+  'cpu-spec:CPU|AMD|RYZEN_5_7535H', 'cpu-spec:CPU|AMD|RYZEN_7_3800X', 'cpu-spec:CPU|INTEL|CORE_I7_10700', 'cpu-spec:CPU|INTEL|PROCESSOR_N100', 'cpu-spec:CPU|AMD|RYZEN_5_4600H',
+  'cpu-spec:CPU|INTEL|CORE_ULTRA_7_265K', 'cpu-spec:CPU|INTEL|PROCESSOR_N150', 'cpu-spec:CPU|AMD|RYZEN_3_1200', 'cpu-spec:CPU|INTEL|CORE_I7_4790K', 'cpu-spec:CPU|INTEL|CORE_I7_6700',
+  'cpu-spec:CPU|INTEL|CORE_I7_8700', 'cpu-spec:CPU|INTEL|CORE_I7_7700'
+]);
+
+export const KNOWN_V1_GPUS = new Set([
+  'gpu:nvidia:rtx-4070-super-founders-edition', 'gpu:nvidia:rtx-4080-super-founders-edition', 'gpu:amd:radeon-rx-7900-xtx-reference', 'gpu:gigabyte:rtx-4090-gaming-oc',
+  'gpu:amd:radeon-rx-7800-xt-reference', 'gpu:nvidia:rtx-4060-ti-founders-edition', 'gpu:amd:radeon-rx-7600-reference', 'canonical:GPU|NVIDIA|MSI_GEFORCE_RTX_3060_VENTUS_2X_12G',
+  'canonical:GPU|UNKNOWN|SAPPHIRE_PULSE', 'canonical:GPU|MSI|MSI_SHADOW_3X_OC', 'canonical:GPU|GIGABYTE|GIGABYTE_WINDFORCE_OC_SFF', 'canonical:GPU|UNKNOWN|ASROCK_CHALLENGER_OC',
+  'canonical:GPU|GIGABYTE|GIGABYTE_GAMING_OC', 'canonical:GPU|ASUS|ASUS_ROG_ASTRAL_OC', 'canonical:GPU|UNKNOWN|ASROCK_CHALLENGER_D', 'canonical:GPU|ASUS|ASUS_PRIME_OC',
+  'canonical:GPU|ASUS|ASUS_PRIME', 'canonical:GPU|MSI|MSI_VENTUS_2X_BLACK_OC', 'canonical:GPU|MSI|MSI_VENTUS_2X_PLUS_OC', 'canonical:GPU|MSI|MSI_VENTUS_3X_OC',
+  'canonical:GPU|UNKNOWN|ASROCK_STEEL_LEGEND', 'canonical:GPU|INTEL|LIMITED_EDITION', 'canonical:GPU|MSI|MSI_SHADOW_2X_OC', 'canonical:GPU|UNKNOWN|PNY_OC',
+  'canonical:GPU|UNKNOWN|XFX_SWIFT_OC', 'canonical:GPU|MSI|MSI_VENTUS_2X_OC', 'canonical:GPU|GIGABYTE|GIGABYTE_WINDFORCE_OC', 'canonical:GPU|ASUS|ASUS_TUF_GAMING_OC',
+  'canonical:GPU|NVIDIA|FOUNDERS_EDITION', 'canonical:GPU|AMD|POWERCOLOR_RX7800XT_16G_P', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070_TI|MSI_SHADOW_3X_OC',
+  'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070|GIGABYTE_WINDFORCE_OC_SFF', 'canonical:GPU|UNKNOWN|RADEON_RX_9070_XT|GIGABYTE_GAMING_OC', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5090|ASUS_ROG_ASTRAL_OC',
+  'canonical:GPU|UNKNOWN|RADEON_RX_9070_XT|ASUS_PRIME_OC', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070|ASUS_PRIME_OC', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070_TI|MSI_VENTUS_3X_OC',
+  'canonical:GPU|UNKNOWN|GEFORCE_RTX_5060|MSI_SHADOW_2X_OC', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5060|GIGABYTE_WINDFORCE_OC', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5080|ASUS_TUF_GAMING_OC',
+  'canonical:GPU|UNKNOWN|GEFORCE_RTX_5090|GIGABYTE_AORUS_MASTER', 'canonical:GPU|NVIDIA|GEFORCE_RTX_5090|NVIDIA_FOUNDERS_EDITION', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070_TI|GIGABYTE_WINDFORCE_SFF',
+  'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070_TI|ASUS_TUF_GAMING_OC', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5080|ASUS_ROG_ASTRAL_OC', 'canonical:GPU|NVIDIA|GEFORCE_RTX_5070|NVIDIA_FOUNDERS_EDITION',
+  'canonical:GPU|UNKNOWN|GEFORCE_RTX_5070_TI|ASUS_PRIME', 'canonical:GPU|UNKNOWN|GEFORCE_RTX_5080|ASUS_PRIME_OC'
+]);
+
+export function mapCategoryV2(cat: string): string {
+  const mapping: Record<string, string> = {
+    CPU: "CPU",
+    GPU: "GPU",
+    Motherboard: "MOTHERBOARD",
+    RAM: "RAM",
+    Storage: "STORAGE",
+    Cooler: "COOLER",
+    Case: "CASE",
+    PSU: "PSU",
+    Processor: "CPU",
+    "Graphics card": "GPU",
+    Memory: "RAM",
+    "CPU Cooler": "COOLER",
+    "Power Supply": "PSU"
+  };
+  return mapping[cat] || cat.toUpperCase();
+}
+
+export function mapCategoryV1(cat: string): string {
+  const mapping: Record<string, string> = {
+    CPU: "CPU",
+    GPU: "GPU",
+    MOTHERBOARD: "Motherboard",
+    RAM: "RAM",
+    STORAGE: "Storage",
+    COOLER: "Cooler",
+    CASE: "Case",
+    PSU: "PSU"
+  };
+  return mapping[cat] || cat;
+}
+
+export function getV1Mapping(
+  v2Product: any,
+  v1Products: any[]
+): { id: string; method: string; confidence: number } | null {
+  const v2Id = String(v2Product.id);
+  if (EXPLICIT_REVIEWED_MAPPING[v2Id]) {
+    return {
+      id: EXPLICIT_REVIEWED_MAPPING[v2Id],
+      method: "explicit_reviewed_mapping",
+      confidence: 1.0
+    };
+  }
+
+  const v2Brand = String(v2Product.brand || "").toLowerCase().trim();
+  const v2Mpn = String(v2Product.manufacturer_part_number || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  if (!v2Mpn || !v2Brand) return null;
+
+  const matches = v1Products.filter((p1) => {
+    const v1Brand = String(p1.brand || "").toLowerCase().trim();
+    if (v1Brand !== v2Brand) return false;
+
+    const mpnCandidates = [
+      p1.summary_specs?.part_number,
+      p1.model,
+      p1.id
+    ].map((val) => String(val || "").toLowerCase().replace(/[^a-z0-9]/g, ""));
+
+    return mpnCandidates.some((c) => c === v2Mpn);
+  });
+
+  if (matches.length === 1) {
+    return {
+      id: matches[0].id,
+      method: "unique_mpn_match",
+      confidence: 0.9
+    };
+  }
+
+  return null;
+}
+
+export function mapToSearchResult(p: any): ProductSearchResult {
+  const specs: Record<string, any> = {};
+  if (Array.isArray(p.specifications)) {
+    p.specifications.forEach((s: any) => {
+      const key = s.specification_key;
+      const val = s.normalized_value;
+      const numVal = Number(val);
+      const parsedVal = isNaN(numVal) ? val : numVal;
+      
+      if (key === "socket" || key === "supported_sockets") {
+        specs.socket = val;
+      } else if (key === "chipset") {
+        specs.chipset = val;
+      } else if (key === "memory_generation" || key === "memory_type") {
+        specs.memory_type = val;
+      } else if (key === "form_factor") {
+        specs.form_factor = val;
+      } else if (key === "cores" || key === "cores_total") {
+        specs.cores = parsedVal;
+      } else if (key === "threads" || key === "cores_threads") {
+        specs.threads = parsedVal;
+      } else if (key === "boost_clock_ghz") {
+        specs.boost_clock_ghz = parsedVal;
+      } else if (key === "tdp_w" || key === "tdp") {
+        specs.tdp_w = parsedVal;
+      } else if (key === "vram_gb" || key === "memory" || key === "capacity") {
+        specs.vram_gb = parsedVal;
+        specs.capacity_gb = parsedVal;
+      } else if (key === "length_mm" || key === "length") {
+        specs.length_mm = parsedVal;
+      } else if (key === "board_power_w" || key === "power_draw") {
+        specs.board_power_w = parsedVal;
+      } else if (key === "wattage" || key === "wattage_w") {
+        specs.wattage_w = parsedVal;
+      } else if (key === "efficiency_rating") {
+        specs.efficiency_rating = val;
+      } else if (key === "modular" || key === "modularity") {
+        specs.modular = val;
+      }
+      specs[key] = parsedVal;
+    });
+  }
+  
+  const price = p.cheapest_sar_offer
+    ? Number(p.cheapest_sar_offer.sale_price || p.cheapest_sar_offer.regular_price)
+    : null;
+  const vendor = p.cheapest_sar_offer?.store?.name || null;
+  
+  return {
+    id: String(p.id),
+    name: p.canonical_name,
+    brand: p.brand,
+    category: mapCategoryV1(p.category),
+    model: p.exact_model || p.canonical_name,
+    summary_specs: specs,
+    cheapest_price_sar: price,
+    cheapest_vendor: vendor,
+    region: "SA",
+    data_origin: "live" as any,
+    price_status: (price ? "available" : "unavailable") as any,
+    flags: [],
+    stale: false,
+    best_value: false
+  };
+}
+
+export async function fetchAllV1Products(category: string): Promise<ProductSearchResult[]> {
+  const params0 = new URLSearchParams({ limit: "100", category });
+  const page0 = await requestJson<ProductSearchResult[]>(`/products/search?${params0.toString()}`);
+  if (page0.length === 100) {
+    const params1 = new URLSearchParams({ limit: "100", offset: "100", category });
+    const page1 = await requestJson<ProductSearchResult[]>(`/products/search?${params1.toString()}`);
+    return [...page0, ...page1];
+  }
+  return page0;
+}
+
+export async function getMappedCatalogProduct(productId: number): Promise<ProductSearchResult> {
+  const detail = await getCatalogProduct(productId);
+  return mapToSearchResult(detail);
+}
+
 export async function searchProducts({
   query,
   category,
@@ -181,22 +387,43 @@ export async function searchProducts({
   inStockPricedOnly?: boolean;
   sort?: "recommended" | "cheapest" | "newest" | "name";
 }): Promise<ProductSearchResult[]> {
+  const v2Category = category ? mapCategoryV2(category) : undefined;
+  
   const params = new URLSearchParams({
-    q: query ?? "",
     limit: String(limit),
     offset: String(offset)
   });
-  if (category) params.set("category", category);
-  if (region) params.set("region", region);
-  if (brand) params.set("brand", brand);
-  if (socket) params.set("socket", socket);
-  if (chipset) params.set("chipset", chipset);
-  if (memoryType) params.set("memory_type", memoryType);
-  if (typeof minPriceSar === "number") params.set("min_price_sar", String(minPriceSar));
-  if (typeof maxPriceSar === "number") params.set("max_price_sar", String(maxPriceSar));
-  if (inStockPricedOnly) params.set("in_stock_priced_only", "true");
-  if (sort) params.set("sort", sort);
-  return requestJson<ProductSearchResult[]>(`/products/search?${params.toString()}`);
+  if (v2Category) params.append("category", v2Category);
+  if (query) params.append("search", query);
+  
+  try {
+    const listProducts = await requestJson<any[]>(`/catalog/products?${params.toString()}`);
+    const results = listProducts.map((p) => mapToSearchResult(p));
+    
+    let filtered = results;
+    if (brand && brand !== "all") {
+      filtered = filtered.filter(p => String(p.brand).toLowerCase() === brand.toLowerCase());
+    }
+    
+    return filtered;
+  } catch (err) {
+    const params = new URLSearchParams({
+      q: query ?? "",
+      limit: String(limit),
+      offset: String(offset)
+    });
+    if (category) params.set("category", category);
+    if (region) params.set("region", region);
+    if (brand) params.set("brand", brand);
+    if (socket) params.set("socket", socket);
+    if (chipset) params.set("chipset", chipset);
+    if (memoryType) params.set("memory_type", memoryType);
+    if (typeof minPriceSar === "number") params.set("min_price_sar", String(minPriceSar));
+    if (typeof maxPriceSar === "number") params.set("max_price_sar", String(maxPriceSar));
+    if (inStockPricedOnly) params.set("in_stock_priced_only", "true");
+    if (sort) params.set("sort", sort);
+    return requestJson<ProductSearchResult[]>(`/products/search?${params.toString()}`);
+  }
 }
 
 export async function fetchProductCategories(): Promise<ProductCategoryResponse> {

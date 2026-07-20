@@ -25,11 +25,15 @@ const categoryLabels: Record<string, string> = {
   CPU: "CPU",
   GPU: "GPU",
   Motherboard: "Motherboard",
+  MOTHERBOARD: "Motherboard",
   RAM: "RAM",
   Storage: "Storage",
+  STORAGE: "Storage",
   PSU: "Power supply",
   Case: "Case",
-  Cooler: "Cooler"
+  CASE: "Case",
+  Cooler: "Cooler",
+  COOLER: "Cooler"
 };
 
 function categoryLabel(category?: ProductImageCategory | null): string {

@@ -16,7 +16,13 @@ import {
   Zap
 } from "lucide-react";
 import { CalmNotice, IconButton, StateBadge, cx, focusRing, interactiveButton, motionSafeSpin } from "@/components/ui/PublicUi";
-import { searchProducts, validateAndMeasure } from "@/lib/api";
+import {
+  searchProducts,
+  validateAndMeasure,
+  getV1Mapping,
+  fetchAllV1Products,
+  getMappedCatalogProduct
+} from "@/lib/api";
 import { summarizeBuyerNotes } from "@/lib/uiText";
 import { ProductImage } from "@/components/ProductImage";
 import {
@@ -39,7 +45,7 @@ type CategoryHasMore = Partial<Record<ComponentKind, boolean>>;
 type SortMode = "recommended" | "cheapest" | "newest" | "name";
 const PRODUCT_PAGE_SIZE = 24;
 
-const categoryCopy: Record<ComponentKind, string> = {
+const categoryCopy: Record<string, string> = {
   CPU: "Processor",
   GPU: "Graphics card",
   Motherboard: "Motherboard",
@@ -65,6 +71,7 @@ function emptyProducts(): ProductMap {
 export function ManualPartPicker() {
   const [products, setProducts] = useState<ProductMap>(emptyProducts);
   const [failures, setFailures] = useState<CategoryFailures>({});
+  const [v1Products, setV1Products] = useState<Record<string, any[]>>({});
   const [categoryLoading, setCategoryLoading] = useState<CategoryLoading>(() =>
     componentOrder.reduce((state, kind) => ({ ...state, [kind]: true }), {} as CategoryLoading)
   );
@@ -85,6 +92,29 @@ export function ManualPartPicker() {
   const selectedCount = Object.keys(selected).length;
   const missingCategories = componentOrder.filter((kind) => !selected[kind]);
   const selection = useMemo(() => toSelectedComponents(selected), [selected]);
+  const mappedSelection = useMemo(() => {
+    const selectionResult: SelectedComponents = {};
+    const unmappedCategories: string[] = [];
+    
+    componentOrder.forEach((kind) => {
+      const product = selected[kind];
+      if (!product) return;
+      
+      const v1Cat = kind === "Motherboard" ? "Motherboard" : kind === "Storage" ? "Storage" : kind;
+      const list = v1Products[v1Cat] || [];
+      const mapping = getV1Mapping(product, list);
+      
+      if (mapping) {
+        console.log(`Mapped V2 product ${product.id} to V1 ID ${mapping.id} using method ${mapping.method} (confidence: ${mapping.confidence})`);
+        selectionResult[selectionKeyByKind[kind]] = mapping.id;
+      } else {
+        unmappedCategories.push(kind);
+      }
+    });
+    
+    return { selection: selectionResult, unmappedCategories };
+  }, [selected, v1Products]);
+
   const preferences = useMemo<BuildPreferences>(
     () => ({
       purpose: "gaming",
@@ -105,9 +135,19 @@ export function ManualPartPicker() {
   const priceRows = selectedRows.map((product) => ({ product, price: bestSarPrice(product) }));
   const knownPriceTotal = priceRows.reduce((total, row) => total + (row.price?.amount ?? 0), 0);
   const missingPrices = priceRows.filter((row) => !row.price).map((row) => row.product.category);
+
+  const unmappedWarnings = mappedSelection.unmappedCategories.map(
+    (kind) => `${categoryCopy[kind]}: Compatibility calculation unavailable for this product`
+  );
+  const unmappedPerformanceWarning = (mappedSelection.unmappedCategories.includes("CPU") || mappedSelection.unmappedCategories.includes("GPU"))
+    ? ["Performance estimate unavailable for this product"]
+    : [];
+
   const visibleWarnings = [
     ...Object.entries(failures).filter((entry): entry is [string, string] => Boolean(entry[1])).map(([kind, message]) => `${kind}: ${message}`),
-    ...missingPrices.map((category) => `${category}: price not listed yet.`),
+    ...missingPrices.map((category) => `${categoryCopy[category as ComponentKind] ?? category}: No current offer`),
+    ...unmappedWarnings,
+    ...unmappedPerformanceWarning,
     ...(compatibility?.checks.filter((check) => check.status !== "pass").map((check) => check.details) ?? [])
   ];
   const buyerNotes = summarizeBuyerNotes(visibleWarnings, {
@@ -124,12 +164,26 @@ export function ManualPartPicker() {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadProducts() {
+    async function loadProductsAndV1() {
       setLoading(true);
       setFailures({});
       setCategoryLoading(
         componentOrder.reduce((state, kind) => ({ ...state, [kind]: true }), {} as CategoryLoading)
       );
+
+      try {
+        const categories = ["CPU", "Motherboard", "RAM", "GPU", "Storage", "Cooler", "Case", "PSU"];
+        const resMap: Record<string, any[]> = {};
+        await Promise.all(
+          categories.map(async (cat) => {
+            const list = await fetchAllV1Products(cat);
+            resMap[cat] = list;
+          })
+        );
+        if (!cancelled) setV1Products(resMap);
+      } catch (err) {
+        console.error("Failed to load legacy fallback catalog:", err);
+      }
 
       await Promise.all(
         componentOrder.map(async (kind) => {
@@ -159,7 +213,7 @@ export function ManualPartPicker() {
       );
       if (!cancelled) setLoading(false);
     }
-    loadProducts();
+    loadProductsAndV1();
     return () => {
       cancelled = true;
     };
@@ -205,10 +259,13 @@ export function ManualPartPicker() {
     }
   }
 
+  const selectionForValidation = mappedSelection.selection;
+  const hasSelectedParts = selectedCount > 0;
+
   useEffect(() => {
     let cancelled = false;
     async function validateSelection() {
-      if (selectedCount === 0) {
+      if (!hasSelectedParts) {
         setCompatibility(null);
         setPerformance(null);
         setValidationError(null);
@@ -217,7 +274,7 @@ export function ManualPartPicker() {
       setValidating(true);
       setValidationError(null);
       try {
-        const result = await validateAndMeasure(selection, preferences);
+        const result = await validateAndMeasure(selectionForValidation, preferences);
         if (cancelled) return;
         setCompatibility(result.compatibility);
         setPerformance(result.performance);
@@ -234,11 +291,22 @@ export function ManualPartPicker() {
     return () => {
       cancelled = true;
     };
-  }, [preferences, selectedCount, selection]);
+  }, [preferences, hasSelectedParts, selectionForValidation]);
 
-  function chooseProduct(kind: ComponentKind, product: ProductSearchResult) {
-    setSelected((current) => ({ ...current, [kind]: product }));
+  async function chooseProduct(kind: ComponentKind, product: ProductSearchResult) {
     closePicker();
+    const productIdNum = Number(product.id);
+    if (Number.isNaN(productIdNum)) {
+      setSelected((current) => ({ ...current, [kind]: product }));
+      return;
+    }
+    try {
+      const detailedProduct = await getMappedCatalogProduct(productIdNum);
+      setSelected((current) => ({ ...current, [kind]: detailedProduct }));
+    } catch (err) {
+      console.error("Failed to fetch selected product details:", err);
+      setSelected((current) => ({ ...current, [kind]: product }));
+    }
   }
 
   function openPicker(kind: ComponentKind, opener: HTMLButtonElement) {
@@ -380,10 +448,25 @@ export function ManualPartPicker() {
               />
               <SummaryMetric
                 label="Estimated FPS"
-                value={performance ? `${Math.round(performance.expected_fps)} FPS avg` : "CPU + GPU required"}
+                value={
+                  performance
+                    ? `${Math.round(performance.expected_fps)} FPS avg`
+                    : (selected.CPU && selected.GPU && (mappedSelection.unmappedCategories.includes("CPU") || mappedSelection.unmappedCategories.includes("GPU")))
+                      ? "Performance estimate unavailable for this product"
+                      : "CPU + GPU required"
+                }
                 icon={<Gauge size={15} />}
               />
-              <SummaryMetric label="1% low" value={performance ? `${Math.round(performance.one_percent_low_fps)} FPS` : "Not ready"} />
+              <SummaryMetric
+                label="1% low"
+                value={
+                  performance
+                    ? `${Math.round(performance.one_percent_low_fps)} FPS`
+                    : (selected.CPU && selected.GPU && (mappedSelection.unmappedCategories.includes("CPU") || mappedSelection.unmappedCategories.includes("GPU")))
+                      ? "Performance estimate unavailable"
+                      : "Not ready"
+                }
+              />
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <BuildStatePill label="Saudi priced" value={pricedCount} />
@@ -502,7 +585,7 @@ function PartRow({
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-white">{displayProductName(selected)}</div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted">
-                <span>{price ? formatSar(price.amount) : "Price not listed yet"}</span>
+                <span>{price ? formatSar(price.amount) : "No current offer"}</span>
                 <span>{displayStoreName(price?.vendor ?? selected.current_recommended_vendor ?? selected.lowest_market_vendor)}</span>
                 {state ? <StateBadge tone={state.tone}>{state.label}</StateBadge> : null}
               </div>
@@ -954,7 +1037,7 @@ function ProductCard({ product, selected, onSelect }: { product: ProductSearchRe
           </div>
         </div>
         <div className="flex min-h-10 items-start justify-between gap-3">
-          <div className="text-base font-bold text-[#4ade80]">{price ? formatSar(price.amount) : "Price not listed yet"}</div>
+          <div className="text-base font-bold text-[#4ade80]">{price ? formatSar(price.amount) : "No current offer"}</div>
           <div className="max-w-[45%] truncate text-right text-xs font-semibold text-[#b8beca]">
             {displayStoreName(price?.vendor ?? product.current_recommended_vendor ?? product.lowest_market_vendor)}
           </div>
@@ -1348,6 +1431,6 @@ function hasSpecGap(product: ProductSearchResult): boolean {
 }
 
 function formatSar(value?: number | null) {
-  if (typeof value !== "number") return "Price not listed yet";
+  if (typeof value !== "number") return "No current offer";
   return `${Math.round(value).toLocaleString("en-US")} SAR`;
 }

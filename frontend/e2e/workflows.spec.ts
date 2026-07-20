@@ -11,6 +11,13 @@ async function mockCommon(page: Page) {
   await page.route("**/api/compatibility/check", (route) => route.fulfill({ json: { valid: true, checks: [], total_power_draw_w: 450, required_psu_w: 650 } }));
   await page.route("**/api/performance/calculate", (route) => route.fulfill({ json: { expected_fps: 120, one_percent_low_fps: 90 } }));
   await page.route("**/catalog/products*", async (route) => {
+    const url = new URL(route.request().url());
+    const category = url.searchParams.get("category");
+    if (category && ["CPU", "GPU", "RAM", "MOTHERBOARD", "STORAGE", "COOLER", "CASE", "PSU"].includes(category.toUpperCase())) {
+      await route.abort("failed");
+      return;
+    }
+
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -94,9 +101,16 @@ test("manual builder selects, replaces, removes and retries fixture products", a
   let gpuAttempts = 0;
   await mockCommon(page);
   await page.route("**/products/search?*category=GPU*", async (route) => {
-    gpuAttempts += 1;
-    if (gpuAttempts === 1) await route.fulfill({ status: 500, json: { detail: "Synthetic GPU failure" } });
-    else await route.fulfill({ json: [product("GPU")] });
+    const url = new URL(route.request().url());
+    const limit = url.searchParams.get("limit");
+    if (limit !== "100") {
+      gpuAttempts += 1;
+      if (gpuAttempts === 1) {
+        await route.fulfill({ status: 500, json: { detail: "Synthetic GPU failure" } });
+        return;
+      }
+    }
+    await route.fulfill({ json: [product("GPU")] });
   });
   await page.goto("/build/manual");
   await expect(page.getByRole("button", { name: "Add CPU" })).toBeEnabled();
@@ -121,7 +135,7 @@ test("manual builder renders missing price and vendor safely", async ({ page }) 
   await page.route("**/products/search?*category=CPU*", (route) => route.fulfill({ json: [product("CPU", "missing", { cheapest_price_sar: null, current_recommended_price: null, cheapest_vendor: null, current_recommended_vendor: null })] }));
   await page.goto("/build/manual");
   await page.getByRole("button", { name: "Add CPU" }).click();
-  await expect(page.getByText("Price not listed yet")).toBeVisible();
+  await expect(page.getByText("No current offer")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/undefined|null|NaN/);
 });
 

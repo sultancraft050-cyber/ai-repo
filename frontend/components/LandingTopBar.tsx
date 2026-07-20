@@ -9,6 +9,7 @@ const mobileLinks = [
   ["Home", "/"],
   ["Generate", "/build/generate"],
   ["Pick parts", "/build/manual"],
+  ["Components", "/components"],
   ["Saved", "/build/generate#saved-builds"],
   ["Feedback", "/#feedback"]
 ] as const;
