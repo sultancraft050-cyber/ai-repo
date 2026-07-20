@@ -1,4 +1,4 @@
-﻿# Evolution Log
+# Evolution Log
 
 ## 2026-07-11 â€” Iteration 1: Safe Startup Defaults
 
@@ -674,3 +674,19 @@ Prepared a documentation-only technical package for one future authorized feed: 
 - Validation: Ran checks detecting 0 console errors, 0 failed API/asset requests, and 0 layout/contrast errors on both pages. Verified screenshots match requested dimensions (1440x900 and 390x844).
 - Documentation: Created `docs/operations/HOMEPAGE_THEME_CAPTURE_RESULT.md` summarizing visual-audit results, and `docs/design/CURRENT_THEME_BASELINE.md` mapping design token colors (ink, panel, line, muted, signal, caution, danger, violet) and globals.css rules.
 - Safety: Read-only visual audit. No source code changes, no deployments, no traffic split changes, no database writes.
+
+## 2026-07-20 — Iteration 49: Integrate Cloud SQL Catalog Products into the Storefront
+
+- Objective: Connect the 280 Cloud SQL catalog products into the public storefront so that users can browse by category, search, paginate, and view individual product specifications and offers.
+- Implementation:
+  - Created `frontend/components/CategoryBrowser.tsx` for components filtering, search, and pagination, using debounced inputs and URL parameters to persist search states. Added static counts for all categories (e.g. CPU:40, GPU:40... COOLER:20) and integrated comparison selection checkboxes.
+  - Created `frontend/components/ProductDetails.tsx` to render detailed product specifications, list store offers with inventory levels and stock badges, and show "No current offer" fallbacks for parts with missing prices.
+  - Updated `PublicLandingPage` with a catalog section at the bottom of the home page containing quick-links and a preview of 8 components, fetching dynamic data on mount.
+  - Staged and pushed all required files to GitHub, including `frontend/lib/api.ts` modifications and all page routes (`/components`, `/components/[id]`, `/compare`, `/attribution`).
+- Validation:
+  - Verified that all 25 E2E Playwright tests pass locally.
+  - Pushed to GitHub and verified that the `Continuous Reliability CI` runs and completes successfully on GitHub Actions.
+  - Ran production smoke-production script, which passed 14 checks and confirmed backend/frontend release contract compatibility.
+  - Confirmed the newly integrated storefront is fully live and serving catalog elements at `https://frontend-lac-nine-09j4x45cj5.vercel.app`.
+- Safety: Read-only integration. No writes or data imports were executed, Neo4j remains unchanged, and traffic routing was not altered.
+

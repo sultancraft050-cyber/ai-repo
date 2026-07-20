@@ -1,4 +1,4 @@
-﻿# Current Engineering State
+# Current Engineering State
 
 Updated: 2026-07-12
 
@@ -398,3 +398,19 @@ Versioned JSON feed mappings now support synthetic product, store, offer, specif
 - Screenshots Stored: 4 visual baseline png files saved in `docs/visual-baselines/homepage/` (`homepage-desktop-light`, `homepage-mobile-light`, `homepage-desktop-dark`, `manual-builder-desktop`).
 - Theme Baseline Documented: Saved in `docs/design/CURRENT_THEME_BASELINE.md` mapping tailwind config theme tokens (ink, panel, line, muted, signal, caution, danger, violet) and globals.css overrides for light/dark mode.
 - Safety: Read-only visual audit. No code changes, no traffic split changes, no database writes, no storage uploads.
+
+## Relational Catalog Storefront Integration
+
+- Integration Date: 2026-07-20; commit `97d4bb8`.
+- Prerequisite CI: `29756142211` — PASSED.
+- URLs Audited: Frontend (`https://frontend-lac-nine-09j4x45cj5.vercel.app`) and Backend (`https://hardware-intelligence-api-lywizc5z5q-ww.a.run.app`).
+- Features Implemented:
+  - `<CategoryBrowser />` on `/components` with URL-synced search, filter (category, brand), and pagination state. Static counts for categories CPU:40, GPU:40, MOTHERBOARD:40, RAM:40, STORAGE:40, PSU:30, CASE:30, COOLER:20.
+  - `<ProductDetails />` on `/components/[id]` displaying specs table, dynamic store offers with stock badges, and fallback handling ("No current offer") when prices are missing.
+  - `PublicLandingPage` homepage integration showing a quick-link category grid and an interactive catalog list of the first 8 products.
+- Verification Results:
+  - Playwright test runner verified 25/25 E2E tests successfully including the new E2E storefront workflow.
+  - GitHub Actions Continuous Reliability CI passed on the push of all app routes and components.
+  - Production smoke-production suite passed completely with HTTP 200 checks on frontend pathways (`/`, `/build/manual`, `/build/generate`), backend health status checks (`connected` to PostgreSQL and Neo4j), and contract matching.
+- Safety: Read-only integration. No backend modification, no database writes or data imports, and no Cloud Run traffic allocation alterations.
+
