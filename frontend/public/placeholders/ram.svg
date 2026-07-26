@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)" rx="12"/>
+  <!-- Two DIMM sticks -->
+  <g>
+    <!-- Left DIMM -->
+    <rect x="135" y="100" width="38" height="200" rx="4" fill="#1e40af" stroke="#3b82f6" stroke-width="1.5"/>
+    <!-- Notch -->
+    <rect x="135" y="232" width="12" height="6" rx="1" fill="#0f172a"/>
+    <!-- Gold contacts -->
+    <g fill="#fbbf24">
+      <rect x="138" y="295" width="5" height="4" rx="0.5"/>
+      <rect x="146" y="295" width="5" height="4" rx="0.5"/>
+      <rect x="154" y="295" width="5" height="4" rx="0.5"/>
+      <rect x="162" y="295" width="5" height="4" rx="0.5"/>
+    </g>
+    <!-- Top clips -->
+    <rect x="135" y="95" width="38" height="8" rx="2" fill="#334155"/>
+    <rect x="135" y="297" width="38" height="8" rx="2" fill="#334155"/>
+    <!-- Memory chips -->
+    <g fill="#172554" stroke="#1e40af" stroke-width="0.5">
+      <rect x="143" y="115" width="22" height="16" rx="2"/>
+      <rect x="143" y="140" width="22" height="16" rx="2"/>
+      <rect x="143" y="165" width="22" height="16" rx="2"/>
+      <rect x="143" y="190" width="22" height="16" rx="2"/>
+    </g>
+    <!-- Speed label -->
+    <text x="154" y="225" font-family="Inter,system-ui,sans-serif" font-size="7" fill="#93c5fd" text-anchor="middle">DDR5</text>
+  </g>
+  <g>
+    <!-- Right DIMM -->
+    <rect x="228" y="100" width="38" height="200" rx="4" fill="#1e40af" stroke="#3b82f6" stroke-width="1.5"/>
+    <rect x="228" y="232" width="12" height="6" rx="1" fill="#0f172a"/>
+    <g fill="#fbbf24">
+      <rect x="231" y="295" width="5" height="4" rx="0.5"/>
+      <rect x="239" y="295" width="5" height="4" rx="0.5"/>
+      <rect x="247" y="295" width="5" height="4" rx="0.5"/>
+      <rect x="255" y="295" width="5" height="4" rx="0.5"/>
+    </g>
+    <rect x="228" y="95" width="38" height="8" rx="2" fill="#334155"/>
+    <rect x="228" y="297" width="38" height="8" rx="2" fill="#334155"/>
+    <g fill="#172554" stroke="#1e40af" stroke-width="0.5">
+      <rect x="236" y="115" width="22" height="16" rx="2"/>
+      <rect x="236" y="140" width="22" height="16" rx="2"/>
+      <rect x="236" y="165" width="22" height="16" rx="2"/>
+      <rect x="236" y="190" width="22" height="16" rx="2"/>
+    </g>
+    <text x="247" y="225" font-family="Inter,system-ui,sans-serif" font-size="7" fill="#93c5fd" text-anchor="middle">DDR5</text>
+  </g>
+  <text x="200" y="355" font-family="Inter,system-ui,sans-serif" font-size="14" fill="#64748b" text-anchor="middle">RAM</text>
+</svg>

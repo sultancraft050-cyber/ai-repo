@@ -19,7 +19,14 @@ type ProductImageProps = {
 
 // Keep this list intentionally narrow. A real production host must be reviewed
 // from repository evidence before it is added; local assets remain supported.
-const APPROVED_REMOTE_HOSTS = new Set(["cdn.example.test"]);
+//
+// hardware-intelligence-api-lywizc5z5q-ww.a.run.app  — production Cloud Run backend
+//   (serves /catalog/images/:id which validates and proxies signed GCS URLs)
+// storage.googleapis.com — signed GCS V4 URLs; hostname validated; requires valid HMAC
+const APPROVED_REMOTE_HOSTS = new Set([
+  "hardware-intelligence-api-lywizc5z5q-ww.a.run.app",
+  "storage.googleapis.com",
+]);
 
 const categoryLabels: Record<string, string> = {
   CPU: "CPU",
@@ -36,9 +43,27 @@ const categoryLabels: Record<string, string> = {
   COOLER: "Cooler"
 };
 
+// Maps normalized category key → public placeholder SVG path.
+// Placeholders live in /public/placeholders/ and are served as static assets.
+const CATEGORY_PLACEHOLDER_PATHS: Record<string, string> = {
+  cpu: "/placeholders/cpu.svg",
+  gpu: "/placeholders/gpu.svg",
+  motherboard: "/placeholders/motherboard.svg",
+  ram: "/placeholders/ram.svg",
+  storage: "/placeholders/storage.svg",
+  psu: "/placeholders/psu.svg",
+  case: "/placeholders/case.svg",
+  cooler: "/placeholders/cooler.svg",
+};
+
 function categoryLabel(category?: ProductImageCategory | null): string {
   const key = String(category ?? "Unknown");
   return categoryLabels[key] ?? (key.trim() ? key : "Unknown category");
+}
+
+function categoryPlaceholderPath(category?: ProductImageCategory | null): string | null {
+  const key = String(category ?? "").toLowerCase().trim();
+  return CATEGORY_PLACEHOLDER_PATHS[key] ?? null;
 }
 
 function usableImageUrl(value?: string | null): string | null {
@@ -47,14 +72,48 @@ function usableImageUrl(value?: string | null): string | null {
   if (candidate.startsWith("/")) return candidate;
   try {
     const parsed = new URL(candidate);
-    if (parsed.protocol !== "https:" || !parsed.hostname || !APPROVED_REMOTE_HOSTS.has(parsed.hostname)) return null;
+    if (parsed.protocol !== "https:") return null;
+    if (!parsed.hostname) return null;
+    if (!APPROVED_REMOTE_HOSTS.has(parsed.hostname)) return null;
     return parsed.toString();
   } catch {
     return null;
   }
 }
 
-function PlaceholderArtwork({ label }: { label: string }) {
+/**
+ * Category-specific placeholder: renders the SVG illustration for the given
+ * category, or falls back to the generic monochrome placeholder when no
+ * category-specific image is available.
+ */
+function CategoryPlaceholder({
+  category,
+  label,
+  productName,
+  width,
+  height,
+}: {
+  category?: ProductImageCategory | null;
+  label: string;
+  productName: string;
+  width: number;
+  height: number;
+}) {
+  const svgPath = categoryPlaceholderPath(category);
+  if (svgPath) {
+    return (
+      <img
+        src={svgPath}
+        alt={`${productName || "Product"} ${label} placeholder`}
+        width={width}
+        height={height}
+        aria-hidden="true"
+        className="block h-full w-full object-contain object-center"
+        draggable={false}
+      />
+    );
+  }
+  // Generic fallback
   return (
     <svg aria-hidden="true" className="h-16 w-16 text-slate-400" viewBox="0 0 80 80" fill="none">
       <rect x="8" y="8" width="64" height="64" rx="14" className="fill-slate-100 stroke-current dark:fill-slate-800" strokeWidth="2" />
@@ -79,7 +138,6 @@ export function ProductImage({
   const [failed, setFailed] = useState(false);
   const safeUrl = useMemo(() => usableImageUrl(imageUrl), [imageUrl]);
   const label = categoryLabel(category);
-  const alt = `${productName || "Product"} ${label} image`;
   const showImage = Boolean(safeUrl && !failed);
 
   return (
@@ -93,7 +151,7 @@ export function ProductImage({
       {showImage ? (
         <img
           src={safeUrl ?? undefined}
-          alt={alt}
+          alt={`${productName || "Product"} ${label} image`}
           width={width}
           height={height}
           loading={priority ? "eager" : "lazy"}
@@ -102,8 +160,18 @@ export function ProductImage({
           onError={() => setFailed(true)}
         />
       ) : (
-        <div className="grid h-full w-full place-items-center bg-slate-50 text-center dark:bg-slate-900" role="img" aria-label={`${productName || "Product"} ${label} placeholder`}>
-          <PlaceholderArtwork label={label} />
+        <div
+          className="grid h-full w-full place-items-center overflow-hidden bg-slate-50 text-center dark:bg-slate-900"
+          role="img"
+          aria-label={`${productName || "Product"} ${label} placeholder`}
+        >
+          <CategoryPlaceholder
+            category={category}
+            label={label}
+            productName={productName}
+            width={width}
+            height={height}
+          />
         </div>
       )}
     </div>

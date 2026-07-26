@@ -193,7 +193,57 @@ class ProductImage(Base):
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    
+    icecat_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    access_level: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    match_method: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_brand: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source_mpn: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source_gtin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    license_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     product: Mapped[Product] = relationship(back_populates="images")
+
+    @property
+    def role(self) -> str:
+        return "primary" if self.is_primary else "alternate"
+
+    @property
+    def card_url(self) -> str | None:
+        from app.catalog.storage import catalog_storage
+        return catalog_storage.generate_signed_url(self.storage_key) if self.storage_key else None
+
+    @property
+    def summary_url(self) -> str | None:
+        from app.catalog.storage import catalog_storage
+        if not self.storage_key:
+            return None
+        key = self.storage_key.replace("card.webp", "summary.webp")
+        return catalog_storage.generate_signed_url(key)
+
+    @property
+    def detail_url(self) -> str | None:
+        from app.catalog.storage import catalog_storage
+        if not self.storage_key:
+            return None
+        key = self.storage_key.replace("card.webp", "detail.webp")
+        return catalog_storage.generate_signed_url(key)
+
+    @property
+    def alt_text(self) -> str:
+        product_name = self.product.canonical_name if self.product else "Product"
+        category = self.product.category if self.product else "part"
+        return f"{product_name} {category} image"
+
+
+class PipelineLease(Base):
+    __tablename__ = "catalog_pipeline_leases"
+    job_name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    token: Mapped[str] = mapped_column(String(100), nullable=False)
+
 
 
 class ProductImageReview(Base):

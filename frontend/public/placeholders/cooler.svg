@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)" rx="12"/>
+  <!-- Fan ring -->
+  <circle cx="200" cy="185" r="100" fill="none" stroke="#334155" stroke-width="12"/>
+  <!-- Fan hub -->
+  <circle cx="200" cy="185" r="22" fill="#1e293b" stroke="#475569" stroke-width="2"/>
+  <!-- Fan blades -->
+  <g fill="#334155" stroke="#475569" stroke-width="0.5">
+    <path d="M200,163 C185,145 155,148 152,170 C155,162 175,163 200,185Z"/>
+    <path d="M222,185 C240,170 237,140 215,137 C223,140 222,160 200,185Z"/>
+    <path d="M200,207 C215,225 245,222 248,200 C245,208 225,207 200,185Z"/>
+    <path d="M178,185 C160,200 163,230 185,233 C177,230 178,210 200,185Z"/>
+  </g>
+  <!-- Heatpipes -->
+  <g stroke="#b45309" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M145,285 Q130,240 150,210 Q170,185 200,185"/>
+    <path d="M200,285 Q195,260 195,235 Q195,210 200,185"/>
+    <path d="M255,285 Q270,240 250,210 Q230,185 200,185"/>
+  </g>
+  <!-- Heatsink base -->
+  <rect x="130" y="278" width="140" height="20" rx="4" fill="#334155" stroke="#475569" stroke-width="1"/>
+  <!-- AM5 mount points -->
+  <g fill="#475569">
+    <circle cx="145" cy="288" r="5"/>
+    <circle cx="255" cy="288" r="5"/>
+  </g>
+  <text x="200" y="345" font-family="Inter,system-ui,sans-serif" font-size="14" fill="#64748b" text-anchor="middle">COOLER</text>
+</svg>

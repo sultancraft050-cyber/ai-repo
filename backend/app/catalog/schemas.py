@@ -23,6 +23,12 @@ class CatalogImageResponse(BaseModel):
     width: int | None = None
     height: int | None = None
     format: str | None = None
+    role: str | None = None
+    card_url: str | None = None
+    summary_url: str | None = None
+    detail_url: str | None = None
+    alt_text: str | None = None
+
 
 
 class CatalogStoreResponse(BaseModel):

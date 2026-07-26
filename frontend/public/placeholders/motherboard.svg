@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="pcb" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#166534"/>
+      <stop offset="100%" stop-color="#14532d"/>
+    </linearGradient>
+    <linearGradient id="slot" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="400" fill="url(#bg)" rx="12"/>
+  <!-- PCB body -->
+  <rect x="80" y="120" width="240" height="160" rx="6" fill="url(#pcb)" stroke="#15803d" stroke-width="1.5"/>
+  <!-- PCIe slot connector -->
+  <rect x="80" y="250" width="240" height="28" rx="3" fill="url(#slot)"/>
+  <!-- Gold contact fingers -->
+  <g fill="#fbbf24">
+    <rect x="90" y="252" width="4" height="22" rx="1"/>
+    <rect x="100" y="252" width="4" height="22" rx="1"/>
+    <rect x="110" y="252" width="4" height="22" rx="1"/>
+    <rect x="120" y="252" width="4" height="22" rx="1"/>
+    <rect x="130" y="252" width="4" height="22" rx="1"/>
+    <rect x="140" y="252" width="4" height="22" rx="1"/>
+    <rect x="150" y="252" width="4" height="22" rx="1"/>
+    <rect x="160" y="252" width="4" height="22" rx="1"/>
+    <rect x="170" y="252" width="4" height="22" rx="1"/>
+    <rect x="180" y="252" width="4" height="22" rx="1"/>
+    <rect x="190" y="252" width="4" height="22" rx="1"/>
+    <rect x="200" y="252" width="4" height="22" rx="1"/>
+    <rect x="210" y="252" width="4" height="22" rx="1"/>
+    <rect x="220" y="252" width="4" height="22" rx="1"/>
+    <rect x="230" y="252" width="4" height="22" rx="1"/>
+    <rect x="240" y="252" width="4" height="22" rx="1"/>
+    <rect x="250" y="252" width="4" height="22" rx="1"/>
+    <rect x="260" y="252" width="4" height="22" rx="1"/>
+    <rect x="270" y="252" width="4" height="22" rx="1"/>
+    <rect x="280" y="252" width="4" height="22" rx="1"/>
+													  <rect x="290" y="252" width="4" height="22" rx="1"/>
+    <rect x="300" y="252" width="4" height="22" rx="1"/>
+  </g>
+  <!-- VRM modules -->
+  <g fill="#1e293b" stroke="#334155" stroke-width="1">
+    <rect x="95" y="130" width="30" height="20" rx="2"/>
+    <rect x="130" y="130" width="30" height="20" rx="2"/>
+    <rect x="165" y="130" width="30" height="20" rx="2"/>
+  </g>
+  <!-- CPU socket outline -->
+  <rect x="220" y="135" width="85" height="85" rx="4" fill="none" stroke="#4ade80" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="262" y="183" font-family="Inter,system-ui,sans-serif" font-size="9" fill="#4ade80" text-anchor="middle">SOCKET</text>
+  <text x="200" y="340" font-family="Inter,system-ui,sans-serif" font-size="14" fill="#64748b" text-anchor="middle">MOTHERBOARD</text>
+</svg>
